@@ -75,8 +75,9 @@ class TableManager {
 
     @SneakyThrows
     void stopCronJobs() {
-        if (scheduler != null) {
+        if (scheduler != null && !scheduler.isShutdown()) {
             scheduler.clear();
+            scheduler.shutdown();
         }
     }
 

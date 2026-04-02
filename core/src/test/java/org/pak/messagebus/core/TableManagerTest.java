@@ -1,6 +1,7 @@
 package org.pak.messagebus.core;
 
 import org.junit.jupiter.api.Test;
+import org.quartz.Scheduler;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -65,5 +66,25 @@ class TableManagerTest {
 
         assertThat(queryService.droppedMessagePartitions).containsExactly(oldPartition);
         assertThat(queryService.droppedHistoryPartitions).containsExactly(oldPartition);
+    }
+
+    @Test
+    void stopCronJobsShutsDownScheduler() throws Exception {
+        var tableManager = new TableManager(new CoreTestSupport.RecordingQueryService(), "* * * * * ?", "* * * * * ?");
+
+        tableManager.startCronJobs();
+        var scheduler = scheduler(tableManager);
+
+        assertThat(scheduler.isShutdown()).isFalse();
+
+        tableManager.stopCronJobs();
+
+        assertThat(scheduler.isShutdown()).isTrue();
+    }
+
+    private Scheduler scheduler(TableManager tableManager) throws Exception {
+        var schedulerField = TableManager.class.getDeclaredField("scheduler");
+        schedulerField.setAccessible(true);
+        return (Scheduler) schedulerField.get(tableManager);
     }
 }

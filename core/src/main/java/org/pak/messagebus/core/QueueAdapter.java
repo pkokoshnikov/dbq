@@ -24,11 +24,21 @@ public class QueueAdapter {
             MessageFactory messageFactory,
             CronConfig cronConfig
     ) {
+        this(queryService, transactionService, messageFactory,
+                new TableManager(queryService, cronConfig.getCreatingPartitionsCron(),
+                        cronConfig.getCleaningPartitionsCron()));
+    }
+
+    QueueAdapter(
+            QueryService queryService,
+            TransactionService transactionService,
+            MessageFactory messageFactory,
+            TableManager tableManager
+    ) {
         this.queryService = queryService;
         this.transactionService = transactionService;
         this.messageFactory = messageFactory;
-        this.tableManager = new TableManager(queryService, cronConfig.getCreatingPartitionsCron(),
-                cronConfig.getCleaningPartitionsCron());
+        this.tableManager = tableManager;
     }
 
     public <T> void registerPublisher(PublisherConfig<T> publisherConfig) {
@@ -57,10 +67,12 @@ public class QueueAdapter {
 
     public void startSubscribers() {
         messageProcessorStarters.values().forEach(MessageProcessorStarter::start);
+        tableManager.startCronJobs();
     }
 
     public void stopSubscribers() {
         messageProcessorStarters.values().forEach(MessageProcessorStarter::stop);
+        tableManager.stopCronJobs();
     }
 
 }

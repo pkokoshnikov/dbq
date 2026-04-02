@@ -15,14 +15,14 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 @Slf4j
 class MessageProcessorStarter<T> {
-    private final ExecutorService fixedThreadPoolExecutor;
     private final QueryService queryService;
     private final TransactionService transactionService;
     private final SubscriberConfig<T> subscriberConfig;
     private final int concurrency;
     private final MessageFactory messageFactory;
     private final TableManager tableManager;
-    private List<MessageProcessor<T>> messageProcessors;
+    private ExecutorService fixedThreadPoolExecutor;
+    private List<MessageProcessor<T>> messageProcessors = List.of();
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
     MessageProcessorStarter(
@@ -36,22 +36,13 @@ class MessageProcessorStarter<T> {
         this.concurrency = subscriberConfig.getProperties().getConcurrency();
         this.messageFactory = messageFactory;
         this.tableManager = tableManager;
-
-        this.fixedThreadPoolExecutor = Executors.newFixedThreadPool(concurrency,
-                r -> new ThreadFactoryBuilder()
-                        .setNameFormat(subscriberConfig.getMessageName() + "-processor-%d")
-                        .setDaemon(true)
-                        .setUncaughtExceptionHandler((t, e) -> {
-                            log.error("Uncaught exception in thread {}", t.getName(), e);
-                        })
-                        .build()
-                        .newThread(r));
         this.queryService = queryService;
         this.transactionService = transactionService;
     }
 
     public void start() {
         if (isRunning.compareAndSet(false, true)) {
+            fixedThreadPoolExecutor = createExecutor();
             tableManager.registerSubscription(subscriberConfig.getMessageName(), subscriberConfig.getSubscriptionName(),
                     subscriberConfig.getProperties().getStorageDays());
 
@@ -92,9 +83,24 @@ class MessageProcessorStarter<T> {
             } catch (InterruptedException e) {
                 log.warn("Event executor did not stop in time", e);
                 Thread.currentThread().interrupt();
+            } finally {
+                fixedThreadPoolExecutor = null;
+                messageProcessors = List.of();
             }
         } else {
             log.warn("Event processor starter should be stopped only once");
         }
+    }
+
+    private ExecutorService createExecutor() {
+        return Executors.newFixedThreadPool(concurrency,
+                r -> new ThreadFactoryBuilder()
+                        .setNameFormat(subscriberConfig.getMessageName() + "-processor-%d")
+                        .setDaemon(true)
+                        .setUncaughtExceptionHandler((t, e) -> {
+                            log.error("Uncaught exception in thread {}", t.getName(), e);
+                        })
+                        .build()
+                        .newThread(r));
     }
 }
