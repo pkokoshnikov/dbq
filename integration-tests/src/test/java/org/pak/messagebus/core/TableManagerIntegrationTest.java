@@ -28,9 +28,12 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
         jdbcTemplate = setupJdbcTemplate(dataSource);
         persistenceService = setupPersistenceService(jdbcTemplate);
         jsonbConverter = setupJsonbConverter();
+        schemaSqlGenerator = setupSchemaSqlGenerator();
         pgQueryService = setupQueryService(persistenceService, jsonbConverter);
         tableManager = setupTableManager(pgQueryService);
 
+        createMessageTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1);
         tableManager.registerMessage(MESSAGE_NAME, 30);
         tableManager.registerSubscription(MESSAGE_NAME, SUBSCRIPTION_NAME_1, 30);
     }

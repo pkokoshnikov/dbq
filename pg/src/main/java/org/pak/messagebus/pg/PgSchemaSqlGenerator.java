@@ -5,16 +5,9 @@ import org.pak.messagebus.core.SchemaName;
 import org.pak.messagebus.core.StringFormatter;
 import org.pak.messagebus.core.SubscriptionName;
 
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.Map;
 
 public class PgSchemaSqlGenerator {
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy_MM_dd");
-
     private final SchemaName schemaName;
     private final StringFormatter formatter = new StringFormatter();
 
@@ -96,42 +89,15 @@ public class PgSchemaSqlGenerator {
                         subscriptionTable(subscriptionName) + "_insert_function()"));
     }
 
-    public String createPartition(String table, Instant dateTime) {
-        var date = dateTime.atOffset(ZoneOffset.UTC).toLocalDate();
-        var partition = table + "_" + DATE_FORMATTER.format(date);
-
-        return formatter.execute("""
-                CREATE TABLE IF NOT EXISTS ${schema}.${partition}
-                PARTITION OF ${schema}.${table} FOR VALUES FROM ('${from}') TO ('${to}');
-                """, Map.of(
-                "schema", schemaName.value(),
-                "table", table,
-                "partition", partition,
-                "from", DATE_FORMATTER.format(date),
-                "to", DATE_FORMATTER.format(date.plus(1, ChronoUnit.DAYS))
-        ));
-    }
-
-    public String dropPartition(String table, String partition) {
-        return formatter.execute("""
-                ALTER TABLE ${schema}.${table} DETACH PARTITION ${schema}.${partition} CONCURRENTLY;
-                DROP TABLE IF EXISTS ${schema}.${partition};
-                """, Map.of("schema", schemaName.value(), "table", table, "partition", partition));
-    }
-
-    public String partitionName(String table, LocalDate partition) {
-        return table + "_" + DATE_FORMATTER.format(partition);
-    }
-
-    public String messageTable(MessageName messageName) {
+    private String messageTable(MessageName messageName) {
         return messageName.name().replace("-", "_");
     }
 
-    public String subscriptionTable(SubscriptionName subscriptionName) {
+    private String subscriptionTable(SubscriptionName subscriptionName) {
         return subscriptionName.name().replace("-", "_");
     }
 
-    public String subscriptionHistoryTable(SubscriptionName subscriptionName) {
+    private String subscriptionHistoryTable(SubscriptionName subscriptionName) {
         return subscriptionName.name().replace("-", "_") + "_history";
     }
 }

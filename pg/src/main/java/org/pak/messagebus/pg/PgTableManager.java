@@ -36,15 +36,12 @@ public class PgTableManager {
     }
 
     public void registerMessage(MessageName messageName, int storageDays) {
-        pgQueryService.initMessageTable(messageName);
         pgQueryService.createMessagePartition(messageName, Instant.now());
         pgQueryService.createMessagePartition(messageName, Instant.now().plus(1, ChronoUnit.DAYS));
         messageNameStorageDays.putIfAbsent(messageName, storageDays);
     }
 
     public void registerSubscription(MessageName messageName, SubscriptionName subscriptionName, int storageDays) {
-        pgQueryService.initMessageTable(messageName);
-        pgQueryService.initSubscriptionTable(messageName, subscriptionName);
         pgQueryService.createHistoryPartition(subscriptionName, Instant.now());
         pgQueryService.createHistoryPartition(subscriptionName, Instant.now().plus(1, ChronoUnit.DAYS));
         historyStorageDays.putIfAbsent(subscriptionName, storageDays);

@@ -4,6 +4,7 @@ import eu.rekawek.toxiproxy.Proxy;
 import eu.rekawek.toxiproxy.ToxiproxyClient;
 import org.junit.jupiter.api.BeforeAll;
 import org.pak.messagebus.pg.PgQueryService;
+import org.pak.messagebus.pg.PgSchemaSqlGenerator;
 import org.pak.messagebus.pg.PgTableManager;
 import org.pak.messagebus.pg.jsonb.JsonbConverter;
 import org.pak.messagebus.spring.SpringPersistenceService;
@@ -44,6 +45,7 @@ public class BaseIntegrationTest {
     static String TEST_EXCEPTION_MESSAGE = "test-exception-payload";
     PgQueryService pgQueryService;
     PgTableManager tableManager;
+    PgSchemaSqlGenerator schemaSqlGenerator;
     static StringFormatter formatter = new StringFormatter();
     static Network network = Network.newNetwork();
     static String jdbcUrl;
@@ -105,6 +107,10 @@ public class BaseIntegrationTest {
         return jsonbConverter;
     }
 
+    static PgSchemaSqlGenerator setupSchemaSqlGenerator() {
+        return new PgSchemaSqlGenerator(TEST_SCHEMA);
+    }
+
     static MessagePublisherFactory.MessagePublisherFactoryBuilder<TestMessage> setupMessagePublisherFactory(
             PgQueryService pgQueryService
     ) {
@@ -159,6 +165,14 @@ public class BaseIntegrationTest {
 
     static PgTableManager setupTableManager(PgQueryService pgQueryService) {
         return new PgTableManager(pgQueryService, "* * * * * ?", "* * * * * ?");
+    }
+
+    void createMessageTable() {
+        jdbcTemplate.execute(schemaSqlGenerator.createMessageTable(MESSAGE_NAME));
+    }
+
+    void createSubscriptionTable(SubscriptionName subscriptionName) {
+        jdbcTemplate.execute(schemaSqlGenerator.createSubscriptionTable(MESSAGE_NAME, subscriptionName));
     }
 
     void clearTables() {

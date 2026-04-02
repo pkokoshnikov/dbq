@@ -6,7 +6,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.pak.messagebus.core.error.MissingPartitionException;
 import org.pak.messagebus.core.error.PartitionHasReferencesException;
-import org.pak.messagebus.pg.PgSchemaSqlGenerator;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;
@@ -29,6 +28,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         jdbcTemplate = setupJdbcTemplate(dataSource);
         persistenceService = setupPersistenceService(jdbcTemplate);
         jsonbConverter = setupJsonbConverter();
+        schemaSqlGenerator = setupSchemaSqlGenerator();
         pgQueryService = setupQueryService(persistenceService, jsonbConverter);
     }
 
@@ -38,25 +38,8 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void createSchemaWithSqlGeneratorTest() {
-        var sqlGenerator = new PgSchemaSqlGenerator(TEST_SCHEMA);
-        jdbcTemplate.execute(sqlGenerator.createMessageTable(MESSAGE_NAME));
-        jdbcTemplate.execute(sqlGenerator.createSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1));
-
-        var originatedTime = Instant.now();
-        pgQueryService.createMessagePartition(MESSAGE_NAME, originatedTime);
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
-
-        pgQueryService.insertMessage(MESSAGE_NAME,
-                new StdMessage<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
-
-        var messages = pgQueryService.selectMessages(MESSAGE_NAME, SUBSCRIPTION_NAME_1, 1);
-        assertThat(messages).hasSize(1);
-    }
-
-    @Test
     void createMessagePartitionTest() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
+        createMessageTable();
         pgQueryService.createMessagePartition(MESSAGE_NAME, Instant.now());
         var partitions = selectPartitions(MESSAGE_TABLE);
 
@@ -66,8 +49,8 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void createSubscriptionPartitionTest() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
-        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1);
+        createMessageTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, Instant.now());
         var partitions = selectPartitions(SUBSCRIPTION_TABLE_1_HISTORY);
 
@@ -77,7 +60,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void dropMessagePartition() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
+        createMessageTable();
         pgQueryService.createMessagePartition(MESSAGE_NAME, Instant.now());
         var partitions = pgQueryService.getAllMessagePartitions(MESSAGE_NAME);
 
@@ -89,8 +72,8 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void dropMessagePartitionHasReferencesException() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
-        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1);
+        createMessageTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1);
         Instant originatedTime = Instant.now();
         pgQueryService.createMessagePartition(MESSAGE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
@@ -115,8 +98,8 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void dropSubscriptionPartition() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
-        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1);
+        createMessageTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, Instant.now());
         var partitions = pgQueryService.getAllHistoryPartitions(SUBSCRIPTION_NAME_1);
 
@@ -130,7 +113,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testInsertMissingPartitionException() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
+        createMessageTable();
 
         Instant originatedTime = Instant.now();
         var exception = Assertions.assertThrows(MissingPartitionException.class, () -> {
@@ -143,7 +126,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testBatchInsertMissingPartitionException() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
+        createMessageTable();
 
         Instant originatedTime_1 = Instant.now();
         Instant originatedTime_2 = Instant.now();
@@ -159,8 +142,8 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testCompleteOrFailMissingPartitionException() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
-        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1);
+        createMessageTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1);
         Instant originatedTime = Instant.now();
         pgQueryService.createMessagePartition(MESSAGE_NAME, originatedTime);
 
@@ -179,9 +162,9 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testSuccessfullySubmitMessage() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
-        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1);
-        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_2);
+        createMessageTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1);
+        createSubscriptionTable(SUBSCRIPTION_NAME_2);
         Instant originatedTime = Instant.now();
         pgQueryService.createMessagePartition(MESSAGE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
@@ -199,9 +182,9 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testSuccessfullySubmitBatchMessages() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
-        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1);
-        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_2);
+        createMessageTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1);
+        createSubscriptionTable(SUBSCRIPTION_NAME_2);
         Instant originatedTime = Instant.now();
         pgQueryService.createMessagePartition(MESSAGE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
@@ -220,8 +203,8 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testDuplicateKeySubmit() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
-        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1);
+        createMessageTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1);
         Instant originatedTime = Instant.now();
         pgQueryService.createMessagePartition(MESSAGE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
@@ -240,8 +223,8 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testSelectMessages() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
-        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1);
+        createMessageTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1);
         Instant originatedTime = Instant.now();
         pgQueryService.createMessagePartition(MESSAGE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
@@ -259,8 +242,8 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testCompleteMessages() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
-        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1);
+        createMessageTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1);
         Instant originatedTime = Instant.now();
         pgQueryService.createMessagePartition(MESSAGE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
@@ -289,8 +272,8 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testFailMessages() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
-        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1);
+        createMessageTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1);
         Instant originatedTime = Instant.now();
         pgQueryService.createMessagePartition(MESSAGE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
@@ -319,8 +302,8 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testRetryMessages() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
-        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1);
+        createMessageTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1);
         Instant originatedTime = Instant.now();
         pgQueryService.createMessagePartition(MESSAGE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
@@ -349,8 +332,8 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testRetryMessagesUsesLatestRetryDuration() {
-        pgQueryService.initMessageTable(MESSAGE_NAME);
-        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1);
+        createMessageTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1);
         Instant originatedTime = Instant.now();
         pgQueryService.createMessagePartition(MESSAGE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);

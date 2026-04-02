@@ -15,6 +15,7 @@ import java.sql.BatchUpdateException;
 import java.sql.SQLException;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +34,6 @@ public class PgQueryService implements QueryService {
     private final SchemaName schemaName;
     private final JsonbConverter jsonbConverter;
     private final StringFormatter formatter = new StringFormatter();
-    private final PgSchemaSqlGenerator schemaSqlGenerator;
     private final Map<String, String> queryCache = new ConcurrentHashMap<>();
 
     public PgQueryService(
@@ -42,28 +42,29 @@ public class PgQueryService implements QueryService {
         this.persistenceService = persistenceService;
         this.schemaName = schemaName;
         this.jsonbConverter = jsonbConverter;
-        this.schemaSqlGenerator = new PgSchemaSqlGenerator(schemaName);
-    }
-
-    public void initMessageTable(MessageName messageName) {
-        persistenceService.execute(schemaSqlGenerator.createMessageTable(messageName));
     }
 
     public void createPartition(String table, Instant dateTime) {
-        var partition = schemaSqlGenerator.partitionName(table, dateTime.atOffset(ZoneOffset.UTC).toLocalDate());
+        var partition = partitionName(table, dateTime.atOffset(ZoneOffset.UTC).toLocalDate());
         log.info("Create partition {}", partition);
 
-        persistenceService.execute(schemaSqlGenerator.createPartition(table, dateTime));
-    }
+        var date = dateTime.atOffset(ZoneOffset.UTC).toLocalDate();
+        var query = formatter.execute("""
+                CREATE TABLE IF NOT EXISTS ${schema}.${partition}
+                PARTITION OF ${schema}.${table} FOR VALUES FROM ('${from}') TO ('${to}');
+                """, Map.of(
+                "schema", schemaName.value(),
+                "table", table,
+                "partition", partition,
+                "from", dateFormatter.format(date),
+                "to", dateFormatter.format(date.plus(1, ChronoUnit.DAYS))
+        ));
 
-
-    public void initSubscriptionTable(MessageName messageName, SubscriptionName subscriptionName) {
-        persistenceService.execute(schemaSqlGenerator.createSubscriptionTable(messageName, subscriptionName));
+        persistenceService.execute(query);
     }
 
     public void dropMessagePartition(MessageName messageName, LocalDate partition) {
-        var query = schemaSqlGenerator.dropPartition(messageTable(messageName),
-                schemaSqlGenerator.partitionName(messageTable(messageName), partition));
+        var query = dropPartitionSql(messageTable(messageName), partitionName(messageTable(messageName), partition));
         try {
             persistenceService.execute(query);
         } catch (PersistenceException e) {
@@ -78,8 +79,8 @@ public class PgQueryService implements QueryService {
     }
 
     public void dropHistoryPartition(SubscriptionName messageName, LocalDate partition) {
-        var query = schemaSqlGenerator.dropPartition(subscriptionHistoryTable(messageName),
-                schemaSqlGenerator.partitionName(subscriptionHistoryTable(messageName), partition));
+        var query = dropPartitionSql(subscriptionHistoryTable(messageName),
+                partitionName(subscriptionHistoryTable(messageName), partition));
 
         persistenceService.execute(query);
     }
@@ -244,15 +245,26 @@ public class PgQueryService implements QueryService {
     }
 
     private String messageTable(MessageName messageName) {
-        return schemaSqlGenerator.messageTable(messageName);
+        return messageName.name().replace("-", "_");
     }
 
     private String subscriptionTable(SubscriptionName subscriptionName) {
-        return schemaSqlGenerator.subscriptionTable(subscriptionName);
+        return subscriptionName.name().replace("-", "_");
     }
 
     private String subscriptionHistoryTable(SubscriptionName subscriptionName) {
-        return schemaSqlGenerator.subscriptionHistoryTable(subscriptionName);
+        return subscriptionName.name().replace("-", "_") + "_history";
+    }
+
+    private String partitionName(String table, LocalDate partition) {
+        return table + "_" + dateFormatter.format(partition);
+    }
+
+    private String dropPartitionSql(String table, String partition) {
+        return formatter.execute("""
+                ALTER TABLE ${schema}.${table} DETACH PARTITION ${schema}.${partition} CONCURRENTLY;
+                DROP TABLE IF EXISTS ${schema}.${partition};
+                """, Map.of("schema", schemaName.value(), "table", table, "partition", partition));
     }
 
     private void assertNonEmptyUpdate(int updated, String query) {

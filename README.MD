@@ -9,7 +9,7 @@ domain events in eventual consistency manner. But of course it can be used as a 
 * consuming with multiple subscriptions (single and batch)
 * retrying of failed messages
 * blocking subscription processing in case of unavailable resources 
-* PostgreSQL SQL generation for message and subscription tables
+* PostgreSQL CLI tool for generating message and subscription DDL
 * optional PostgreSQL partition management and cleanup
 
 ## Usage
@@ -30,12 +30,19 @@ First of all you need to initialize the message bus, it should be one instance p
 `MessageBus` and `QueueAdapter` no longer create tables or manage partitions automatically. Applications should create
 message and subscription tables via migrations.
 
-For PostgreSQL you can generate the required DDL:
+For PostgreSQL you can generate the required DDL programmatically:
 ```java
-    PgSchemaSqlGenerator sqlGenerator = new PgSchemaSqlGenerator(new SchemaName("schema"));
+    PgSchemaSqlGenerator sqlGenerator = new PgSchemaSqlGenerator(new SchemaName("public"));
 
-    String messageTableSql = sqlGenerator.createMessageTable(MESSAGE_NAME);
-    String subscriptionTableSql = sqlGenerator.createSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME);
+    String messageSql = sqlGenerator.createMessageTable(MESSAGE_NAME);
+    String subscriptionSql = sqlGenerator.createSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME);
+```
+
+The same generator is available through a dedicated CLI tool:
+```bash
+    java -cp pg/target/pg-0.0.1.jar org.pak.messagebus.pg.cli.PgSchemaCli message public test-message
+    java -cp pg/target/pg-0.0.1.jar org.pak.messagebus.pg.cli.PgSchemaCli subscription public test-message test-subscription
+    java -cp pg/target/pg-0.0.1.jar org.pak.messagebus.pg.cli.PgSchemaCli all public test-message test-subscription
 ```
 
 If you want automatic daily partition creation and cleanup for PostgreSQL, run a dedicated pg-specific manager explicitly:
@@ -45,6 +52,7 @@ If you want automatic daily partition creation and cleanup for PostgreSQL, run a
             "0 0 1 * * ?",
             "0 0 2 * * ?");
 
+    // parent tables should already exist via migrations
     pgTableManager.registerMessage(MESSAGE_NAME, 30);
     pgTableManager.registerSubscription(MESSAGE_NAME, SUBSCRIPTION_NAME, 30);
     pgTableManager.startCronJobs();
