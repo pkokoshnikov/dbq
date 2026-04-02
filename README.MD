@@ -27,7 +27,7 @@ First of all you need to initialize the message bus, it should be one instance p
 ```
 
 ### Schema and partitions
-`MessageBus` and `QueueAdapter` no longer create tables or manage partitions automatically. Applications should create
+`MessageBus` no longer creates tables or manages partitions automatically. Applications should create
 message and subscription tables via migrations.
 
 For PostgreSQL you can generate the required DDL programmatically:
@@ -119,18 +119,6 @@ sure that your message will be published consensually with main logic.
 ### Subscribing
 When subscriber process message, it starts transaction and you are not necessary to start new transaction. It gives you guarantee 
 that your business logic changes will be committed with correct message subscription status(`PROCESSED` or `FAILED`).
-### Message brokers
-If your application has two or more services, you can use message brokers to move events from one service to another. 
-To achieve this, you should use a `QueueAdapter`. It provides the possibility to move messages in batches from a database 
-(DB) to a message broker (MB), and then from the MB back to the DB. Each message has a unique key that is set 
-when the message is stored in the DB. When sending messages via the MB, you don't need to worry about duplicate messages, 
-as any duplicates will be skipped during saving messages from MB to DB. However, it is important to receive confirmation 
-from the MB that the messages have been successfully saved during sending messages the MB from DB. And you should acknowledge messages 
-only when they have been safely stored in the DB during saving messages from MB to DB. Only in this case you can ensure the 
-messages are handled safely. Please note that there may be further context or specific requirements depending on 
-the technology or framework you are using. The above information is based on the general principles of using message 
-brokers for event-driven architectures.
-
 ## Subscriber properties 
 ### maxPollRecords
 Please be cautious when configuring the maxPollRecords property, as a transaction is initiated for all messages polled 

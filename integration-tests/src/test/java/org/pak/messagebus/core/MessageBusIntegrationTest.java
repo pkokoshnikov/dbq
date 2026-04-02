@@ -38,7 +38,6 @@ class MessageBusIntegrationTest extends BaseIntegrationTest {
         tableManager = setupTableManager(pgQueryService);
         messagePublisherFactory = setupMessagePublisherFactory(pgQueryService);
         messageProcessorFactory = setupMessageProcessorFactory(pgQueryService, springTransactionService);
-        queueMessagePublisherFactory = setupQueueMessagePublisherFactory(pgQueryService, springTransactionService);
 
         createMessageTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1);

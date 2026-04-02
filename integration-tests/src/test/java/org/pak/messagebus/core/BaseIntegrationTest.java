@@ -63,7 +63,6 @@ public class BaseIntegrationTest {
     SpringTransactionService springTransactionService;
     MessageProcessorFactory.MessageProcessorFactoryBuilder<TestMessage> messageProcessorFactory;
     MessagePublisherFactory.MessagePublisherFactoryBuilder<TestMessage> messagePublisherFactory;
-    QueueMessagePublisherFactory.QueueMessagePublisherFactoryBuilder<TestMessage> queueMessagePublisherFactory;
     DataSource dataSource;
     SpringPersistenceService persistenceService;
 
@@ -124,24 +123,6 @@ public class BaseIntegrationTest {
                         .traceIdExtractor(new NullTraceIdExtractor<>())
                         .build())
                 .messageFactory(new StdMessageFactory())
-                .queryService(pgQueryService);
-    }
-
-    static QueueMessagePublisherFactory.QueueMessagePublisherFactoryBuilder<TestMessage> setupQueueMessagePublisherFactory(
-            PgQueryService pgQueryService,
-            SpringTransactionService transactionService
-    ) {
-        return QueueMessagePublisherFactory.<TestMessage>builder()
-                .publisherConfig(PublisherConfig.<TestMessage>builder()
-                        .properties(PublisherConfig.Properties.builder()
-                                .storageDays(30)
-                                .build())
-                        .messageName(MESSAGE_NAME)
-                        .clazz(TestMessage.class)
-                        .traceIdExtractor(new NullTraceIdExtractor<>())
-                        .build())
-                .messageFactory(new StdMessageFactory())
-                .transactionService(transactionService)
                 .queryService(pgQueryService);
     }
 

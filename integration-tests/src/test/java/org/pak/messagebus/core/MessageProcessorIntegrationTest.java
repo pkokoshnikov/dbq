@@ -39,7 +39,6 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
         tableManager = setupTableManager(pgQueryService);
         messagePublisherFactory = setupMessagePublisherFactory(pgQueryService);
         messageProcessorFactory = setupMessageProcessorFactory(pgQueryService, springTransactionService);
-        queueMessagePublisherFactory = setupQueueMessagePublisherFactory(pgQueryService, springTransactionService);
 
         createMessageTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1);
@@ -69,41 +68,6 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
         assertThat(testMessageContainer.getAttempt()).isEqualTo(0);
         assertThat(testMessageContainer.getErrorMessage()).isNull();
         assertThat(testMessageContainer.getStackTrace()).isNull();
-    }
-
-    @Test
-    void testSubmitBatchMessages() {
-        var testMessage1 = new StdMessage<>(UUID.randomUUID().toString(), Instant.now(),
-                new TestMessage(TEST_VALUE + "_1"));
-        var testMessage2 = new StdMessage<>(UUID.randomUUID().toString(), Instant.now(),
-                new TestMessage(TEST_VALUE + "_2"));
-        var testMessage3 = new StdMessage<>(UUID.randomUUID().toString(), Instant.now(),
-                new TestMessage(TEST_VALUE + "_3"));
-
-        List<Message<TestMessage>> messages = List.of(testMessage1, testMessage2, testMessage3);
-        QueueMessagePublisher<TestMessage> queueMessagePublisher = queueMessagePublisherFactory.build().create();
-        queueMessagePublisher.publish(messages);
-        queueMessagePublisher.publish(messages);//check duplicates
-
-        var testMessagesContainers = selectTestMessages(SUBSCRIPTION_NAME_1);
-
-        assertThat(testMessagesContainers).hasSize(3);
-
-        messages.forEach(message -> {
-            var testMessageContainer = testMessagesContainers.stream()
-                    .filter(tmc -> tmc.getKey().equals(message.key()))
-                    .findFirst()
-                    .get();
-
-            assertThat(testMessageContainer.getPayload()).isEqualTo(message.payload());
-            assertThat(testMessageContainer.getCreated()).isNotNull();
-            assertThat(testMessageContainer.getOriginatedTime()).isEqualTo(message.originatedTime());
-            assertThat(testMessageContainer.getUpdated()).isNull();
-            assertThat(testMessageContainer.getExecuteAfter()).isNotNull();
-            assertThat(testMessageContainer.getAttempt()).isEqualTo(0);
-            assertThat(testMessageContainer.getErrorMessage()).isNull();
-            assertThat(testMessageContainer.getStackTrace()).isNull();
-        });
     }
 
     @Test
@@ -275,8 +239,9 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
         TestMessage testMessage = new TestMessage(TEST_VALUE);
         var key = UUID.randomUUID().toString();
         var originatedTime = Instant.now();
-        messagePublisher.publish(new StdMessage<>(key, originatedTime, testMessage));
-        messagePublisher.publish(new StdMessage<>(key, originatedTime, testMessage));
+        Message<TestMessage> message = new StdMessage<>(key, originatedTime, testMessage);
+        messagePublisher.publish(message);
+        messagePublisher.publish(message);
 
         var testMessageContainer = hasSize1AndGetFirst(selectTestMessages(SUBSCRIPTION_NAME_1));
 
