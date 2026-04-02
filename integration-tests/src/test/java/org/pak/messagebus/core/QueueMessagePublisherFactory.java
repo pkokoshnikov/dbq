@@ -12,10 +12,9 @@ class QueueMessagePublisherFactory<T> {
     PublisherConfig<T> publisherConfig;
     QueryService queryService;
     MessageFactory messageFactory;
-    TableManager tableManager;
     TransactionService transactionService;
 
     QueueMessagePublisher<T> create() {
-        return new QueueMessagePublisher<>(publisherConfig, queryService, transactionService, tableManager);
+        return new QueueMessagePublisher<>(publisherConfig, queryService, transactionService);
     }
 }

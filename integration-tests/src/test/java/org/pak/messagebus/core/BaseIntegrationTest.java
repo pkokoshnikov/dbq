@@ -4,6 +4,7 @@ import eu.rekawek.toxiproxy.Proxy;
 import eu.rekawek.toxiproxy.ToxiproxyClient;
 import org.junit.jupiter.api.BeforeAll;
 import org.pak.messagebus.pg.PgQueryService;
+import org.pak.messagebus.pg.PgTableManager;
 import org.pak.messagebus.pg.jsonb.JsonbConverter;
 import org.pak.messagebus.spring.SpringPersistenceService;
 import org.pak.messagebus.spring.SpringTransactionService;
@@ -42,7 +43,7 @@ public class BaseIntegrationTest {
     static String TEST_VALUE = "test-value";
     static String TEST_EXCEPTION_MESSAGE = "test-exception-payload";
     PgQueryService pgQueryService;
-    TableManager tableManager;
+    PgTableManager tableManager;
     static StringFormatter formatter = new StringFormatter();
     static Network network = Network.newNetwork();
     static String jdbcUrl;
@@ -105,7 +106,6 @@ public class BaseIntegrationTest {
     }
 
     static MessagePublisherFactory.MessagePublisherFactoryBuilder<TestMessage> setupMessagePublisherFactory(
-            TableManager tableManager,
             PgQueryService pgQueryService
     ) {
         return MessagePublisherFactory.<TestMessage>builder()
@@ -118,12 +118,10 @@ public class BaseIntegrationTest {
                         .traceIdExtractor(new NullTraceIdExtractor<>())
                         .build())
                 .messageFactory(new StdMessageFactory())
-                .tableManager(tableManager)
                 .queryService(pgQueryService);
     }
 
     static QueueMessagePublisherFactory.QueueMessagePublisherFactoryBuilder<TestMessage> setupQueueMessagePublisherFactory(
-            TableManager tableManager,
             PgQueryService pgQueryService,
             SpringTransactionService transactionService
     ) {
@@ -138,7 +136,6 @@ public class BaseIntegrationTest {
                         .build())
                 .messageFactory(new StdMessageFactory())
                 .transactionService(transactionService)
-                .tableManager(tableManager)
                 .queryService(pgQueryService);
     }
 
@@ -160,8 +157,8 @@ public class BaseIntegrationTest {
                 .properties(SubscriberConfig.Properties.builder().build());
     }
 
-    static TableManager setupTableManager(PgQueryService pgQueryService) {
-        return new TableManager(pgQueryService, "* * * * * ?", "* * * * * ?");
+    static PgTableManager setupTableManager(PgQueryService pgQueryService) {
+        return new PgTableManager(pgQueryService, "* * * * * ?", "* * * * * ?");
     }
 
     void clearTables() {

@@ -11,7 +11,6 @@ public class MessageBus {
     private final QueryService queryService;
     private final TransactionService transactionService;
     private final MessageFactory messageFactory;
-    private final TableManager tableManager;
 
     public MessageBus(
             QueryService queryService,
@@ -19,11 +18,7 @@ public class MessageBus {
             MessageFactory messageFactory,
             CronConfig cronConfig
     ) {
-        this.queryService = queryService;
-        this.transactionService = transactionService;
-        this.messageFactory = messageFactory;
-        this.tableManager = new TableManager(queryService, cronConfig.getCreatingPartitionsCron(),
-                cronConfig.getCleaningPartitionsCron());
+        this(queryService, transactionService, messageFactory);
     }
 
     public MessageBus(
@@ -31,11 +26,26 @@ public class MessageBus {
             TransactionService transactionService,
             CronConfig cronConfig
     ) {
+        this(queryService, transactionService);
+    }
+
+    public MessageBus(
+            QueryService queryService,
+            TransactionService transactionService,
+            MessageFactory messageFactory
+    ) {
+        this.queryService = queryService;
+        this.transactionService = transactionService;
+        this.messageFactory = messageFactory;
+    }
+
+    public MessageBus(
+            QueryService queryService,
+            TransactionService transactionService
+    ) {
         this.queryService = queryService;
         this.transactionService = transactionService;
         this.messageFactory = new StdMessageFactory();
-        this.tableManager = new TableManager(queryService, cronConfig.getCreatingPartitionsCron(),
-                cronConfig.getCleaningPartitionsCron());
     }
 
     private final ConcurrentHashMap<String, MessageProcessorStarter<?>> messageProcessorStarters =
@@ -45,17 +55,14 @@ public class MessageBus {
 
     public <T> void registerPublisher(PublisherConfig<T> publisherConfig) {
         messagePublishers.computeIfAbsent(publisherConfig.getClazz(),
-                k -> new MessagePublisher<>(publisherConfig, queryService, messageFactory, tableManager));
-
-        tableManager.registerMessage(publisherConfig.getMessageName(),
-                publisherConfig.getProperties().getStorageDays());
+                k -> new MessagePublisher<>(publisherConfig, queryService, messageFactory));
     }
 
     public <T> void registerSubscriber(SubscriberConfig<T> subscriberConfig) {
         messageProcessorStarters.computeIfAbsent(
                 subscriberConfig.getMessageName() + "_" + subscriberConfig.getSubscriptionName(), s -> {
                     var starter = new MessageProcessorStarter<>(subscriberConfig, queryService, transactionService,
-                            messageFactory, tableManager);
+                            messageFactory);
                     log.info("Register subscriber on payload {} with subscription {}",
                             subscriberConfig.getMessageName(),
                             subscriberConfig.getSubscriptionName());
@@ -69,11 +76,9 @@ public class MessageBus {
 
     public void startSubscribers() {
         messageProcessorStarters.values().forEach(MessageProcessorStarter::start);
-        tableManager.startCronJobs();
     }
 
     public void stopSubscribers() {
         messageProcessorStarters.values().forEach(MessageProcessorStarter::stop);
-        tableManager.stopCronJobs();
     }
 }

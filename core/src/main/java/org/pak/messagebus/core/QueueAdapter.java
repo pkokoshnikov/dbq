@@ -16,7 +16,6 @@ public class QueueAdapter {
             new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Class<?>, QueueMessagePublisher<?>> messagePublishers =
             new ConcurrentHashMap<>();
-    private final TableManager tableManager;
 
     public QueueAdapter(
             QueryService queryService,
@@ -24,36 +23,38 @@ public class QueueAdapter {
             MessageFactory messageFactory,
             CronConfig cronConfig
     ) {
-        this(queryService, transactionService, messageFactory,
-                new TableManager(queryService, cronConfig.getCreatingPartitionsCron(),
-                        cronConfig.getCleaningPartitionsCron()));
+        this(queryService, transactionService, messageFactory);
     }
 
-    QueueAdapter(
+    public QueueAdapter(
             QueryService queryService,
             TransactionService transactionService,
-            MessageFactory messageFactory,
-            TableManager tableManager
+            MessageFactory messageFactory
     ) {
         this.queryService = queryService;
         this.transactionService = transactionService;
         this.messageFactory = messageFactory;
-        this.tableManager = tableManager;
+    }
+
+    public QueueAdapter(
+            QueryService queryService,
+            TransactionService transactionService
+    ) {
+        this(queryService, transactionService, new StdMessageFactory());
     }
 
     public <T> void registerPublisher(PublisherConfig<T> publisherConfig) {
         messagePublishers.computeIfAbsent(publisherConfig.getClazz(),
                 k -> new QueueMessagePublisher<>(publisherConfig,
                         queryService,
-                        transactionService,
-                        tableManager));
+                        transactionService));
     }
 
     public <T> void registerSubscriber(SubscriberConfig<T> subscriberConfig) {
         messageProcessorStarters.computeIfAbsent(
                 subscriberConfig.getMessageName() + "_" + subscriberConfig.getSubscriptionName(), s -> {
                     var starter = new MessageProcessorStarter<>(subscriberConfig, queryService, transactionService,
-                            messageFactory, tableManager);
+                            messageFactory);
                     log.info("Register subscriber on payload {} with subscription {}",
                             subscriberConfig.getMessageName(),
                             subscriberConfig.getSubscriptionName());
@@ -67,12 +68,10 @@ public class QueueAdapter {
 
     public void startSubscribers() {
         messageProcessorStarters.values().forEach(MessageProcessorStarter::start);
-        tableManager.startCronJobs();
     }
 
     public void stopSubscribers() {
         messageProcessorStarters.values().forEach(MessageProcessorStarter::stop);
-        tableManager.stopCronJobs();
     }
 
 }

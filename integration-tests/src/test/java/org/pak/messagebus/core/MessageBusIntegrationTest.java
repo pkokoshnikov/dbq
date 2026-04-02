@@ -5,7 +5,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.pak.messagebus.pg.PgQueryService;
-import org.pak.messagebus.spring.SpringPersistenceService;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.vibur.dbcp.ViburDBCPDataSource;
 
@@ -36,14 +35,16 @@ class MessageBusIntegrationTest extends BaseIntegrationTest {
         jsonbConverter = setupJsonbConverter();
         pgQueryService = setupQueryService(persistenceService, jsonbConverter);
         tableManager = setupTableManager(pgQueryService);
-        messagePublisherFactory = setupMessagePublisherFactory(tableManager, pgQueryService);
+        messagePublisherFactory = setupMessagePublisherFactory(pgQueryService);
         messageProcessorFactory = setupMessageProcessorFactory(pgQueryService, springTransactionService);
-        queueMessagePublisherFactory = setupQueueMessagePublisherFactory(tableManager, pgQueryService, springTransactionService);
+        queueMessagePublisherFactory = setupQueueMessagePublisherFactory(pgQueryService, springTransactionService);
 
-        messageBus = new MessageBus(
-                new PgQueryService(new SpringPersistenceService(jdbcTemplate), TEST_SCHEMA, jsonbConverter),
-                springTransactionService, new StdMessageFactory(),
-                CronConfig.builder().build());
+        tableManager.registerMessage(MESSAGE_NAME, 30);
+        tableManager.registerSubscription(MESSAGE_NAME, SUBSCRIPTION_NAME_1, 30);
+        tableManager.registerSubscription(MESSAGE_NAME, SUBSCRIPTION_NAME_2, 30);
+
+        messageBus = new MessageBus(new PgQueryService(persistenceService, TEST_SCHEMA, jsonbConverter),
+                springTransactionService, new StdMessageFactory());
     }
 
     @Test

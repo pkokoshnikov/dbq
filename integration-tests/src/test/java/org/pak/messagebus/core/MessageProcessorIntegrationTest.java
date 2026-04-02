@@ -36,9 +36,9 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
         jsonbConverter = setupJsonbConverter();
         pgQueryService = setupQueryService(persistenceService, jsonbConverter);
         tableManager = setupTableManager(pgQueryService);
-        messagePublisherFactory = setupMessagePublisherFactory(tableManager, pgQueryService);
+        messagePublisherFactory = setupMessagePublisherFactory(pgQueryService);
         messageProcessorFactory = setupMessageProcessorFactory(pgQueryService, springTransactionService);
-        queueMessagePublisherFactory = setupQueueMessagePublisherFactory(tableManager, pgQueryService, springTransactionService);
+        queueMessagePublisherFactory = setupQueueMessagePublisherFactory(pgQueryService, springTransactionService);
 
         tableManager.registerMessage(MESSAGE_NAME, 30);
         tableManager.registerSubscription(MESSAGE_NAME, SUBSCRIPTION_NAME_1, 30);

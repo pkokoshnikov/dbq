@@ -11,9 +11,8 @@ class MessagePublisherFactory<T> {
     PublisherConfig<T> publisherConfig;
     QueryService queryService;
     MessageFactory messageFactory;
-    TableManager tableManager;
 
     MessagePublisher<T> create() {
-        return new MessagePublisher<>(publisherConfig, queryService, messageFactory, tableManager);
+        return new MessagePublisher<>(publisherConfig, queryService, messageFactory);
     }
 }

@@ -1,7 +1,6 @@
 package org.pak.messagebus.core;
 
 import lombok.extern.slf4j.Slf4j;
-import org.pak.messagebus.core.error.MissingPartitionException;
 import org.pak.messagebus.core.service.QueryService;
 import org.pak.messagebus.core.service.TransactionService;
 import org.slf4j.MDC;
@@ -20,15 +19,12 @@ class QueueMessagePublisher<T> {
     QueueMessagePublisher(
             PublisherConfig<T> publisherConfig,
             QueryService queryService,
-            TransactionService transactionService,
-            TableManager tableManager
+            TransactionService transactionService
     ) {
         this.messageName = publisherConfig.getMessageName();
         this.queryService = queryService;
         this.traceIdExtractor = publisherConfig.getTraceIdExtractor();
         this.transactionService = transactionService;
-
-        tableManager.registerMessage(messageName, publisherConfig.getProperties().getStorageDays());
     }
 
     public void publish(List<Message<T>> messages) {
@@ -43,34 +39,22 @@ class QueueMessagePublisher<T> {
                     optionalTraceIdMDC.ifPresent(MDC.MDCCloseable::close);
                 });
             }
-            do {
-                try {
-                    var inserted = transactionService.inTransaction(() ->
-                            queryService.insertBatchMessage(messageName, messages));
-                    for (int i = 0; i < inserted.size(); i++) {
-                        Message<T> message = messages.get(i);
-                        var optionalTraceIdMDC = ofNullable(traceIdExtractor.extractTraceId(message.payload()))
-                                .map(v -> MDC.putCloseable("traceId", v));
-                        try (var ignoreKeyMDC = MDC.putCloseable("messageKey", message.key())) {
-                            if (inserted.get(i)) {
-                                log.info("Published payload");
-                            } else {
-                                log.warn("Duplicate key {}, {}", message.key(), message.originatedTime());
-                            }
-                        } finally {
-                            optionalTraceIdMDC.ifPresent(MDC.MDCCloseable::close);
-                        }
+            var inserted = transactionService.inTransaction(() ->
+                    queryService.insertBatchMessage(messageName, messages));
+            for (int i = 0; i < inserted.size(); i++) {
+                Message<T> message = messages.get(i);
+                var optionalTraceIdMDC = ofNullable(traceIdExtractor.extractTraceId(message.payload()))
+                        .map(v -> MDC.putCloseable("traceId", v));
+                try (var ignoreKeyMDC = MDC.putCloseable("messageKey", message.key())) {
+                    if (inserted.get(i)) {
+                        log.info("Published payload");
+                    } else {
+                        log.warn("Duplicate key {}, {}", message.key(), message.originatedTime());
                     }
-                    break;
-                } catch (MissingPartitionException e) {
-                    log.warn("Missing partition during batch request");
-                    e.getOriginationTimes().forEach(ot -> queryService.createMessagePartition(messageName, ot));
-                    Thread.sleep(50);
+                } finally {
+                    optionalTraceIdMDC.ifPresent(MDC.MDCCloseable::close);
                 }
-            } while (true);
-        } catch (InterruptedException e) {
-            log.warn("Queue message publisher is interrupted", e);
-            Thread.currentThread().interrupt();
+            }
         }
     }
 }

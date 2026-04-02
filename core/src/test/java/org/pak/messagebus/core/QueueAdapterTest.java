@@ -2,58 +2,45 @@ package org.pak.messagebus.core;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class QueueAdapterTest {
     @Test
-    void startSubscribersStartsTableManagerCronJobs() {
-        var tableManager = new RecordingTableManager();
+    void startSubscribersCanBeCalledWithoutPartitionManager() {
         var queueAdapter = new QueueAdapter(
                 new CoreTestSupport.RecordingQueryService(),
                 new CoreTestSupport.DirectTransactionService(),
-                new StdMessageFactory(),
-                tableManager
-        );
-
-        queueAdapter.startSubscribers();
-
-        assertThat(tableManager.startCronJobsCalls).isEqualTo(1);
-        assertThat(tableManager.stopCronJobsCalls).isZero();
-    }
-
-    @Test
-    void stopSubscribersStopsTableManagerCronJobs() {
-        var tableManager = new RecordingTableManager();
-        var queueAdapter = new QueueAdapter(
-                new CoreTestSupport.RecordingQueryService(),
-                new CoreTestSupport.DirectTransactionService(),
-                new StdMessageFactory(),
-                tableManager
+                new StdMessageFactory()
         );
 
         queueAdapter.startSubscribers();
         queueAdapter.stopSubscribers();
-
-        assertThat(tableManager.startCronJobsCalls).isEqualTo(1);
-        assertThat(tableManager.stopCronJobsCalls).isEqualTo(1);
     }
 
-    private static class RecordingTableManager extends TableManager {
-        private int startCronJobsCalls;
-        private int stopCronJobsCalls;
+    @Test
+    void registerPublisherAndPublishDelegatesBatchInsert() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queueAdapter = new QueueAdapter(
+                queryService,
+                new CoreTestSupport.DirectTransactionService(),
+                new StdMessageFactory()
+        );
 
-        private RecordingTableManager() {
-            super(new CoreTestSupport.RecordingQueryService(), "* * * * * ?", "* * * * * ?");
-        }
+        queueAdapter.registerPublisher(PublisherConfig.<String>builder()
+                .messageName(CoreTestSupport.MESSAGE_NAME)
+                .clazz(String.class)
+                .properties(PublisherConfig.Properties.builder().storageDays(10).build())
+                .build());
 
-        @Override
-        void startCronJobs() {
-            startCronJobsCalls++;
-        }
+        var message = new StdMessage<>("key-1", Instant.now(), "payload");
+        queueAdapter.publish(String.class, List.of(message));
 
-        @Override
-        void stopCronJobs() {
-            stopCronJobsCalls++;
-        }
+        assertThat(queryService.batchInserts).hasSize(1);
+        assertThat(queryService.batchInserts.getFirst().messageName()).isEqualTo(CoreTestSupport.MESSAGE_NAME);
+        assertThat(queryService.batchInserts.getFirst().messages()).hasSize(1);
+        assertThat(queryService.batchInserts.getFirst().messages().getFirst()).isEqualTo(message);
     }
 }

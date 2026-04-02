@@ -14,8 +14,7 @@ class MessageProcessorStarterTest {
                         .build(),
                 new CoreTestSupport.RecordingQueryService(),
                 new CoreTestSupport.DirectTransactionService(),
-                new StdMessageFactory(),
-                new TableManager(new CoreTestSupport.RecordingQueryService(), "* * * * * ?", "* * * * * ?")
+                new StdMessageFactory()
         );
 
         starter.start();

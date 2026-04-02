@@ -2,7 +2,6 @@ package org.pak.messagebus.core;
 
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.pak.messagebus.core.error.MissingPartitionException;
 import org.pak.messagebus.core.error.NonRetrayablePersistenceException;
 import org.pak.messagebus.core.error.RetrayablePersistenceException;
 import org.pak.messagebus.core.error.SerializerException;
@@ -100,10 +99,6 @@ class MessageProcessor<T> {
                 } catch (RetrayablePersistenceException e) {
                     log.error("Recoverable persistence exception occurred", e);
                     pause = persistenceExceptionPause;
-                } catch (MissingPartitionException e) {
-                    log.warn("Missing partition for {}", e.getOriginationTimes());
-                    e.getOriginationTimes()
-                            .forEach(ot -> queryService.createHistoryPartition(subscriptionName, ot));
                 } catch (InterruptedException e) {  /*app layer exceptions*/
                     log.warn("Message processor is interrupted", e);
 

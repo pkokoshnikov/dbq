@@ -9,8 +9,8 @@ domain events in eventual consistency manner. But of course it can be used as a 
 * consuming with multiple subscriptions (single and batch)
 * retrying of failed messages
 * blocking subscription processing in case of unavailable resources 
-* automatic creation of tables and daily partitions for messages and subscriptions
-* automatic clearing partitions
+* PostgreSQL SQL generation for message and subscription tables
+* optional PostgreSQL partition management and cleanup
 
 ## Usage
 ### Initialization
@@ -18,20 +18,41 @@ First of all you need to initialize the message bus, it should be one instance p
 ```java
     //init message bus
     PersistenceService persistenceService = new SpringPersistenceService(jdbcTemplate);
-    QueryService queryService = new PgQueryService(persistenceService, "schema", jsonbConverter);
+    QueryService queryService = new PgQueryService(persistenceService, new SchemaName("schema"), jsonbConverter);
     TransactionService transactionService = new SpringTransactionService(new TransactionTemplate(new JdbcTransactionManager(dataSource) {}));
-    CronConfig cronConfig = CronConfig.builder().build();
     MessageBus messageBus = new MessageBus(
             queryService,
-            transactionService, 
-            new StdMessageFactory(),
-            cronConfig);
+            transactionService,
+            new StdMessageFactory());
+```
+
+### Schema and partitions
+`MessageBus` and `QueueAdapter` no longer create tables or manage partitions automatically. Applications should create
+message and subscription tables via migrations.
+
+For PostgreSQL you can generate the required DDL:
+```java
+    PgSchemaSqlGenerator sqlGenerator = new PgSchemaSqlGenerator(new SchemaName("schema"));
+
+    String messageTableSql = sqlGenerator.createMessageTable(MESSAGE_NAME);
+    String subscriptionTableSql = sqlGenerator.createSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME);
+```
+
+If you want automatic daily partition creation and cleanup for PostgreSQL, run a dedicated pg-specific manager explicitly:
+```java
+    PgTableManager pgTableManager = new PgTableManager(
+            new PgQueryService(persistenceService, new SchemaName("schema"), jsonbConverter),
+            "0 0 1 * * ?",
+            "0 0 2 * * ?");
+
+    pgTableManager.registerMessage(MESSAGE_NAME, 30);
+    pgTableManager.registerSubscription(MESSAGE_NAME, SUBSCRIPTION_NAME, 30);
+    pgTableManager.startCronJobs();
 ```
 ### Publishing 
 #### Registration
 To start publishing messages you need to register publishers, it consumes publisher config with message name and class. 
-Message name is a unique identifier of message type. It is used for example during creation of tables. 
-Besides it 
+Message name is a unique identifier of message type.
 ```java
     //register publisher 
     messageBus.registerPublisher(PublisherConfig.<Message>builder()
@@ -115,9 +136,9 @@ changes to the `maxPollRecords` property or any other configuration settings rel
 The `concurrency` property sets the number of message handlers that work simultaneously. If you don't have a high load, 
 it is not necessary to change it.
 ### storageDays
-The storageDays property sets the maximum number of days to retain event data. However, it does not guarantee that 
-partitions will be deleted exactly after the specified date. If there are unprocessed messages in a partition, they will 
-not be deleted.
+The storageDays property is used by PostgreSQL partition management. It sets the maximum number of days to retain event
+data. However, it does not guarantee that partitions will be deleted exactly after the specified date. If there are
+unprocessed messages in a partition, they will not be deleted.
 ### persistenceExceptionPause
 The `persistenceExceptionPause` sets the pause duration if a persistence exception occurs. This pause allows for resolving 
 the persistence issue before resuming normal operations.

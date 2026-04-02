@@ -15,7 +15,6 @@ import java.sql.BatchUpdateException;
 import java.sql.SQLException;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +33,7 @@ public class PgQueryService implements QueryService {
     private final SchemaName schemaName;
     private final JsonbConverter jsonbConverter;
     private final StringFormatter formatter = new StringFormatter();
+    private final PgSchemaSqlGenerator schemaSqlGenerator;
     private final Map<String, String> queryCache = new ConcurrentHashMap<>();
 
     public PgQueryService(
@@ -42,115 +42,28 @@ public class PgQueryService implements QueryService {
         this.persistenceService = persistenceService;
         this.schemaName = schemaName;
         this.jsonbConverter = jsonbConverter;
+        this.schemaSqlGenerator = new PgSchemaSqlGenerator(schemaName);
     }
 
-    @Override
     public void initMessageTable(MessageName messageName) {
-        var query = formatter.execute("""
-                CREATE TABLE IF NOT EXISTS ${schema}.${messageTable} (
-                    id BIGSERIAL,
-                    key TEXT,
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    execute_after TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    originated_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                    payload JSONB NOT NULL,
-                    PRIMARY KEY (id, originated_at)
-                ) PARTITION BY RANGE (originated_at);
-                CREATE INDEX IF NOT EXISTS ${messageTable}_created_at_idx ON ${schema}.${messageTable}(created_at);
-                CREATE UNIQUE INDEX IF NOT EXISTS ${messageTable}_message_key_idx ON ${schema}.${messageTable}(originated_at, key);
-                """, Map.of("schema", schemaName.value(), "messageTable", messageTable(messageName)));
-
-        persistenceService.execute(query);
+        persistenceService.execute(schemaSqlGenerator.createMessageTable(messageName));
     }
 
     public void createPartition(String table, Instant dateTime) {
-        var date = dateTime.atOffset(ZoneOffset.UTC).toLocalDate();
-        var partition = table + "_" + dateFormatter.format(date);
+        var partition = schemaSqlGenerator.partitionName(table, dateTime.atOffset(ZoneOffset.UTC).toLocalDate());
         log.info("Create partition {}", partition);
 
-        var query = formatter.execute("""
-                CREATE TABLE IF NOT EXISTS ${schema}.${partition}
-                PARTITION OF ${schema}.${table} FOR VALUES FROM ('${from}') TO ('${to}');
-                """, Map.of(
-                "schema", schemaName.value(),
-                "table", table,
-                "partition", partition,
-                "from", dateFormatter.format(date),
-                "to", dateFormatter.format(date.plus(1, ChronoUnit.DAYS))
-        ));
-
-        persistenceService.execute(query);
+        persistenceService.execute(schemaSqlGenerator.createPartition(table, dateTime));
     }
 
 
     public void initSubscriptionTable(MessageName messageName, SubscriptionName subscriptionName) {
-        var query = formatter.execute("""
-                        CREATE TABLE IF NOT EXISTS ${schema}.${subscriptionTable} (
-                            id BIGSERIAL PRIMARY KEY,
-                            message_id BIGINT NOT NULL,
-                            attempt INTEGER NOT NULL DEFAULT 0,
-                            error_message TEXT,
-                            stack_trace TEXT,
-                            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                            updated_at TIMESTAMP WITH TIME ZONE,
-                            originated_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                            execute_after TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                            FOREIGN KEY (message_id, originated_at) REFERENCES ${schema}.${messageTable}(id, originated_at)
-                        );
-                                                
-                        CREATE UNIQUE INDEX IF NOT EXISTS ${subscriptionTable}_message_id_idx ON ${schema}.${subscriptionTable}(message_id);
-                        CREATE INDEX IF NOT EXISTS ${subscriptionTable}_created_at_idx ON ${schema}.${subscriptionTable}(created_at);
-                        CREATE INDEX IF NOT EXISTS ${subscriptionTable}_execute_after_idx ON ${schema}.${subscriptionTable}(execute_after ASC);
-                                                
-                        CREATE TABLE IF NOT EXISTS ${schema}.${subscriptionHistoryTable} (
-                            id BIGINT,
-                            message_id BIGINT NOT NULL,
-                            attempt INTEGER NOT NULL DEFAULT 0,
-                            status TEXT NOT NULL DEFAULT 'PROCESSED',
-                            error_message TEXT,
-                            stack_trace TEXT,
-                            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                            originated_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                            FOREIGN KEY (message_id, originated_at) REFERENCES ${schema}.${messageTable}(id, originated_at),
-                            PRIMARY KEY (id, originated_at)
-                        ) PARTITION BY RANGE (originated_at);
-                            
-                        CREATE UNIQUE INDEX IF NOT EXISTS ${subscriptionHistoryTable}_message_id_idx ON ${schema}.${subscriptionHistoryTable}(originated_at, message_id);
-                        CREATE INDEX IF NOT EXISTS ${subscriptionHistoryTable}_created_at_idx ON ${schema}.${subscriptionHistoryTable}(created_at);
-                                        
-                        CREATE OR REPLACE FUNCTION ${schema}.${insertFunction}
-                          RETURNS trigger AS
-                        $$
-                            BEGIN
-                            INSERT INTO ${schema}.${subscriptionTable}(message_id, created_at, execute_after, originated_at)
-                                 VALUES(NEW.id, NEW.created_at, NEW.execute_after, NEW.originated_at);
-                            RETURN NEW;
-                            END;
-                        $$
-                        LANGUAGE 'plpgsql';
-                            
-                        CREATE OR REPLACE TRIGGER ${insertTrigger}
-                            AFTER INSERT ON ${schema}.${messageTable}
-                            FOR EACH ROW
-                            EXECUTE PROCEDURE ${schema}.${insertFunction};
-                        """,
-                Map.of("schema", schemaName.value(), "messageTable", messageTable(messageName), "subscriptionTable",
-                        subscriptionTable(subscriptionName), "subscriptionHistoryTable",
-                        subscriptionHistoryTable(subscriptionName), "insertTrigger",
-                        subscriptionTable(subscriptionName) + "_insert_trigger", "insertFunction",
-                        subscriptionTable(subscriptionName) + "_insert_function()"));
-
-        persistenceService.execute(query);
+        persistenceService.execute(schemaSqlGenerator.createSubscriptionTable(messageName, subscriptionName));
     }
 
-    @Override
     public void dropMessagePartition(MessageName messageName, LocalDate partition) {
-        var query = formatter.execute("""
-                ALTER TABLE ${schema}.${messageTable} DETACH PARTITION ${schema}.${partition} CONCURRENTLY;
-                DROP TABLE IF EXISTS ${schema}.${partition};
-                """, Map.of("schema", schemaName.value(),
-                "messageTable", messageTable(messageName),
-                "partition", messageTable(messageName) + "_" + dateFormatter.format(partition)));
+        var query = schemaSqlGenerator.dropPartition(messageTable(messageName),
+                schemaSqlGenerator.partitionName(messageTable(messageName), partition));
         try {
             persistenceService.execute(query);
         } catch (PersistenceException e) {
@@ -164,37 +77,26 @@ public class PgQueryService implements QueryService {
 
     }
 
-    @Override
     public void dropHistoryPartition(SubscriptionName messageName, LocalDate partition) {
-        var partitionName = subscriptionHistoryTable(messageName) + "_" + dateFormatter.format(partition);
-
-        var query = formatter.execute("""
-                ALTER TABLE ${schema}.${historyTable} DETACH PARTITION ${schema}.${partition} CONCURRENTLY;
-                DROP TABLE IF EXISTS ${schema}.${partition};
-                """, Map.of("schema", schemaName.value(),
-                "historyTable", subscriptionHistoryTable(messageName),
-                "partition", partitionName));
+        var query = schemaSqlGenerator.dropPartition(subscriptionHistoryTable(messageName),
+                schemaSqlGenerator.partitionName(subscriptionHistoryTable(messageName), partition));
 
         persistenceService.execute(query);
     }
 
-    @Override
     public void createMessagePartition(MessageName messageName, Instant includeDateTime) {
         createPartition(messageTable(messageName), includeDateTime);
     }
 
-    @Override
     public void createHistoryPartition(SubscriptionName messageName, Instant includeDateTime) {
         createPartition(subscriptionHistoryTable(messageName), includeDateTime);
     }
 
-    @Override
-    public List<LocalDate> getAllPartitions(MessageName messageName) {
+    public List<LocalDate> getAllMessagePartitions(MessageName messageName) {
         return getAllPartitions(messageTable(messageName));
     }
 
-    @Override
-    public List<LocalDate> getAllPartitions(SubscriptionName subscriptionName) {
+    public List<LocalDate> getAllHistoryPartitions(SubscriptionName subscriptionName) {
         return getAllPartitions(subscriptionHistoryTable(subscriptionName));
     }
 
@@ -342,15 +244,15 @@ public class PgQueryService implements QueryService {
     }
 
     private String messageTable(MessageName messageName) {
-        return messageName.name().replace("-", "_");
+        return schemaSqlGenerator.messageTable(messageName);
     }
 
     private String subscriptionTable(SubscriptionName subscriptionName) {
-        return subscriptionName.name().replace("-", "_");
+        return schemaSqlGenerator.subscriptionTable(subscriptionName);
     }
 
     private String subscriptionHistoryTable(SubscriptionName subscriptionName) {
-        return subscriptionName.name().replace("-", "_") + "_history";
+        return schemaSqlGenerator.subscriptionHistoryTable(subscriptionName);
     }
 
     private void assertNonEmptyUpdate(int updated, String query) {

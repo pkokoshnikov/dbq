@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.pak.messagebus.core.error.MissingPartitionException;
 import org.pak.messagebus.core.error.PartitionHasReferencesException;
+import org.pak.messagebus.pg.PgSchemaSqlGenerator;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;
@@ -37,6 +38,23 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
+    void createSchemaWithSqlGeneratorTest() {
+        var sqlGenerator = new PgSchemaSqlGenerator(TEST_SCHEMA);
+        jdbcTemplate.execute(sqlGenerator.createMessageTable(MESSAGE_NAME));
+        jdbcTemplate.execute(sqlGenerator.createSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1));
+
+        var originatedTime = Instant.now();
+        pgQueryService.createMessagePartition(MESSAGE_NAME, originatedTime);
+        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
+
+        pgQueryService.insertMessage(MESSAGE_NAME,
+                new StdMessage<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
+
+        var messages = pgQueryService.selectMessages(MESSAGE_NAME, SUBSCRIPTION_NAME_1, 1);
+        assertThat(messages).hasSize(1);
+    }
+
+    @Test
     void createMessagePartitionTest() {
         pgQueryService.initMessageTable(MESSAGE_NAME);
         pgQueryService.createMessagePartition(MESSAGE_NAME, Instant.now());
@@ -61,11 +79,11 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     void dropMessagePartition() {
         pgQueryService.initMessageTable(MESSAGE_NAME);
         pgQueryService.createMessagePartition(MESSAGE_NAME, Instant.now());
-        var partitions = pgQueryService.getAllPartitions(MESSAGE_NAME);
+        var partitions = pgQueryService.getAllMessagePartitions(MESSAGE_NAME);
 
         pgQueryService.dropMessagePartition(MESSAGE_NAME, partitions.get(0));
 
-        partitions = pgQueryService.getAllPartitions(MESSAGE_NAME);
+        partitions = pgQueryService.getAllMessagePartitions(MESSAGE_NAME);
         assertThat(partitions).hasSize(0);
     }
 
@@ -80,7 +98,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         pgQueryService.insertMessage(MESSAGE_NAME,
                 new StdMessage<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
 
-        var partitions = pgQueryService.getAllPartitions(MESSAGE_NAME);
+        var partitions = pgQueryService.getAllMessagePartitions(MESSAGE_NAME);
         Assertions.assertThrows(PartitionHasReferencesException.class,
                 () -> pgQueryService.dropMessagePartition(MESSAGE_NAME, partitions.get(0)));
 
@@ -100,13 +118,13 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         pgQueryService.initMessageTable(MESSAGE_NAME);
         pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, Instant.now());
-        var partitions = pgQueryService.getAllPartitions(SUBSCRIPTION_NAME_1);
+        var partitions = pgQueryService.getAllHistoryPartitions(SUBSCRIPTION_NAME_1);
 
         assertThat(partitions).hasSize(1);
 
         pgQueryService.dropHistoryPartition(SUBSCRIPTION_NAME_1, partitions.get(0));
 
-        partitions = pgQueryService.getAllPartitions(SUBSCRIPTION_NAME_1);
+        partitions = pgQueryService.getAllHistoryPartitions(SUBSCRIPTION_NAME_1);
         assertThat(partitions).hasSize(0);
     }
 

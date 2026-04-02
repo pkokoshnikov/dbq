@@ -1,7 +1,6 @@
 package org.pak.messagebus.core;
 
 import lombok.extern.slf4j.Slf4j;
-import org.pak.messagebus.core.error.MissingPartitionException;
 import org.pak.messagebus.core.service.QueryService;
 import org.slf4j.MDC;
 
@@ -20,15 +19,12 @@ class MessagePublisher<T> {
     public MessagePublisher(
             PublisherConfig<T> publisherConfig,
             QueryService queryService,
-            MessageFactory messageFactory,
-            TableManager tableManager
+            MessageFactory messageFactory
     ) {
         this.messageName = publisherConfig.getMessageName();
         this.queryService = queryService;
         this.traceIdExtractor = publisherConfig.getTraceIdExtractor();
         this.messageFactory = messageFactory;
-
-        tableManager.registerMessage(messageName, publisherConfig.getProperties().getStorageDays());
     }
 
     public void publish(T message) {
@@ -44,24 +40,12 @@ class MessagePublisher<T> {
                 var ignoreKeyMDC = MDC.putCloseable("messageKey", message.key())) {
             log.debug("Publish payload {}", message.payload());
 
-            do {
-                try {
-                    var inserted = queryService.insertMessage(messageName, message);
-                    if (inserted) {
-                        log.info("Published payload");
-                    } else {
-                        log.warn("Duplicate key {}, {}", message.key(), message.originatedTime());
-                    }
-                    break;
-                } catch (MissingPartitionException e) {
-                    log.warn("Missing partition for {}", message.originatedTime());
-                    e.getOriginationTimes().forEach(ot -> queryService.createMessagePartition(messageName, ot));
-                    Thread.sleep(50);
-                }
-            } while (true);
-        } catch (InterruptedException e) {
-            log.warn("Message publisher is interrupted", e);
-            Thread.currentThread().interrupt();
+            var inserted = queryService.insertMessage(messageName, message);
+            if (inserted) {
+                log.info("Published payload");
+            } else {
+                log.warn("Duplicate key {}, {}", message.key(), message.originatedTime());
+            }
         } finally {
             optionalTraceIdMDC.ifPresent(MDC.MDCCloseable::close);
         }

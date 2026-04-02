@@ -6,6 +6,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.pak.messagebus.pg.PgTableManager;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;
@@ -50,7 +51,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
         assertThat(partitions).hasSize(4);
         assertPartitions(MESSAGE_TABLE, partitions);
 
-        var tm = new TableManager(pgQueryService, "* * * * * ?", "* * * * * ?");
+        var tm = new PgTableManager(pgQueryService, "* * * * * ?", "* * * * * ?");
         tm.registerMessage(TestMessage.MESSAGE_NAME, 2);
         tm.cleanPartitions();
 
@@ -75,7 +76,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
         assertThat(partitions).hasSize(4);
         assertPartitions(SUBSCRIPTION_TABLE_1_HISTORY, partitions);
 
-        var tm = new TableManager(pgQueryService, "* * * * * ?", "* * * * * ?");
+        var tm = new PgTableManager(pgQueryService, "* * * * * ?", "* * * * * ?");
         tm.registerSubscription(TestMessage.MESSAGE_NAME, SUBSCRIPTION_NAME_1, 2);
         tm.cleanPartitions();
 
@@ -121,7 +122,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testStartCronJobFailed() {
-        var corruptedTableManager = new TableManager(pgQueryService, "* * * * ?", "* * * * * ?");
+        var corruptedTableManager = new PgTableManager(pgQueryService, "* * * * ?", "* * * * * ?");
         corruptedTableManager.registerSubscription(TestMessage.MESSAGE_NAME, SUBSCRIPTION_NAME_1, 1);
         corruptedTableManager.registerMessage(TestMessage.MESSAGE_NAME, 1);
         var exception = Assertions.assertThrows(RuntimeException.class, corruptedTableManager::startCronJobs);

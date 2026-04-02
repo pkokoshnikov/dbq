@@ -10,7 +10,7 @@ class MessageBusTest {
     void registerPublisherAndPublishStoreMessageThroughFacade() {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
-        var messageBus = new MessageBus(queryService, transactionService, CronConfig.builder().build());
+        var messageBus = new MessageBus(queryService, transactionService);
 
         messageBus.registerPublisher(PublisherConfig.<String>builder()
                 .messageName(MESSAGE_NAME)

@@ -20,7 +20,6 @@ class MessageProcessorStarter<T> {
     private final SubscriberConfig<T> subscriberConfig;
     private final int concurrency;
     private final MessageFactory messageFactory;
-    private final TableManager tableManager;
     private ExecutorService fixedThreadPoolExecutor;
     private List<MessageProcessor<T>> messageProcessors = List.of();
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
@@ -29,13 +28,11 @@ class MessageProcessorStarter<T> {
             SubscriberConfig<T> subscriberConfig,
             QueryService queryService,
             TransactionService transactionService,
-            MessageFactory messageFactory,
-            TableManager tableManager
+            MessageFactory messageFactory
     ) {
         this.subscriberConfig = subscriberConfig;
         this.concurrency = subscriberConfig.getProperties().getConcurrency();
         this.messageFactory = messageFactory;
-        this.tableManager = tableManager;
         this.queryService = queryService;
         this.transactionService = transactionService;
     }
@@ -43,9 +40,6 @@ class MessageProcessorStarter<T> {
     public void start() {
         if (isRunning.compareAndSet(false, true)) {
             fixedThreadPoolExecutor = createExecutor();
-            tableManager.registerSubscription(subscriberConfig.getMessageName(), subscriberConfig.getSubscriptionName(),
-                    subscriberConfig.getProperties().getStorageDays());
-
             messageProcessors = IntStream.range(0, concurrency).boxed()
                     .map(i -> {
                         var taskExecutor = new MessageProcessor<>(
