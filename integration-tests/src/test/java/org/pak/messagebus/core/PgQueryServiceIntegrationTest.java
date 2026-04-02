@@ -328,4 +328,34 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         assertThat(messages).hasSize(3);
         messages.forEach(message -> assertThat(message.getAttempt()).isEqualTo(1));
     }
+
+    @Test
+    void testRetryMessagesUsesLatestRetryDuration() {
+        pgQueryService.initMessageTable(MESSAGE_NAME);
+        pgQueryService.initSubscriptionTable(MESSAGE_NAME, SUBSCRIPTION_NAME_1);
+        Instant originatedTime = Instant.now();
+        pgQueryService.createMessagePartition(MESSAGE_NAME, originatedTime);
+        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
+
+        pgQueryService.insertMessage(MESSAGE_NAME,
+                new StdMessage<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
+
+        var message = hasSize1AndGetFirst(pgQueryService.selectMessages(MESSAGE_NAME, SUBSCRIPTION_NAME_1, 1));
+
+        pgQueryService.retryMessage(SUBSCRIPTION_NAME_1, message,
+                Duration.of(5, ChronoUnit.SECONDS),
+                new RuntimeException(TEST_EXCEPTION_MESSAGE));
+
+        var firstRetryMessage = hasSize1AndGetFirst(selectTestMessages(SUBSCRIPTION_NAME_1));
+        assertThat(firstRetryMessage.getAttempt()).isEqualTo(1);
+
+        pgQueryService.retryMessage(SUBSCRIPTION_NAME_1, firstRetryMessage,
+                Duration.of(2, ChronoUnit.MINUTES),
+                new RuntimeException(TEST_EXCEPTION_MESSAGE));
+
+        var secondRetryMessage = hasSize1AndGetFirst(selectTestMessages(SUBSCRIPTION_NAME_1));
+        assertThat(secondRetryMessage.getAttempt()).isEqualTo(2);
+        assertThat(secondRetryMessage.getExecuteAfter())
+                .isAfter(firstRetryMessage.getExecuteAfter().plus(Duration.of(90, ChronoUnit.SECONDS)));
+    }
 }

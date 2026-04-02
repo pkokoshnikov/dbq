@@ -48,7 +48,7 @@ public class BaseIntegrationTest {
     static String jdbcUrl;
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(DockerImageName.parse("postgres:15.1"))
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(DockerImageName.parse("postgres:18-alpine"))
             .withNetwork(network)
             .withNetworkAliases("postgres");
     @Container

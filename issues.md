@@ -13,19 +13,7 @@
 - Impact:
   - The main module cannot be built or tested in the current environment.
 
-## 2. Retry delay is cached incorrectly in `PgQueryService.retryMessage`
-
-- Severity: High
-- File:
-  - `pg/src/main/java/org/pak/messagebus/pg/PgQueryService.java`
-- Problem:
-  - The SQL for `retryMessage` is cached only by `subscriptionName`, while `retryDuration` is interpolated into the SQL string before caching.
-  - After the first call, all later retries for that subscription reuse the first delay value.
-- Impact:
-  - Dynamic retry backoff does not work correctly.
-  - Policies like exponential backoff are effectively broken.
-
-## 3. `QueueAdapter` does not manage partition cron jobs
+## 2. `QueueAdapter` does not manage partition cron jobs
 
 - Severity: High
 - Files:
@@ -38,7 +26,7 @@
   - Automatic partition creation/cleanup is disabled for queue adapter scenarios.
   - Old partitions may accumulate indefinitely.
 
-## 4. `TableManager.stopCronJobs()` does not shut down Quartz
+## 3. `TableManager.stopCronJobs()` does not shut down Quartz
 
 - Severity: Medium
 - File:
@@ -50,7 +38,7 @@
   - Scheduler threads can leak.
   - Lifecycle handling is incomplete and can cause resource issues on restart/shutdown.
 
-## 5. Subscribers cannot be restarted after stop
+## 4. Subscribers cannot be restarted after stop
 
 - Severity: Medium
 - File:

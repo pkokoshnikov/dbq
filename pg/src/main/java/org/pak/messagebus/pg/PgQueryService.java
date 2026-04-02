@@ -56,7 +56,6 @@ public class PgQueryService implements QueryService {
                     payload JSONB NOT NULL,
                     PRIMARY KEY (id, originated_at)
                 ) PARTITION BY RANGE (originated_at);
-                                
                 CREATE INDEX IF NOT EXISTS ${messageTable}_created_at_idx ON ${schema}.${messageTable}(created_at);
                 CREATE UNIQUE INDEX IF NOT EXISTS ${messageTable}_message_key_idx ON ${schema}.${messageTable}(originated_at, key);
                 """, Map.of("schema", schemaName.value(), "messageTable", messageTable(messageName)));
@@ -294,13 +293,13 @@ public class PgQueryService implements QueryService {
     ) {
         var query = queryCache.computeIfAbsent("retryMessage|" + subscriptionName.name(), k -> formatter.execute("""
                         UPDATE ${schema}.${subscriptionTable} SET updated_at = CURRENT_TIMESTAMP,
-                            execute_after = CURRENT_TIMESTAMP + interval '${retryDuration} seconds', attempt = attempt + 1,
+                            execute_after = CURRENT_TIMESTAMP + (? * INTERVAL '1 second'), attempt = attempt + 1,
                             error_message = ?, stack_trace = ?
                         WHERE id = ?""",
-                Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionName),
-                        "retryDuration", String.valueOf(retryDuration.getSeconds()))));
+                Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionName))));
 
-        var updated = persistenceService.update(query, e.getMessage(), ExceptionUtils.getStackTrace(e),
+        var updated = persistenceService.update(query, retryDuration.getSeconds(), e.getMessage(),
+                ExceptionUtils.getStackTrace(e),
                 messageContainer.getId());
 
         assertNonEmptyUpdate(updated, query);
