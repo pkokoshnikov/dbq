@@ -14,24 +14,24 @@ import java.util.stream.IntStream;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 @Slf4j
-class MessageProcessorStarter<T> {
+class QueueProcessorStarter<T> {
     private final QueryService queryService;
     private final TransactionService transactionService;
-    private final SubscriberConfig<T> subscriberConfig;
+    private final ConsumerConfig<T> consumerConfig;
     private final int concurrency;
     private final MessageFactory messageFactory;
     private ExecutorService fixedThreadPoolExecutor;
-    private List<MessageProcessor<T>> messageProcessors = List.of();
+    private List<QueueProcessor<T>> queueProcessors = List.of();
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
-    MessageProcessorStarter(
-            SubscriberConfig<T> subscriberConfig,
+    QueueProcessorStarter(
+            ConsumerConfig<T> consumerConfig,
             QueryService queryService,
             TransactionService transactionService,
             MessageFactory messageFactory
     ) {
-        this.subscriberConfig = subscriberConfig;
-        this.concurrency = subscriberConfig.getProperties().getConcurrency();
+        this.consumerConfig = consumerConfig;
+        this.concurrency = consumerConfig.getProperties().getConcurrency();
         this.messageFactory = messageFactory;
         this.queryService = queryService;
         this.transactionService = transactionService;
@@ -40,56 +40,56 @@ class MessageProcessorStarter<T> {
     public void start() {
         if (isRunning.compareAndSet(false, true)) {
             fixedThreadPoolExecutor = createExecutor();
-            messageProcessors = IntStream.range(0, concurrency).boxed()
+            queueProcessors = IntStream.range(0, concurrency).boxed()
                     .map(i -> {
-                        var taskExecutor = new MessageProcessor<>(
-                                subscriberConfig.getMessageListener(),
-                                subscriberConfig.getMessageName(),
-                                subscriberConfig.getSubscriptionName(),
-                                subscriberConfig.getRetryablePolicy(),
-                                subscriberConfig.getNonRetryablePolicy(),
-                                subscriberConfig.getBlockingPolicy(),
+                        var taskExecutor = new QueueProcessor<>(
+                                consumerConfig.getConsumer(),
+                                consumerConfig.getQueueName(),
+                                consumerConfig.getSubscriptionName(),
+                                consumerConfig.getRetryablePolicy(),
+                                consumerConfig.getNonRetryablePolicy(),
+                                consumerConfig.getBlockingPolicy(),
                                 queryService,
                                 transactionService,
-                                subscriberConfig.getTraceIdExtractor(),
+                                consumerConfig.getTraceIdExtractor(),
                                 messageFactory,
-                                subscriberConfig.getProperties());
+                                consumerConfig.getProperties());
                         fixedThreadPoolExecutor.submit(taskExecutor::poolLoop);
                         return taskExecutor;
                     }).toList();
         } else {
-            log.warn("Event processor starter should be started only once");
+            log.warn("Queue processor starter should be started only once");
         }
     }
 
     public void stop() {
         if (isRunning.compareAndSet(true, false)) {
-            messageProcessors.forEach(MessageProcessor::stop);
+            queueProcessors.forEach(QueueProcessor::stop);
 
             fixedThreadPoolExecutor.shutdown();
             try {
                 if (fixedThreadPoolExecutor.awaitTermination(30, SECONDS)) {
-                    log.info("Event executor stopped");
+                    log.info("Queue processor executor stopped");
                 } else {
-                    log.warn("Event executor did not stop in time");
+                    log.warn("Queue processor executor did not stop in time");
                     fixedThreadPoolExecutor.shutdownNow();
                 }
             } catch (InterruptedException e) {
-                log.warn("Event executor did not stop in time", e);
+                log.warn("Queue processor executor did not stop in time", e);
                 Thread.currentThread().interrupt();
             } finally {
                 fixedThreadPoolExecutor = null;
-                messageProcessors = List.of();
+                queueProcessors = List.of();
             }
         } else {
-            log.warn("Event processor starter should be stopped only once");
+            log.warn("Queue processor starter should be stopped only once");
         }
     }
 
     private ExecutorService createExecutor() {
         return Executors.newFixedThreadPool(concurrency,
                 r -> new ThreadFactoryBuilder()
-                        .setNameFormat(subscriberConfig.getMessageName() + "-processor-%d")
+                        .setNameFormat(consumerConfig.getQueueName().name() + "-processor-%d")
                         .setDaemon(true)
                         .setUncaughtExceptionHandler((t, e) -> {
                             log.error("Uncaught exception in thread {}", t.getName(), e);

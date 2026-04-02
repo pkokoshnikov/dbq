@@ -2,7 +2,7 @@ package org.pak.messagebus.pg;
 
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.pak.messagebus.core.MessageName;
+import org.pak.messagebus.core.QueueName;
 import org.pak.messagebus.core.SubscriptionName;
 import org.pak.messagebus.core.error.PartitionHasReferencesException;
 import org.pak.messagebus.core.error.RetrayablePersistenceException;
@@ -20,12 +20,12 @@ import java.util.function.Consumer;
 @Slf4j
 public class PgTableManager {
     public static final String TABLE_MANAGER = "tableManager";
-    public static final String MESSAGE_BUS_GROUP = "message-bus";
+    public static final String QUEUE_GROUP = "queue";
 
     private final PgQueryService pgQueryService;
     private final String cronCreatePartitions;
     private final String cronDropPartitions;
-    private final Map<MessageName, Integer> messageNameStorageDays = new ConcurrentHashMap<>();
+    private final Map<QueueName, Integer> queueNameStorageDays = new ConcurrentHashMap<>();
     private final Map<SubscriptionName, Integer> historyStorageDays = new ConcurrentHashMap<>();
     private Scheduler scheduler;
 
@@ -35,13 +35,13 @@ public class PgTableManager {
         this.cronDropPartitions = cronDropPartitions;
     }
 
-    public void registerMessage(MessageName messageName, int storageDays) {
-        pgQueryService.createMessagePartition(messageName, Instant.now());
-        pgQueryService.createMessagePartition(messageName, Instant.now().plus(1, ChronoUnit.DAYS));
-        messageNameStorageDays.putIfAbsent(messageName, storageDays);
+    public void registerQueue(QueueName queueName, int storageDays) {
+        pgQueryService.createQueuePartition(queueName, Instant.now());
+        pgQueryService.createQueuePartition(queueName, Instant.now().plus(1, ChronoUnit.DAYS));
+        queueNameStorageDays.putIfAbsent(queueName, storageDays);
     }
 
-    public void registerSubscription(MessageName messageName, SubscriptionName subscriptionName, int storageDays) {
+    public void registerSubscription(QueueName queueName, SubscriptionName subscriptionName, int storageDays) {
         pgQueryService.createHistoryPartition(subscriptionName, Instant.now());
         pgQueryService.createHistoryPartition(subscriptionName, Instant.now().plus(1, ChronoUnit.DAYS));
         historyStorageDays.putIfAbsent(subscriptionName, storageDays);
@@ -80,7 +80,7 @@ public class PgTableManager {
     public void createPartitions() {
         var date = Instant.now().plus(Duration.ofDays(1));
 
-        messageNameStorageDays.keySet().forEach(messageName -> pgQueryService.createMessagePartition(messageName, date));
+        queueNameStorageDays.keySet().forEach(queueName -> pgQueryService.createQueuePartition(queueName, date));
         historyStorageDays.keySet().forEach(subscriptionName -> pgQueryService.createHistoryPartition(subscriptionName, date));
     }
 
@@ -101,17 +101,17 @@ public class PgTableManager {
                     });
         });
 
-        messageNameStorageDays.forEach((messageName, storageDays) -> {
-            var partitions = pgQueryService.getAllMessagePartitions(messageName);
+        queueNameStorageDays.forEach((queueName, storageDays) -> {
+            var partitions = pgQueryService.getAllQueuePartitions(queueName);
             partitions.stream()
                     .filter(partition -> partition.isBefore(LocalDate.now().minusDays(storageDays)))
                     .forEach(partition -> {
                         try {
-                            log.info("Dropping history partition {} for {}", partition, messageName.name());
-                            pgQueryService.dropMessagePartition(messageName, partition);
+                            log.info("Dropping message partition {} for {}", partition, queueName.name());
+                            pgQueryService.dropQueuePartition(queueName, partition);
                         } catch (PartitionHasReferencesException e) {
-                            log.warn("Partition {} for message {} still has references, skipping", partition,
-                                    messageName.name());
+                            log.warn("Partition {} for queue {} still has references, skipping", partition,
+                                    queueName.name());
                         }
                     });
         });
@@ -119,7 +119,7 @@ public class PgTableManager {
 
     private void addCronJob(String jobKey, Class<? extends Job> clazz, String cron, Scheduler scheduler)
             throws SchedulerException {
-        var key = new JobKey(jobKey, MESSAGE_BUS_GROUP);
+        var key = new JobKey(jobKey, QUEUE_GROUP);
         var job = JobBuilder.newJob(clazz)
                 .withIdentity(key)
                 .build();

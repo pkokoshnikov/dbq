@@ -10,9 +10,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class CoreBasicsTest {
     @Test
     void messageNameRejectsInvalidFormat() {
-        var exception = assertThrows(IllegalArgumentException.class, () -> new MessageName("Invalid_Name"));
+        var exception = assertThrows(IllegalArgumentException.class, () -> new QueueName("Invalid_Name"));
 
-        assertThat(exception.getMessage()).isEqualTo("Event name must be lowercase and -");
+        assertThat(exception.getMessage()).isEqualTo("Queue name must be lowercase and -");
     }
 
     @Test

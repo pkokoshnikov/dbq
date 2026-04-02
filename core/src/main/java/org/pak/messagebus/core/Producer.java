@@ -10,20 +10,20 @@ import java.util.UUID;
 import static java.util.Optional.ofNullable;
 
 @Slf4j
-class MessagePublisher<T> {
-    private final MessageName messageName;
+class Producer<T> {
+    private final QueueName queueName;
     private final QueryService queryService;
     private final TraceIdExtractor<T> traceIdExtractor;
     private final MessageFactory messageFactory;
 
-    public MessagePublisher(
-            PublisherConfig<T> publisherConfig,
+    public Producer(
+            ProducerConfig<T> producerConfig,
             QueryService queryService,
             MessageFactory messageFactory
     ) {
-        this.messageName = publisherConfig.getMessageName();
+        this.queueName = producerConfig.getQueueName();
         this.queryService = queryService;
-        this.traceIdExtractor = publisherConfig.getTraceIdExtractor();
+        this.traceIdExtractor = producerConfig.getTraceIdExtractor();
         this.messageFactory = messageFactory;
     }
 
@@ -36,11 +36,11 @@ class MessagePublisher<T> {
         var optionalTraceIdMDC = ofNullable(traceIdExtractor.extractTraceId(message.payload()))
                 .map(v -> MDC.putCloseable("traceId", v));
 
-        try (var ignoredCollectionMDC = MDC.putCloseable("messageName", messageName.name());
+        try (var ignoredCollectionMDC = MDC.putCloseable("queueName", queueName.name());
                 var ignoreKeyMDC = MDC.putCloseable("messageKey", message.key())) {
             log.debug("Publish payload {}", message.payload());
 
-            var inserted = queryService.insertMessage(messageName, message);
+            var inserted = queryService.insertMessage(queueName, message);
             if (inserted) {
                 log.info("Published payload");
             } else {

@@ -1,6 +1,6 @@
 package org.pak.messagebus.pg.cli;
 
-import org.pak.messagebus.core.MessageName;
+import org.pak.messagebus.core.QueueName;
 import org.pak.messagebus.core.SchemaName;
 import org.pak.messagebus.core.SubscriptionName;
 import org.pak.messagebus.pg.PgSchemaSqlGenerator;
@@ -11,28 +11,28 @@ public final class PgSchemaCli {
 
     public static void main(String[] args) {
         if (args.length < 3) {
-            fail("Usage: message <schema> <message-name> | subscription <schema> <message-name> <subscription-name> | all <schema> <message-name> <subscription-name>");
+            fail("Usage: queue <schema> <queue-name> | subscription <schema> <queue-name> <subscription-name> | all <schema> <queue-name> <subscription-name>");
             return;
         }
 
         try {
             var command = args[0];
             var schemaName = new SchemaName(args[1]);
-            var messageName = new MessageName(args[2]);
+            var queueName = new QueueName(args[2]);
             var sqlGenerator = new PgSchemaSqlGenerator(schemaName);
 
             switch (command) {
-                case "message" -> System.out.print(sqlGenerator.createMessageTable(messageName));
+                case "queue" -> System.out.print(sqlGenerator.createQueueTable(queueName));
                 case "subscription" -> {
                     requireArgs(args, 4);
-                    System.out.print(sqlGenerator.createSubscriptionTable(messageName, new SubscriptionName(args[3])));
+                    System.out.print(sqlGenerator.createSubscriptionTable(queueName, new SubscriptionName(args[3])));
                 }
                 case "all" -> {
                     requireArgs(args, 4);
                     var subscriptionName = new SubscriptionName(args[3]);
-                    System.out.print(sqlGenerator.createMessageTable(messageName));
+                    System.out.print(sqlGenerator.createQueueTable(queueName));
                     System.out.println();
-                    System.out.print(sqlGenerator.createSubscriptionTable(messageName, subscriptionName));
+                    System.out.print(sqlGenerator.createSubscriptionTable(queueName, subscriptionName));
                 }
                 default -> fail("Unknown command: " + command);
             }

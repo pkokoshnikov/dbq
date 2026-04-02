@@ -63,8 +63,8 @@ public class PgQueryService implements QueryService {
         persistenceService.execute(query);
     }
 
-    public void dropMessagePartition(MessageName messageName, LocalDate partition) {
-        var query = dropPartitionSql(messageTable(messageName), partitionName(messageTable(messageName), partition));
+    public void dropQueuePartition(QueueName queueName, LocalDate partition) {
+        var query = dropPartitionSql(queueTable(queueName), partitionName(queueTable(queueName), partition));
         try {
             persistenceService.execute(query);
         } catch (PersistenceException e) {
@@ -78,23 +78,23 @@ public class PgQueryService implements QueryService {
 
     }
 
-    public void dropHistoryPartition(SubscriptionName messageName, LocalDate partition) {
-        var query = dropPartitionSql(subscriptionHistoryTable(messageName),
-                partitionName(subscriptionHistoryTable(messageName), partition));
+    public void dropHistoryPartition(SubscriptionName subscriptionName, LocalDate partition) {
+        var query = dropPartitionSql(subscriptionHistoryTable(subscriptionName),
+                partitionName(subscriptionHistoryTable(subscriptionName), partition));
 
         persistenceService.execute(query);
     }
 
-    public void createMessagePartition(MessageName messageName, Instant includeDateTime) {
-        createPartition(messageTable(messageName), includeDateTime);
+    public void createQueuePartition(QueueName queueName, Instant includeDateTime) {
+        createPartition(queueTable(queueName), includeDateTime);
     }
 
-    public void createHistoryPartition(SubscriptionName messageName, Instant includeDateTime) {
-        createPartition(subscriptionHistoryTable(messageName), includeDateTime);
+    public void createHistoryPartition(SubscriptionName subscriptionName, Instant includeDateTime) {
+        createPartition(subscriptionHistoryTable(subscriptionName), includeDateTime);
     }
 
-    public List<LocalDate> getAllMessagePartitions(MessageName messageName) {
-        return getAllPartitions(messageTable(messageName));
+    public List<LocalDate> getAllQueuePartitions(QueueName queueName) {
+        return getAllPartitions(queueTable(queueName));
     }
 
     public List<LocalDate> getAllHistoryPartitions(SubscriptionName subscriptionName) {
@@ -117,12 +117,12 @@ public class PgQueryService implements QueryService {
     }
 
     @Override
-    public <T> boolean insertMessage(MessageName messageName, Message<T> message) {
-        var query = queryCache.computeIfAbsent("insertMessage|" + messageName.name(), k -> formatter.execute("""
-                        INSERT INTO ${schema}.${messageTable} (created_at, execute_after, key, originated_at, payload)
+    public <T> boolean insertMessage(QueueName queueName, Message<T> message) {
+        var query = queryCache.computeIfAbsent("insertMessage|" + queueName.name(), k -> formatter.execute("""
+                        INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, payload)
                         VALUES (CURRENT_TIMESTAMP,CURRENT_TIMESTAMP, ?, ?, ?)
                         ON CONFLICT (key, originated_at) DO NOTHING""",
-                Map.of("schema", schemaName.value(), "messageTable", messageTable(messageName))));
+                Map.of("schema", schemaName.value(), "queueTable", queueTable(queueName))));
 
         return handleMissingPartition(() -> persistenceService.insert(query,
                         message.key(),
@@ -133,11 +133,11 @@ public class PgQueryService implements QueryService {
     }
 
     @Override
-    public <T> List<Boolean> insertBatchMessage(MessageName messageName, List<Message<T>> messages) {
-        var query = queryCache.computeIfAbsent("insertBatchMessage|" + messageName.name(), k -> formatter.execute("""
-                        INSERT INTO ${schema}.${messageTable} (created_at, execute_after, key, originated_at, payload)
+    public <T> List<Boolean> insertBatchMessage(QueueName queueName, List<Message<T>> messages) {
+        var query = queryCache.computeIfAbsent("insertBatchMessage|" + queueName.name(), k -> formatter.execute("""
+                        INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, payload)
                         VALUES (CURRENT_TIMESTAMP,CURRENT_TIMESTAMP, ?, ?, ?) ON CONFLICT (key, originated_at) DO NOTHING""",
-                Map.of("schema", schemaName.value(), "messageTable", messageTable(messageName))));
+                Map.of("schema", schemaName.value(), "queueTable", queueTable(queueName))));
 
         var args = messages.stream()
                 .map(t -> new Object[]{t.key(),
@@ -153,19 +153,19 @@ public class PgQueryService implements QueryService {
 
     @Override
     public <T> List<MessageContainer<T>> selectMessages(
-            MessageName messageName, SubscriptionName subscriptionName, Integer maxPollRecords
+            QueueName queueName, SubscriptionName subscriptionName, Integer maxPollRecords
     ) {
         var query = queryCache.computeIfAbsent("selectMessages|" + subscriptionName.name(), k -> formatter.execute("""
                         SELECT s.id, s.message_id, s.attempt, s.error_message, s.stack_trace, s.created_at, s.updated_at,
                             s.execute_after, m.originated_at, m.key, m.payload
-                        FROM ${schema}.${subscriptionTable} s JOIN ${schema}.${messageTable} m ON s.message_id = m.id
+                        FROM ${schema}.${subscriptionTable} s JOIN ${schema}.${queueTable} m ON s.message_id = m.id
                             AND s.originated_at = m.originated_at
                         WHERE s.execute_after < CURRENT_TIMESTAMP
                         ORDER BY s.execute_after ASC
                         LIMIT ${maxPollRecords} FOR UPDATE OF s SKIP LOCKED""",
                 Map.of("schema", schemaName.value(),
                         "subscriptionTable", subscriptionTable(subscriptionName),
-                        "messageTable", messageTable(messageName),
+                        "queueTable", queueTable(queueName),
                         "maxPollRecords", maxPollRecords.toString())));
 
         return persistenceService.query(query, rs -> {
@@ -244,8 +244,8 @@ public class PgQueryService implements QueryService {
         assertNonEmptyUpdate(updated, query);
     }
 
-    private String messageTable(MessageName messageName) {
-        return messageName.name().replace("-", "_");
+    private String queueTable(QueueName queueName) {
+        return queueName.name().replace("-", "_");
     }
 
     private String subscriptionTable(SubscriptionName subscriptionName) {

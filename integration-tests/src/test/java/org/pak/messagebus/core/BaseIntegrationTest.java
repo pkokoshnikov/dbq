@@ -30,10 +30,10 @@ import java.util.regex.Pattern;
 
 import static java.util.Optional.ofNullable;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.messagebus.core.TestMessage.MESSAGE_NAME;
+import static org.pak.messagebus.core.TestMessage.QUEUE_NAME;
 
 public class BaseIntegrationTest {
-    static final String MESSAGE_TABLE = MESSAGE_NAME.name().replace("-", "_");
+    static final String QUEUE_TABLE = QUEUE_NAME.name().replace("-", "_");
     static SubscriptionName SUBSCRIPTION_NAME_1 = new SubscriptionName("test-subscription-one");
     static String SUBSCRIPTION_TABLE_1 = SUBSCRIPTION_NAME_1.name().replace("-", "_");
     static String SUBSCRIPTION_TABLE_1_HISTORY = SUBSCRIPTION_NAME_1.name().replace("-", "_") + "_history";
@@ -61,8 +61,8 @@ public class BaseIntegrationTest {
     JdbcTemplate jdbcTemplate;
     JsonbConverter jsonbConverter;
     SpringTransactionService springTransactionService;
-    MessageProcessorFactory.MessageProcessorFactoryBuilder<TestMessage> messageProcessorFactory;
-    MessagePublisherFactory.MessagePublisherFactoryBuilder<TestMessage> messagePublisherFactory;
+    QueueProcessorFactory.QueueProcessorFactoryBuilder<TestMessage> queueProcessorFactory;
+    ProducerFactory.ProducerFactoryBuilder<TestMessage> producerFactory;
     DataSource dataSource;
     SpringPersistenceService persistenceService;
 
@@ -102,7 +102,7 @@ public class BaseIntegrationTest {
 
     static JsonbConverter setupJsonbConverter() {
         var jsonbConverter = new JsonbConverter();
-        jsonbConverter.registerType(MESSAGE_NAME.name(), TestMessage.class);
+        jsonbConverter.registerType(QUEUE_NAME.name(), TestMessage.class);
         return jsonbConverter;
     }
 
@@ -110,15 +110,15 @@ public class BaseIntegrationTest {
         return new PgSchemaSqlGenerator(TEST_SCHEMA);
     }
 
-    static MessagePublisherFactory.MessagePublisherFactoryBuilder<TestMessage> setupMessagePublisherFactory(
+    static ProducerFactory.ProducerFactoryBuilder<TestMessage> setupProducerFactory(
             PgQueryService pgQueryService
     ) {
-        return MessagePublisherFactory.<TestMessage>builder()
-                .publisherConfig(PublisherConfig.<TestMessage>builder()
-                        .properties(PublisherConfig.Properties.builder()
+        return ProducerFactory.<TestMessage>builder()
+                .producerConfig(ProducerConfig.<TestMessage>builder()
+                        .properties(ProducerConfig.Properties.builder()
                                 .storageDays(30)
                                 .build())
-                        .messageName(MESSAGE_NAME)
+                        .queueName(QUEUE_NAME)
                         .clazz(TestMessage.class)
                         .traceIdExtractor(new NullTraceIdExtractor<>())
                         .build())
@@ -126,34 +126,34 @@ public class BaseIntegrationTest {
                 .queryService(pgQueryService);
     }
 
-    static MessageProcessorFactory.MessageProcessorFactoryBuilder<TestMessage> setupMessageProcessorFactory(
+    static QueueProcessorFactory.QueueProcessorFactoryBuilder<TestMessage> setupQueueProcessorFactory(
             PgQueryService pgQueryService,
             SpringTransactionService springTransactionService
     ) {
-        return MessageProcessorFactory.<TestMessage>builder()
+        return QueueProcessorFactory.<TestMessage>builder()
                 .messageFactory(new StdMessageFactory())
-                .messageListener(testMessage -> {})
+                .consumer(testMessage -> {})
                 .queryService(pgQueryService)
                 .transactionService(springTransactionService)
                 .retryablePolicy(new StdRetryablePolicy())
                 .blockingPolicy(new StdBlockingPolicy())
                 .nonRetryablePolicy(new StdNonRetryablePolicy())
-                .messageName(MESSAGE_NAME)
+                .queueName(QUEUE_NAME)
                 .subscriptionName(SUBSCRIPTION_NAME_1)
                 .traceIdExtractor(object -> null)
-                .properties(SubscriberConfig.Properties.builder().build());
+                .properties(ConsumerConfig.Properties.builder().build());
     }
 
     static PgTableManager setupTableManager(PgQueryService pgQueryService) {
         return new PgTableManager(pgQueryService, "* * * * * ?", "* * * * * ?");
     }
 
-    void createMessageTable() {
-        jdbcTemplate.execute(schemaSqlGenerator.createMessageTable(MESSAGE_NAME));
+    void createQueueTable() {
+        jdbcTemplate.execute(schemaSqlGenerator.createQueueTable(QUEUE_NAME));
     }
 
     void createSubscriptionTable(SubscriptionName subscriptionName) {
-        jdbcTemplate.execute(schemaSqlGenerator.createSubscriptionTable(MESSAGE_NAME, subscriptionName));
+        jdbcTemplate.execute(schemaSqlGenerator.createSubscriptionTable(QUEUE_NAME, subscriptionName));
     }
 
     void clearTables() {
@@ -173,9 +173,9 @@ public class BaseIntegrationTest {
                 Map.of("schema", TEST_SCHEMA.value(),
                         "subscriptionTable", SUBSCRIPTION_TABLE_2)));
 
-        jdbcTemplate.update(formatter.execute("DROP TABLE IF EXISTS ${schema}.${messageTable}",
+        jdbcTemplate.update(formatter.execute("DROP TABLE IF EXISTS ${schema}.${queueTable}",
                 Map.of("schema", TEST_SCHEMA.value(),
-                        "messageTable", MESSAGE_TABLE)));
+                        "queueTable", QUEUE_TABLE)));
     }
 
     static MessageContainer<TestMessage> hasSize1AndGetFirst(List<MessageContainer<TestMessage>> testMessageContainers) {
@@ -192,10 +192,10 @@ public class BaseIntegrationTest {
         var query = formatter.execute("""
                         SELECT s.id, s.message_id, s.attempt, s.error_message, s.stack_trace, s.created_at, s.updated_at,
                             s.execute_after, m.payload, m.originated_at, m.key
-                        FROM ${schema}.${subscriptionTable} s JOIN ${schema}.${messageTable} m ON s.message_id = m.id""",
+                        FROM ${schema}.${subscriptionTable} s JOIN ${schema}.${queueTable} m ON s.message_id = m.id""",
                 Map.of("schema", TEST_SCHEMA.value(),
                         "subscriptionTable", subscriptionName.name().replace("-", "_"),
-                        "messageTable", "test_message"));
+                        "queueTable", "test_message"));
 
         return jdbcTemplate.query(query,
                 (rs, rowNum) -> new MessageContainer<>(
@@ -219,10 +219,10 @@ public class BaseIntegrationTest {
     List<MessageHistoryContainer<TestMessage>> selectTestMessagesFromHistory(SubscriptionName subscriptionName) {
         var query = formatter.execute("""
                         SELECT s.id, s.message_id, s.attempt, s.status, s.error_message, s.stack_trace, s.created_at, m.payload
-                        FROM ${schema}.${subscriptionTableHistory} s JOIN ${schema}.${messageTable} m ON s.message_id = m.id""",
+                        FROM ${schema}.${subscriptionTableHistory} s JOIN ${schema}.${queueTable} m ON s.message_id = m.id""",
                 Map.of("schema", TEST_SCHEMA.value(),
                         "subscriptionTableHistory", subscriptionName.name().replace("-", "_") + "_history",
-                        "messageTable", "test_message"));
+                        "queueTable", "test_message"));
 
         return jdbcTemplate.query(query,
                 (rs, rowNum) -> new MessageHistoryContainer<>(

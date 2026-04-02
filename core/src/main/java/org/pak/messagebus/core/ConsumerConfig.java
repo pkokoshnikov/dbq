@@ -11,13 +11,13 @@ import java.time.temporal.ChronoUnit;
 @Builder
 @FieldDefaults(makeFinal = true, level = lombok.AccessLevel.PRIVATE)
 @Getter
-public class SubscriberConfig<T> {
+public class ConsumerConfig<T> {
     @NonNull
-    MessageName messageName;
+    QueueName queueName;
     @NonNull
     SubscriptionName subscriptionName;
     @NonNull
-    MessageListener<T> messageListener;
+    Consumer<T> consumer;
     @Builder.Default
     BlockingPolicy blockingPolicy = new StdBlockingPolicy();
     @Builder.Default

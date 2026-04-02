@@ -8,13 +8,13 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.messagebus.core.CoreTestSupport.MESSAGE_NAME;
+import static org.pak.messagebus.core.CoreTestSupport.QUEUE_NAME;
 import static org.pak.messagebus.core.CoreTestSupport.SUBSCRIPTION_NAME;
 import static org.pak.messagebus.core.CoreTestSupport.messageContainer;
 
-class MessageProcessorTest {
+class QueueProcessorTest {
     @Test
-    void poolAndProcessCompletesMessageWhenListenerSucceeds() {
+    void poolAndProcessCompletesMessageWhenConsumerSucceeds() {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var originatedTime = Instant.parse("2026-04-02T10:15:30Z");
@@ -142,17 +142,17 @@ class MessageProcessorTest {
         assertThat(queryService.completions).isEmpty();
     }
 
-    private MessageProcessor<String> processor(
+    private QueueProcessor<String> processor(
             CoreTestSupport.RecordingQueryService queryService,
             CoreTestSupport.DirectTransactionService transactionService,
-            MessageListener<String> listener,
+            Consumer<String> consumer,
             BlockingPolicy blockingPolicy,
             RetryablePolicy retryablePolicy,
             NonRetryablePolicy nonRetryablePolicy
     ) {
-        return new MessageProcessor<>(
-                listener,
-                MESSAGE_NAME,
+        return new QueueProcessor<>(
+                consumer,
+                QUEUE_NAME,
                 SUBSCRIPTION_NAME,
                 retryablePolicy,
                 nonRetryablePolicy,
@@ -161,7 +161,7 @@ class MessageProcessorTest {
                 transactionService,
                 payload -> "trace-id",
                 new StdMessageFactory(),
-                SubscriberConfig.Properties.builder().build()
+                ConsumerConfig.Properties.builder().build()
         );
     }
 

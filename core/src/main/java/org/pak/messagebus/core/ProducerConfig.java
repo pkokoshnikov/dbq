@@ -8,9 +8,9 @@ import lombok.experimental.FieldDefaults;
 @Builder
 @FieldDefaults(makeFinal = true, level = lombok.AccessLevel.PRIVATE)
 @Getter
-public class PublisherConfig<T> {
+public class ProducerConfig<T> {
     @NonNull
-    MessageName messageName;
+    QueueName queueName;
     @NonNull
     Class<T> clazz;
     Properties properties;

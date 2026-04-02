@@ -8,10 +8,10 @@ import org.pak.messagebus.core.service.TransactionService;
 
 @Builder(toBuilder = true)
 @FieldDefaults(level = AccessLevel.PRIVATE)
-class MessageProcessorFactory<T> {
-    MessageListener<T> messageListener;
+class QueueProcessorFactory<T> {
+    Consumer<T> consumer;
     MessageFactory messageFactory;
-    MessageName messageName;
+    QueueName queueName;
     SubscriptionName subscriptionName;
     RetryablePolicy retryablePolicy;
     BlockingPolicy blockingPolicy;
@@ -19,10 +19,10 @@ class MessageProcessorFactory<T> {
     QueryService queryService;
     TransactionService transactionService;
     TraceIdExtractor<T> traceIdExtractor;
-    SubscriberConfig.Properties properties;
+    ConsumerConfig.Properties properties;
 
-    MessageProcessor<T> create() {
-        return new MessageProcessor<>(messageListener, messageName, subscriptionName, retryablePolicy,
+    QueueProcessor<T> create() {
+        return new QueueProcessor<>(consumer, queueName, subscriptionName, retryablePolicy,
                 nonRetryablePolicy, blockingPolicy, queryService, transactionService, traceIdExtractor,
                 messageFactory, properties);
     }

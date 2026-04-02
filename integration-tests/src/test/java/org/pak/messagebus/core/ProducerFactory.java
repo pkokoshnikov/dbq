@@ -7,12 +7,12 @@ import org.pak.messagebus.core.service.QueryService;
 
 @Builder(toBuilder = true)
 @FieldDefaults(level = AccessLevel.PRIVATE)
-class MessagePublisherFactory<T> {
-    PublisherConfig<T> publisherConfig;
+class ProducerFactory<T> {
+    ProducerConfig<T> producerConfig;
     QueryService queryService;
     MessageFactory messageFactory;
 
-    MessagePublisher<T> create() {
-        return new MessagePublisher<>(publisherConfig, queryService, messageFactory);
+    Producer<T> create() {
+        return new Producer<>(producerConfig, queryService, messageFactory);
     }
 }

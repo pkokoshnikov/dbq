@@ -12,12 +12,12 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.messagebus.core.TestMessage.MESSAGE_NAME;
+import static org.pak.messagebus.core.TestMessage.QUEUE_NAME;
 
 @Testcontainers
 @Slf4j
-class MessageBusIntegrationTest extends BaseIntegrationTest {
-    MessageBus messageBus;
+class QueueManagerIntegrationTest extends BaseIntegrationTest {
+    QueueManager queue;
 
     @BeforeEach
     void setUp() {
@@ -36,26 +36,26 @@ class MessageBusIntegrationTest extends BaseIntegrationTest {
         schemaSqlGenerator = setupSchemaSqlGenerator();
         pgQueryService = setupQueryService(persistenceService, jsonbConverter);
         tableManager = setupTableManager(pgQueryService);
-        messagePublisherFactory = setupMessagePublisherFactory(pgQueryService);
-        messageProcessorFactory = setupMessageProcessorFactory(pgQueryService, springTransactionService);
+        producerFactory = setupProducerFactory(pgQueryService);
+        queueProcessorFactory = setupQueueProcessorFactory(pgQueryService, springTransactionService);
 
-        createMessageTable();
+        createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1);
         createSubscriptionTable(SUBSCRIPTION_NAME_2);
-        tableManager.registerMessage(MESSAGE_NAME, 30);
-        tableManager.registerSubscription(MESSAGE_NAME, SUBSCRIPTION_NAME_1, 30);
-        tableManager.registerSubscription(MESSAGE_NAME, SUBSCRIPTION_NAME_2, 30);
+        tableManager.registerQueue(QUEUE_NAME, 30);
+        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_1, 30);
+        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_2, 30);
 
-        messageBus = new MessageBus(new PgQueryService(persistenceService, TEST_SCHEMA, jsonbConverter),
+        queue = new QueueManager(new PgQueryService(persistenceService, TEST_SCHEMA, jsonbConverter),
                 springTransactionService, new StdMessageFactory());
     }
 
     @Test
     void publishSubscribeTest() throws InterruptedException {
-        messageBus.registerPublisher(PublisherConfig.<TestMessage>builder()
-                .messageName(MESSAGE_NAME)
+        queue.registerProducer(ProducerConfig.<TestMessage>builder()
+                .queueName(QUEUE_NAME)
                 .clazz(TestMessage.class)
-                .properties(PublisherConfig.Properties.builder()
+                .properties(ProducerConfig.Properties.builder()
                         .storageDays(10)
                         .build())
                 .build());
@@ -64,30 +64,30 @@ class MessageBusIntegrationTest extends BaseIntegrationTest {
         var reference1 = new AtomicReference<TestMessage>();
         var reference2 = new AtomicReference<TestMessage>();
 
-        messageBus.registerSubscriber(SubscriberConfig.<TestMessage>builder()
-                .messageListener(message -> {
+        queue.registerConsumer(ConsumerConfig.<TestMessage>builder()
+                .consumer(message -> {
                     reference1.set(message.payload());
                     countDownLatch.countDown();
                 })
-                .messageName(MESSAGE_NAME)
+                .queueName(QUEUE_NAME)
                 .subscriptionName(SUBSCRIPTION_NAME_1)
                 .build());
 
-        messageBus.registerSubscriber(SubscriberConfig.<TestMessage>builder()
-                .messageListener(message -> {
+        queue.registerConsumer(ConsumerConfig.<TestMessage>builder()
+                .consumer(message -> {
                     reference2.set(message.payload());
                     countDownLatch.countDown();
                 })
-                .messageName(MESSAGE_NAME)
+                .queueName(QUEUE_NAME)
                 .subscriptionName(SUBSCRIPTION_NAME_2)
                 .build());
 
-        messageBus.startSubscribers();
+        queue.startConsumers();
         TestMessage testMessage = new TestMessage("test-name");
-        messageBus.publish(testMessage);
+        queue.publish(testMessage);
 
         countDownLatch.await();
-        messageBus.stopSubscribers();
+        queue.stopConsumers();
 
         var handledMessage1 = reference1.get();
         assertThat(handledMessage1).isEqualTo(testMessage);
@@ -99,29 +99,29 @@ class MessageBusIntegrationTest extends BaseIntegrationTest {
     @Test
     @Disabled
     void performanceTest() throws InterruptedException {
-        messageBus.registerPublisher(PublisherConfig.<TestMessage>builder()
-                .messageName(MESSAGE_NAME)
+        queue.registerProducer(ProducerConfig.<TestMessage>builder()
+                .queueName(QUEUE_NAME)
                 .build());
 
         var countDownLatch = new CountDownLatch(100_000);
 
-        messageBus.registerSubscriber(SubscriberConfig.<TestMessage>builder()
-                .messageListener(message -> countDownLatch.countDown())
-                .messageName(MESSAGE_NAME)
+        queue.registerConsumer(ConsumerConfig.<TestMessage>builder()
+                .consumer(message -> countDownLatch.countDown())
+                .queueName(QUEUE_NAME)
                 .subscriptionName(SUBSCRIPTION_NAME_1)
-                .properties(SubscriberConfig.Properties.builder()
+                .properties(ConsumerConfig.Properties.builder()
                         .concurrency(50)
                         .build())
                 .build());
 
-        messageBus.startSubscribers();
+        queue.startConsumers();
 
         for (int i = 0; i < 100_000; i++) {
             TestMessage testMessage = new TestMessage("test-name");
-            messageBus.publish(testMessage);
+            queue.publish(testMessage);
         }
 
         countDownLatch.await();
-        messageBus.stopSubscribers();
+        queue.stopConsumers();
     }
 }

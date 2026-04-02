@@ -7,12 +7,12 @@ import org.pak.messagebus.core.service.TransactionService;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
-public class MessageBus {
+public class QueueManager {
     private final QueryService queryService;
     private final TransactionService transactionService;
     private final MessageFactory messageFactory;
 
-    public MessageBus(
+    public QueueManager(
             QueryService queryService,
             TransactionService transactionService,
             MessageFactory messageFactory,
@@ -21,7 +21,7 @@ public class MessageBus {
         this(queryService, transactionService, messageFactory);
     }
 
-    public MessageBus(
+    public QueueManager(
             QueryService queryService,
             TransactionService transactionService,
             CronConfig cronConfig
@@ -29,7 +29,7 @@ public class MessageBus {
         this(queryService, transactionService);
     }
 
-    public MessageBus(
+    public QueueManager(
             QueryService queryService,
             TransactionService transactionService,
             MessageFactory messageFactory
@@ -39,7 +39,7 @@ public class MessageBus {
         this.messageFactory = messageFactory;
     }
 
-    public MessageBus(
+    public QueueManager(
             QueryService queryService,
             TransactionService transactionService
     ) {
@@ -48,37 +48,37 @@ public class MessageBus {
         this.messageFactory = new StdMessageFactory();
     }
 
-    private final ConcurrentHashMap<String, MessageProcessorStarter<?>> messageProcessorStarters =
+    private final ConcurrentHashMap<String, QueueProcessorStarter<?>> consumerStarters =
             new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Class<?>, MessagePublisher<?>> messagePublishers =
+    private final ConcurrentHashMap<Class<?>, Producer<?>> producers =
             new ConcurrentHashMap<>();
 
-    public <T> void registerPublisher(PublisherConfig<T> publisherConfig) {
-        messagePublishers.computeIfAbsent(publisherConfig.getClazz(),
-                k -> new MessagePublisher<>(publisherConfig, queryService, messageFactory));
+    public <T> void registerProducer(ProducerConfig<T> producerConfig) {
+        producers.computeIfAbsent(producerConfig.getClazz(),
+                k -> new Producer<>(producerConfig, queryService, messageFactory));
     }
 
-    public <T> void registerSubscriber(SubscriberConfig<T> subscriberConfig) {
-        messageProcessorStarters.computeIfAbsent(
-                subscriberConfig.getMessageName() + "_" + subscriberConfig.getSubscriptionName(), s -> {
-                    var starter = new MessageProcessorStarter<>(subscriberConfig, queryService, transactionService,
+    public <T> void registerConsumer(ConsumerConfig<T> consumerConfig) {
+        consumerStarters.computeIfAbsent(
+                consumerConfig.getQueueName() + "_" + consumerConfig.getSubscriptionName(), s -> {
+                    var starter = new QueueProcessorStarter<>(consumerConfig, queryService, transactionService,
                             messageFactory);
-                    log.info("Register subscriber on payload {} with subscription {}",
-                            subscriberConfig.getMessageName(),
-                            subscriberConfig.getSubscriptionName());
+                    log.info("Register consumer on queue {} with subscription {}",
+                            consumerConfig.getQueueName().name(),
+                            consumerConfig.getSubscriptionName().name());
                     return starter;
                 });
     }
 
     public <T> void publish(T message) {
-        ((MessagePublisher<T>) messagePublishers.get(message.getClass())).publish(message);
+        ((Producer<T>) producers.get(message.getClass())).publish(message);
     }
 
-    public void startSubscribers() {
-        messageProcessorStarters.values().forEach(MessageProcessorStarter::start);
+    public void startConsumers() {
+        consumerStarters.values().forEach(QueueProcessorStarter::start);
     }
 
-    public void stopSubscribers() {
-        messageProcessorStarters.values().forEach(MessageProcessorStarter::stop);
+    public void stopConsumers() {
+        consumerStarters.values().forEach(QueueProcessorStarter::stop);
     }
 }

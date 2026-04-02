@@ -1,5 +1,5 @@
 package org.pak.messagebus.core;
 
-public interface MessageListener<T> {
+public interface Consumer<T> {
     void handle(Message<T> message);
 }

@@ -14,7 +14,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,11 +21,11 @@ import static java.util.Optional.of;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.pak.messagebus.core.Status.FAILED;
 import static org.pak.messagebus.core.Status.PROCESSED;
-import static org.pak.messagebus.core.TestMessage.MESSAGE_NAME;
+import static org.pak.messagebus.core.TestMessage.QUEUE_NAME;
 
 @Testcontainers
 @Slf4j
-class MessageProcessorIntegrationTest extends BaseIntegrationTest {
+class QueueProcessorIntegrationTest extends BaseIntegrationTest {
     @BeforeEach
     void setup() {
         dataSource = setupDatasource();
@@ -37,13 +36,13 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
         schemaSqlGenerator = setupSchemaSqlGenerator();
         pgQueryService = setupQueryService(persistenceService, jsonbConverter);
         tableManager = setupTableManager(pgQueryService);
-        messagePublisherFactory = setupMessagePublisherFactory(pgQueryService);
-        messageProcessorFactory = setupMessageProcessorFactory(pgQueryService, springTransactionService);
+        producerFactory = setupProducerFactory(pgQueryService);
+        queueProcessorFactory = setupQueueProcessorFactory(pgQueryService, springTransactionService);
 
-        createMessageTable();
+        createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1);
-        tableManager.registerMessage(MESSAGE_NAME, 30);
-        tableManager.registerSubscription(MESSAGE_NAME, SUBSCRIPTION_NAME_1, 30);
+        tableManager.registerQueue(QUEUE_NAME, 30);
+        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_1, 30);
     }
 
     @AfterEach
@@ -55,8 +54,8 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
     void testSubmitMessage() {
         TestMessage testMessage = new TestMessage(TEST_VALUE);
 
-        var messagePublisher = messagePublisherFactory.build().create();
-        messagePublisher.publish(testMessage);
+        var producer = producerFactory.build().create();
+        producer.publish(testMessage);
 
         var testMessageContainer = hasSize1AndGetFirst(selectTestMessages(SUBSCRIPTION_NAME_1));
 
@@ -72,14 +71,14 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testSuccessHandle() throws RetrayablePersistenceException {
-        var messageProcessor = messageProcessorFactory.build().create();
+        var messageProcessor = queueProcessorFactory.build().create();
 
-        var messagePublisher = messagePublisherFactory.build().create();
+        var producer = producerFactory.build().create();
 
         TestMessage testMessage1 = new TestMessage(TEST_VALUE);
         TestMessage testMessage2 = new TestMessage(TEST_VALUE + "-2");
-        messagePublisher.publish(testMessage1);
-        messagePublisher.publish(testMessage2);
+        producer.publish(testMessage1);
+        producer.publish(testMessage2);
 
         assertThat(messageProcessor.poolAndProcess()).isTrue();
         assertThat(messageProcessor.poolAndProcess()).isTrue();
@@ -97,17 +96,17 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testHandleNonRetryableException() {
-        var messageProcessor = messageProcessorFactory.messageListener(testMessage -> {
+        var messageProcessor = queueProcessorFactory.consumer(testMessage -> {
                     throw new NonRetryableApplicationException(TEST_EXCEPTION_MESSAGE);
                 })
                 .nonRetryablePolicy(
                         exception -> NonRetryableApplicationException.class.isAssignableFrom(exception.getClass()))
                 .build().create();
 
-        var messagePublisher = messagePublisherFactory.build().create();
+        var producer = producerFactory.build().create();
 
         TestMessage testMessage = new TestMessage(TEST_VALUE);
-        messagePublisher.publish(testMessage);
+        producer.publish(testMessage);
         messageProcessor.poolAndProcess();
 
         var testMessageContainer = hasSize1AndGetFirstHistory(selectTestMessagesFromHistory(SUBSCRIPTION_NAME_1));
@@ -120,16 +119,16 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testHandleRetryableException() {
-        var messageProcessor = messageProcessorFactory.messageListener(testMessage -> {
+        var messageProcessor = queueProcessorFactory.consumer(testMessage -> {
                     throw new RetryableApplicationException(TEST_EXCEPTION_MESSAGE);
                 })
                 .retryablePolicy((e, attempt) -> of(Duration.ofSeconds(600)))
                 .build().create();
 
-        var messagePublisher = messagePublisherFactory.build().create();
+        var producer = producerFactory.build().create();
 
         TestMessage testMessage = new TestMessage(TEST_VALUE);
-        messagePublisher.publish(testMessage);
+        producer.publish(testMessage);
 
         var testMessageBeforeHandleContainer = hasSize1AndGetFirst(selectTestMessages(SUBSCRIPTION_NAME_1));
 
@@ -159,16 +158,16 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testHandleRetryableException2() {
-        var messageProcessor = messageProcessorFactory.messageListener(testMessage -> {
+        var messageProcessor = queueProcessorFactory.consumer(testMessage -> {
                     throw new RetryableApplicationException(TEST_EXCEPTION_MESSAGE);
                 })
                 .retryablePolicy((e, attempt) -> of(Duration.ofSeconds(0)))
                 .build().create();
 
-        var messagePublisher = messagePublisherFactory.build().create();
+        var producer = producerFactory.build().create();
 
         TestMessage testMessage = new TestMessage(TEST_VALUE);
-        messagePublisher.publish(testMessage);
+        producer.publish(testMessage);
 
         var testMessages = selectTestMessages(SUBSCRIPTION_NAME_1);
         assertThat(testMessages).hasSize(1);
@@ -194,7 +193,7 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testHandleRetryableExceptionFail() {
-        var messageProcessor = messageProcessorFactory.messageListener(testMessage -> {
+        var messageProcessor = queueProcessorFactory.consumer(testMessage -> {
                     throw new RetryableApplicationException(TEST_EXCEPTION_MESSAGE);
                 })
                 .retryablePolicy((e, attempt) -> {
@@ -206,10 +205,10 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
                 })
                 .build().create();
 
-        var messagePublisher = messagePublisherFactory.build().create();
+        var producer = producerFactory.build().create();
 
         TestMessage testMessage = new TestMessage(TEST_VALUE);
-        messagePublisher.publish(testMessage);
+        producer.publish(testMessage);
 
         var testMessages = selectTestMessages(SUBSCRIPTION_NAME_1);
         assertThat(testMessages).hasSize(1);
@@ -234,14 +233,14 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testDuplicateKeyPublish() {
-        var messagePublisher = messagePublisherFactory.build().create();
+        var producer = producerFactory.build().create();
 
         TestMessage testMessage = new TestMessage(TEST_VALUE);
         var key = UUID.randomUUID().toString();
         var originatedTime = Instant.now();
         Message<TestMessage> message = new StdMessage<>(key, originatedTime, testMessage);
-        messagePublisher.publish(message);
-        messagePublisher.publish(message);
+        producer.publish(message);
+        producer.publish(message);
 
         var testMessageContainer = hasSize1AndGetFirst(selectTestMessages(SUBSCRIPTION_NAME_1));
 
@@ -256,24 +255,24 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testPublishTimeoutException() throws IOException {
-        var messagePublisher = messagePublisherFactory.build().create();
+        var producer = producerFactory.build().create();
 
         TestMessage testMessage = new TestMessage(TEST_VALUE);
         var timeout = postgresqlProxy.toxics().timeout("pg-timeout", ToxicDirection.DOWNSTREAM, 1000);
 
-        Assertions.assertThrows(RetrayablePersistenceException.class, () -> messagePublisher.publish(testMessage));
+        Assertions.assertThrows(RetrayablePersistenceException.class, () -> producer.publish(testMessage));
 
         timeout.remove();
     }
 
     @Test
     void testProcessTimeoutException() throws IOException {
-        var messagePublisher = messagePublisherFactory.build().create();
+        var producer = producerFactory.build().create();
 
-        var messageProcessor = messageProcessorFactory.build().create();
+        var messageProcessor = queueProcessorFactory.build().create();
 
         TestMessage testMessage = new TestMessage(TEST_VALUE);
-        messagePublisher.publish(testMessage);
+        producer.publish(testMessage);
 
         var timeout = postgresqlProxy.toxics().timeout("pg-timeout", ToxicDirection.DOWNSTREAM, 1000);
 
@@ -284,9 +283,9 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testBlockingException() {
-        var messagePublisher = messagePublisherFactory.build().create();
+        var producer = producerFactory.build().create();
 
-        var messageProcessor = messageProcessorFactory.messageListener(testMessage -> {
+        var messageProcessor = queueProcessorFactory.consumer(testMessage -> {
                     throw new BlockingApplicationException(TEST_EXCEPTION_MESSAGE);
                 })
                 .blockingPolicy(new BlockingPolicy() {
@@ -303,7 +302,7 @@ class MessageProcessorIntegrationTest extends BaseIntegrationTest {
                 .build().create();
 
         TestMessage testMessage = new TestMessage(TEST_VALUE);
-        messagePublisher.publish(testMessage);
+        producer.publish(testMessage);
 
         messageProcessor.poolAndProcess();
 

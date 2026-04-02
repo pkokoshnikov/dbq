@@ -12,7 +12,7 @@ import java.util.Queue;
 import java.util.function.Supplier;
 
 class CoreTestSupport {
-    static final MessageName MESSAGE_NAME = new MessageName("test-message");
+    static final QueueName QUEUE_NAME = new QueueName("test-message");
     static final SubscriptionName SUBSCRIPTION_NAME = new SubscriptionName("test-subscription");
 
     record CompletionCall(SubscriptionName subscriptionName, MessageContainer<?> messageContainer) {
@@ -29,10 +29,10 @@ class CoreTestSupport {
     ) {
     }
 
-    record InsertCall<T>(MessageName messageName, Message<T> message) {
+    record InsertCall<T>(QueueName queueName, Message<T> message) {
     }
 
-    record BatchInsertCall<T>(MessageName messageName, List<Message<T>> messages) {
+    record BatchInsertCall<T>(QueueName queueName, List<Message<T>> messages) {
     }
 
     static MessageContainer<String> messageContainer(String payload, int attempt, Instant originatedTime) {
@@ -73,7 +73,7 @@ class CoreTestSupport {
         @SuppressWarnings("unchecked")
         @Override
         public <T> List<MessageContainer<T>> selectMessages(
-                MessageName messageName,
+                QueueName queueName,
                 SubscriptionName subscriptionName,
                 Integer maxPollRecords
         ) {
@@ -102,8 +102,8 @@ class CoreTestSupport {
 
         @SuppressWarnings("unchecked")
         @Override
-        public <T> boolean insertMessage(MessageName messageName, Message<T> message) {
-            inserts.add(new InsertCall<>(messageName, message));
+        public <T> boolean insertMessage(QueueName queueName, Message<T> message) {
+            inserts.add(new InsertCall<>(queueName, message));
             Object result = insertMessageResults.poll();
             if (result instanceof RuntimeException runtimeException) {
                 throw runtimeException;
@@ -115,8 +115,8 @@ class CoreTestSupport {
         }
 
         @Override
-        public <T> List<Boolean> insertBatchMessage(MessageName messageName, List<Message<T>> messages) {
-            batchInserts.add(new BatchInsertCall<>(messageName, List.copyOf(messages)));
+        public <T> List<Boolean> insertBatchMessage(QueueName queueName, List<Message<T>> messages) {
+            batchInserts.add(new BatchInsertCall<>(queueName, List.copyOf(messages)));
             return java.util.Collections.nCopies(messages.size(), Boolean.TRUE);
         }
     }

@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @Data
 public class TestMessage  {
-    public static MessageName MESSAGE_NAME = new MessageName("test-message");
+    public static QueueName QUEUE_NAME = new QueueName("test-message");
 
     private String name;
 }

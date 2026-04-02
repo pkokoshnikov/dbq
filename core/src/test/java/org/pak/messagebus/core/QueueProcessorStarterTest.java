@@ -2,15 +2,15 @@ package org.pak.messagebus.core;
 
 import org.junit.jupiter.api.Test;
 
-class MessageProcessorStarterTest {
+class QueueProcessorStarterTest {
     @Test
     void startAfterStopStartsNewExecutor() throws InterruptedException {
-        var starter = new MessageProcessorStarter<>(
-                SubscriberConfig.<String>builder()
-                        .messageName(CoreTestSupport.MESSAGE_NAME)
+        var starter = new QueueProcessorStarter<>(
+                ConsumerConfig.<String>builder()
+                        .queueName(CoreTestSupport.QUEUE_NAME)
                         .subscriptionName(CoreTestSupport.SUBSCRIPTION_NAME)
-                        .messageListener(message -> {})
-                        .properties(SubscriberConfig.Properties.builder().build())
+                        .consumer(message -> {})
+                        .properties(ConsumerConfig.Properties.builder().build())
                         .build(),
                 new CoreTestSupport.RecordingQueryService(),
                 new CoreTestSupport.DirectTransactionService(),

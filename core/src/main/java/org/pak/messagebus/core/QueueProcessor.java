@@ -19,17 +19,17 @@ import static java.util.Optional.of;
 import static java.util.Optional.ofNullable;
 
 @Slf4j
-class MessageProcessor<T> {
+class QueueProcessor<T> {
     private final String id = UUID.randomUUID().toString();
     private final RetryablePolicy retryablePolicy;
     private final NonRetryablePolicy nonRetryablePolicy;
     private final BlockingPolicy blockingPolicy;
     private final QueryService queryService;
-    private final MessageName messageName;
+    private final QueueName queueName;
     private final SubscriptionName subscriptionName;
     private final TransactionService transactionService;
     private final TraceIdExtractor<T> traceIdExtractor;
-    private final MessageListener<T> messageListener;
+    private final Consumer<T> consumer;
     private Duration pause = null;
     private final Duration unpredictedExceptionPause;
     private final MessageFactory messageFactory;
@@ -37,9 +37,9 @@ class MessageProcessor<T> {
     private final Duration persistenceExceptionPause;
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
-    MessageProcessor(
-            @NonNull MessageListener<T> messageListener,
-            @NonNull MessageName messageName,
+    QueueProcessor(
+            @NonNull Consumer<T> consumer,
+            @NonNull QueueName queueName,
             @NonNull SubscriptionName subscriptionName,
             @NonNull RetryablePolicy retryablePolicy,
             @NonNull NonRetryablePolicy nonRetryablePolicy,
@@ -48,14 +48,14 @@ class MessageProcessor<T> {
             @NonNull TransactionService transactionService,
             @NonNull TraceIdExtractor<T> traceIdExtractor,
             @NonNull MessageFactory messageFactory,
-            @NonNull SubscriberConfig.Properties properties
+            @NonNull ConsumerConfig.Properties properties
     ) {
-        this.messageListener = messageListener;
+        this.consumer = consumer;
         this.retryablePolicy = retryablePolicy;
         this.nonRetryablePolicy = nonRetryablePolicy;
         this.blockingPolicy = blockingPolicy;
         this.queryService = queryService;
-        this.messageName = messageName;
+        this.queueName = queueName;
         this.subscriptionName = subscriptionName;
         this.transactionService = transactionService;
         this.traceIdExtractor = traceIdExtractor;
@@ -67,12 +67,12 @@ class MessageProcessor<T> {
 
     public void poolLoop() {
         if (!isRunning.compareAndSet(false, true)) {
-            log.warn("Event processor should be started only once");
+            log.warn("Queue processor should be started only once");
             return;
         }
 
         try (var ignoreExecutorIdMDC = MDC.putCloseable("messageProcessorId", id);
-                var ignoredEventNameMDC = MDC.putCloseable("messageName", messageName.name());
+                var ignoredEventNameMDC = MDC.putCloseable("queueName", queueName.name());
                 var ignoredSubscriptionMDC = MDC.putCloseable("subscriptionName", subscriptionName.name())) {
             do {
                 log.info("Start pooling");
@@ -110,14 +110,14 @@ class MessageProcessor<T> {
                 }
             } while (isRunning.get());
 
-            log.info("Event processor is stopped");
+            log.info("Queue processor is stopped");
         }
 
     }
 
     boolean poolAndProcess() {
         List<MessageContainer<T>> messageContainerList =
-                queryService.selectMessages(messageName, subscriptionName, maxPollRecords);
+                queryService.selectMessages(queueName, subscriptionName, maxPollRecords);
 
         if (messageContainerList.size() == 0) {
             return false;
@@ -131,7 +131,7 @@ class MessageProcessor<T> {
                 log.debug("Start message processing");
                 Optional<Exception> optionalException = Optional.empty();
                 try {
-                    messageListener.handle(messageFactory.createMessage(messageContainer.getKey(),
+                    consumer.handle(messageFactory.createMessage(messageContainer.getKey(),
                             messageContainer.getOriginatedTime(),
                             messageContainer.getPayload()));
                 } catch (Exception e) {
@@ -185,9 +185,9 @@ class MessageProcessor<T> {
 
     public void stop() {
         if (isRunning.compareAndSet(true, false)) {
-            log.info("Prepare to stop payload processor");
+            log.info("Prepare to stop queue processor");
         } else {
-            log.warn("Event processor should be stopped only once");
+            log.warn("Queue processor should be stopped only once");
         }
     }
 }
