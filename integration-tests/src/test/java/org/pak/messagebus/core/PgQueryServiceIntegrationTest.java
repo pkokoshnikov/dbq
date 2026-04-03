@@ -48,7 +48,6 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         assertPartitions(QUEUE_TABLE, partitions);
     }
 
-    @Test
     void createSubscriptionPartitionTest() {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1);
@@ -168,6 +167,30 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
         assertThat(inserted).isTrue();
         assertThat(pgQueryService.getAllQueuePartitions(QUEUE_NAME)).isNotEmpty();
+    }
+
+    @Test
+    void testInsertRoutesMessagesAcrossUtcMidnightToDifferentPartitions() {
+        createQueueTable();
+        Instant beforeMidnightUtc = Instant.parse("2026-04-03T23:59:59Z");
+        Instant afterMidnightUtc = Instant.parse("2026-04-04T00:00:00Z");
+        String beforeKey = UUID.randomUUID().toString();
+        String afterKey = UUID.randomUUID().toString();
+
+        pgQueryService.insertBatchMessage(QUEUE_NAME,
+                List.of(new SimpleMessage<>(beforeKey, beforeMidnightUtc, new TestMessage("before")),
+                        new SimpleMessage<>(afterKey, afterMidnightUtc, new TestMessage("after"))));
+
+        var rows = jdbcTemplate.query("""
+                        SELECT key, tableoid::regclass::text AS partition_name
+                        FROM public.test_message
+                        ORDER BY key
+                        """,
+                (rs, rowNum) -> Map.entry(rs.getString("key"), rs.getString("partition_name")));
+
+        assertThat(rows).containsExactlyInAnyOrder(
+                Map.entry(beforeKey, "test_message_2026_04_03"),
+                Map.entry(afterKey, "test_message_2026_04_04"));
     }
 
     @Test

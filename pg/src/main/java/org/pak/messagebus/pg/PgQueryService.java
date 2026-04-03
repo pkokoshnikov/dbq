@@ -32,6 +32,7 @@ import static java.util.Optional.ofNullable;
 @Slf4j
 public class PgQueryService implements QueryService {
     private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy_MM_dd");
+    private static final DateTimeFormatter partitionBoundaryFormatter = DateTimeFormatter.ISO_INSTANT;
     private static final String MISSING_PARTITION_CODE = "23514";
     private static final String PARTITION_HAS_REFERENCES_CODE = "23503";
     private static final String UNDEFINED_TABLE_CODE = "42P01";
@@ -59,6 +60,8 @@ public class PgQueryService implements QueryService {
         log.info("Create partition {}", partition);
 
         var date = dateTime.atOffset(ZoneOffset.UTC).toLocalDate();
+        var from = date.atStartOfDay().toInstant(ZoneOffset.UTC);
+        var to = date.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
         var query = formatter.execute("""
                 CREATE TABLE IF NOT EXISTS ${schema}.${partition}
                 PARTITION OF ${schema}.${table} FOR VALUES FROM ('${from}') TO ('${to}');
@@ -66,8 +69,8 @@ public class PgQueryService implements QueryService {
                 "schema", schemaName.value(),
                 "table", table,
                 "partition", partition,
-                "from", dateFormatter.format(date),
-                "to", dateFormatter.format(date.plus(1, ChronoUnit.DAYS))
+                "from", partitionBoundaryFormatter.format(from),
+                "to", partitionBoundaryFormatter.format(to)
         ));
 
         persistenceService.execute(query);
