@@ -29,7 +29,10 @@ public class PgSchemaSqlGenerator {
                 ) PARTITION BY RANGE (originated_at);
                 CREATE INDEX IF NOT EXISTS ${queueTable}_created_at_idx ON ${schema}.${queueTable}(created_at);
                 CREATE UNIQUE INDEX IF NOT EXISTS ${queueTable}_message_key_idx ON ${schema}.${queueTable}(originated_at, key);
-                """, Map.of("schema", schemaName.value(), "queueTable", queueTable(queueName)));
+                """, Map.of(
+                "schema", schemaName.value(),
+                "queueTable", queueTable(queueName))
+        );
     }
 
     public String createSubscriptionTable(QueueName queueName, SubscriptionId subscriptionId) {
@@ -46,11 +49,11 @@ public class PgSchemaSqlGenerator {
                             execute_after TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
                             FOREIGN KEY (message_id, originated_at) REFERENCES ${schema}.${queueTable}(id, originated_at)
                         );
-
+                        
                         CREATE UNIQUE INDEX IF NOT EXISTS ${subscriptionTable}_message_id_idx ON ${schema}.${subscriptionTable}(message_id);
                         CREATE INDEX IF NOT EXISTS ${subscriptionTable}_created_at_idx ON ${schema}.${subscriptionTable}(created_at);
                         CREATE INDEX IF NOT EXISTS ${subscriptionTable}_execute_after_idx ON ${schema}.${subscriptionTable}(execute_after ASC);
-
+                        
                         CREATE TABLE IF NOT EXISTS ${schema}.${subscriptionHistoryTable} (
                             id BIGINT,
                             message_id BIGINT NOT NULL,
@@ -63,10 +66,10 @@ public class PgSchemaSqlGenerator {
                             FOREIGN KEY (message_id, originated_at) REFERENCES ${schema}.${queueTable}(id, originated_at),
                             PRIMARY KEY (id, originated_at)
                         ) PARTITION BY RANGE (originated_at);
-
+                        
                         CREATE UNIQUE INDEX IF NOT EXISTS ${subscriptionHistoryTable}_message_id_idx ON ${schema}.${subscriptionHistoryTable}(originated_at, message_id);
                         CREATE INDEX IF NOT EXISTS ${subscriptionHistoryTable}_created_at_idx ON ${schema}.${subscriptionHistoryTable}(created_at);
-
+                        
                         CREATE OR REPLACE FUNCTION ${schema}.${insertFunction}
                           RETURNS trigger AS
                         $$
@@ -77,17 +80,19 @@ public class PgSchemaSqlGenerator {
                             END;
                         $$
                         LANGUAGE 'plpgsql';
-
+                        
                         CREATE OR REPLACE TRIGGER ${insertTrigger}
                             AFTER INSERT ON ${schema}.${queueTable}
                             FOR EACH ROW
                             EXECUTE PROCEDURE ${schema}.${insertFunction};
                         """,
-                Map.of("schema", schemaName.value(), "queueTable", queueTable(queueName), "subscriptionTable",
-                        subscriptionTable(subscriptionId), "subscriptionHistoryTable",
-                        subscriptionHistoryTable(subscriptionId), "insertTrigger",
-                        subscriptionTable(subscriptionId) + "_insert_trigger", "insertFunction",
-                        subscriptionTable(subscriptionId) + "_insert_function()"));
+                Map.of("schema", schemaName.value(),
+                        "queueTable", queueTable(queueName),
+                        "subscriptionTable", subscriptionTable(subscriptionId),
+                        "subscriptionHistoryTable", subscriptionHistoryTable(subscriptionId),
+                        "insertTrigger", subscriptionTable(subscriptionId) + "_insert_trigger",
+                        "insertFunction", subscriptionTable(subscriptionId) + "_insert_function()")
+        );
     }
 
     private String queueTable(QueueName queueName) {
