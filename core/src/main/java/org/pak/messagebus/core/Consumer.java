@@ -28,7 +28,8 @@ class Consumer<T> {
     private final QueueName queueName;
     private final SubscriptionId subscriptionId;
     private final TransactionService transactionService;
-    private final TraceIdExtractor<T> traceIdExtractor;
+    private final MessageContextPropagator messageContextPropagator;
+    private final MessageConsumerTelemetry messageConsumerTelemetry;
     private final MessageHandler<T> messageHandler;
     private Duration pause = null;
     private final Duration unpredictedExceptionPause;
@@ -46,7 +47,8 @@ class Consumer<T> {
             @NonNull BlockingPolicy blockingPolicy,
             @NonNull QueryService queryService,
             @NonNull TransactionService transactionService,
-            @NonNull TraceIdExtractor<T> traceIdExtractor,
+            @NonNull MessageContextPropagator messageContextPropagator,
+            @NonNull MessageConsumerTelemetry messageConsumerTelemetry,
             @NonNull MessageFactory messageFactory,
             @NonNull ConsumerConfig.Properties properties
     ) {
@@ -58,7 +60,8 @@ class Consumer<T> {
         this.queueName = queueName;
         this.subscriptionId = subscriptionId;
         this.transactionService = transactionService;
-        this.traceIdExtractor = traceIdExtractor;
+        this.messageContextPropagator = messageContextPropagator;
+        this.messageConsumerTelemetry = messageConsumerTelemetry;
         this.messageFactory = messageFactory;
         this.maxPollRecords = properties.getMaxPollRecords();
         this.persistenceExceptionPause = properties.getPersistenceExceptionPause();
@@ -124,35 +127,38 @@ class Consumer<T> {
         }
 
         for (var messageContainer : messageContainerList) {
-            var optionalTraceIdMDC = ofNullable(traceIdExtractor.extractTraceId(messageContainer.getPayload()))
-                    .map(v -> MDC.putCloseable("traceId", v));
-            try (var ignoreExecutorIdMDC = MDC.putCloseable("messageId", messageContainer.getId().toString());
+            try (var ignoredMessageContext = messageContextPropagator.extractToCurrentContext(messageContainer.getHeaders());
+                    var ignoreExecutorIdMDC = MDC.putCloseable("messageId", messageContainer.getId().toString());
                     var ignoreKeyMDC = MDC.putCloseable("messageKey", messageContainer.getKey())) {
                 log.debug("Start message processing");
+                var message = messageFactory.createMessage(messageContainer.getKey(),
+                        messageContainer.getOriginatedTime(),
+                        messageContainer.getPayload(),
+                        messageContainer.getHeaders());
                 Optional<Exception> optionalException = Optional.empty();
-                try {
-                    messageHandler.handle(messageFactory.createMessage(messageContainer.getKey(),
-                            messageContainer.getOriginatedTime(),
-                            messageContainer.getPayload()));
-                } catch (Exception e) {
-                    optionalException = of(e);
-                }
+                try (var ignoredConsumerTelemetry =
+                             messageConsumerTelemetry.start(message, queueName, subscriptionId)) {
+                    try {
+                        messageHandler.handle(message);
+                    } catch (Exception e) {
+                        ignoredConsumerTelemetry.recordError(e);
+                        optionalException = of(e);
+                    }
 
-                if (optionalException.isEmpty()) {
-                    queryService.completeMessage(subscriptionId, messageContainer);
-                    log.info("Message processing completed");
-                } else {
-                    var exception = optionalException.get();
-                    if (blockingPolicy.isBlocked(exception)) {
-                        handleBlockingException(exception);
-                    } else if (nonRetryablePolicy.isNonRetryable(exception)) {
-                        handleNonRetryableException(messageContainer, exception);
+                    if (optionalException.isEmpty()) {
+                        queryService.completeMessage(subscriptionId, messageContainer);
+                        log.info("Message processing completed");
                     } else {
-                        handleRetryableException(messageContainer, exception);
+                        var exception = optionalException.get();
+                        if (blockingPolicy.isBlocked(exception)) {
+                            handleBlockingException(exception);
+                        } else if (nonRetryablePolicy.isNonRetryable(exception)) {
+                            handleNonRetryableException(messageContainer, exception);
+                        } else {
+                            handleRetryableException(messageContainer, exception);
+                        }
                     }
                 }
-            } finally {
-                optionalTraceIdMDC.ifPresent(MDC.MDCCloseable::close);
             }
         }
 

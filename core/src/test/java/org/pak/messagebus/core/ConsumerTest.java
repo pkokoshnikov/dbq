@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,16 +19,21 @@ class ConsumerTest {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var originatedTime = Instant.parse("2026-04-02T10:15:30Z");
-        var container = messageContainer("payload", 0, originatedTime);
+        var headers = Map.of("traceparent", "00-test-parent");
+        var container = messageContainer("payload", headers, 0, originatedTime);
         queryService.selectedMessages = List.of(container);
         var handledMessage = new AtomicReference<Message<String>>();
+        var messageContextPropagator = new CoreTestSupport.RecordingMessageContextPropagator(Map.of());
+        var messageConsumerTelemetry = new CoreTestSupport.RecordingMessageConsumerTelemetry();
         var processor = processor(
                 queryService,
                 transactionService,
                 message -> handledMessage.set(message),
                 blockingPolicy(false, Duration.ZERO),
                 (exception, attempt) -> java.util.Optional.of(Duration.ofSeconds(5)),
-                exception -> false
+                exception -> false,
+                messageContextPropagator,
+                messageConsumerTelemetry
         );
 
         var pooled = processor.poolAndProcess();
@@ -36,7 +42,14 @@ class ConsumerTest {
         assertThat(queryService.completions).hasSize(1);
         assertThat(queryService.failures).isEmpty();
         assertThat(queryService.retries).isEmpty();
-        assertThat(handledMessage.get()).isEqualTo(new SimpleMessage<>("key-1", originatedTime, "payload"));
+        assertThat(handledMessage.get()).isEqualTo(new SimpleMessage<>("key-1", originatedTime, "payload", headers));
+        assertThat(messageContextPropagator.extractedHeaders()).isEqualTo(headers);
+        assertThat(messageContextPropagator.isScopeClosed()).isTrue();
+        assertThat(messageConsumerTelemetry.startedMessage()).isEqualTo(handledMessage.get());
+        assertThat(messageConsumerTelemetry.startedQueueName()).isEqualTo(QUEUE_NAME);
+        assertThat(messageConsumerTelemetry.startedSubscriptionId()).isEqualTo(SUBSCRIPTION_NAME);
+        assertThat(messageConsumerTelemetry.recordedException()).isNull();
+        assertThat(messageConsumerTelemetry.isScopeClosed()).isTrue();
     }
 
     @Test
@@ -54,7 +67,9 @@ class ConsumerTest {
                 },
                 blockingPolicy(false, Duration.ZERO),
                 (exception, attempt) -> java.util.Optional.of(Duration.ofSeconds(15)),
-                exception -> false
+                exception -> false,
+                new NoOpMessageContextPropagator(),
+                new NoOpMessageConsumerTelemetry()
         );
 
         processor.poolAndProcess();
@@ -73,6 +88,7 @@ class ConsumerTest {
         var container = messageContainer("payload", 3, Instant.parse("2026-04-02T10:15:30Z"));
         queryService.selectedMessages = List.of(container);
         var expectedException = new IllegalStateException("fail");
+        var messageConsumerTelemetry = new CoreTestSupport.RecordingMessageConsumerTelemetry();
         var processor = processor(
                 queryService,
                 transactionService,
@@ -81,7 +97,9 @@ class ConsumerTest {
                 },
                 blockingPolicy(false, Duration.ZERO),
                 (exception, attempt) -> java.util.Optional.empty(),
-                exception -> false
+                exception -> false,
+                new NoOpMessageContextPropagator(),
+                messageConsumerTelemetry
         );
 
         processor.poolAndProcess();
@@ -90,6 +108,8 @@ class ConsumerTest {
         assertThat(queryService.failures.getFirst().exception()).isSameAs(expectedException);
         assertThat(queryService.retries).isEmpty();
         assertThat(queryService.completions).isEmpty();
+        assertThat(messageConsumerTelemetry.recordedException()).isSameAs(expectedException);
+        assertThat(messageConsumerTelemetry.isScopeClosed()).isTrue();
     }
 
     @Test
@@ -107,7 +127,9 @@ class ConsumerTest {
                 },
                 blockingPolicy(false, Duration.ZERO),
                 (exception, attempt) -> java.util.Optional.of(Duration.ofSeconds(10)),
-                exception -> true
+                exception -> true,
+                new NoOpMessageContextPropagator(),
+                new NoOpMessageConsumerTelemetry()
         );
 
         processor.poolAndProcess();
@@ -132,7 +154,9 @@ class ConsumerTest {
                 },
                 blockingPolicy(true, Duration.ofSeconds(5)),
                 (exception, attempt) -> java.util.Optional.of(Duration.ofSeconds(10)),
-                exception -> false
+                exception -> false,
+                new NoOpMessageContextPropagator(),
+                new NoOpMessageConsumerTelemetry()
         );
 
         processor.poolAndProcess();
@@ -148,7 +172,9 @@ class ConsumerTest {
             MessageHandler<String> messageHandler,
             BlockingPolicy blockingPolicy,
             RetryablePolicy retryablePolicy,
-            NonRetryablePolicy nonRetryablePolicy
+            NonRetryablePolicy nonRetryablePolicy,
+            MessageContextPropagator messageContextPropagator,
+            MessageConsumerTelemetry messageConsumerTelemetry
     ) {
         return new Consumer<>(
                 messageHandler,
@@ -159,7 +185,8 @@ class ConsumerTest {
                 blockingPolicy,
                 queryService,
                 transactionService,
-                payload -> "trace-id",
+                messageContextPropagator,
+                messageConsumerTelemetry,
                 new StdMessageFactory(),
                 ConsumerConfig.Properties.builder().build()
         );

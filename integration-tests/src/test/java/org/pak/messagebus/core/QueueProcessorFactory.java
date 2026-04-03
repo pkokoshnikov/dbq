@@ -18,12 +18,13 @@ class QueueProcessorFactory<T> {
     NonRetryablePolicy nonRetryablePolicy;
     QueryService queryService;
     TransactionService transactionService;
-    TraceIdExtractor<T> traceIdExtractor;
+    MessageContextPropagator messageContextPropagator;
+    MessageConsumerTelemetry messageConsumerTelemetry;
     ConsumerConfig.Properties properties;
 
     Consumer<T> create() {
         return new Consumer<>(messageHandler, queueName, subscriptionId, retryablePolicy,
-                nonRetryablePolicy, blockingPolicy, queryService, transactionService, traceIdExtractor,
-                messageFactory, properties);
+                nonRetryablePolicy, blockingPolicy, queryService, transactionService, messageContextPropagator,
+                messageConsumerTelemetry, messageFactory, properties);
     }
 }

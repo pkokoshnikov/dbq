@@ -15,7 +15,7 @@ public class ProducerConfig<T> {
     Class<T> clazz;
     Properties properties;
     @Builder.Default
-    TraceIdExtractor<T> traceIdExtractor = new NullTraceIdExtractor<>();
+    MessageContextPropagator messageContextPropagator = new NoOpMessageContextPropagator();
 
     @Builder
     @Getter

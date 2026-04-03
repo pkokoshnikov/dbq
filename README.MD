@@ -111,6 +111,27 @@ The library support abstraction layers for:
 * database queries layer - it can be used with any database that supports SQL that support select for update skip locked,
   default impl is for `PostgreSQL`
 * persistence layer - it can be used with any frameworks that supports jdbc operations, default impl is for Spring
+* tracing propagation layer - core exposes message headers and propagator hooks, and `otel` module provides OpenTelemetry adapter
+
+### OpenTelemetry
+If you use OpenTelemetry, prefer message headers propagation instead of extracting trace id from payload.
+You can attach the provided adapter on producer and consumer config:
+```java
+    var propagator = new OpenTelemetryMessageContextPropagator();
+
+    var producer = queue.registerProducer(ProducerConfig.<Message>builder()
+        .queueName(QUEUE_NAME)
+        .clazz(Message.class)
+        .messageContextPropagator(propagator)
+        .build());
+
+    queue.registerConsumer(ConsumerConfig.<Message>builder()
+        .messageHandler(message -> System.out.println(message.payload()))
+        .queueName(QUEUE_NAME)
+        .subscriptionId(SUBSCRIPTION_ID)
+        .messageContextPropagator(propagator)
+        .build());
+```
 
 ## Outbox Pattern
 ### Publishing

@@ -170,14 +170,17 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_2, originatedTime);
 
+        var headers = java.util.Map.of("traceparent", "00-test-parent");
         pgQueryService.insertMessage(QUEUE_NAME,
-                new SimpleMessage<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
+                new SimpleMessage<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test"), headers));
 
         var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1);
         assertThat(messages).hasSize(1);
+        assertThat(messages.getFirst().getHeaders()).containsEntry("traceparent", "00-test-parent");
 
         messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_2, 1);
         assertThat(messages).hasSize(1);
+        assertThat(messages.getFirst().getHeaders()).containsEntry("traceparent", "00-test-parent");
     }
 
     @Test

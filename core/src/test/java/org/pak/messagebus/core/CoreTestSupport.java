@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.function.Supplier;
 
@@ -36,6 +37,15 @@ class CoreTestSupport {
     }
 
     static MessageContainer<String> messageContainer(String payload, int attempt, Instant originatedTime) {
+        return messageContainer(payload, Map.of(), attempt, originatedTime);
+    }
+
+    static MessageContainer<String> messageContainer(
+            String payload,
+            Map<String, String> headers,
+            int attempt,
+            Instant originatedTime
+    ) {
         return new MessageContainer<>(
                 java.math.BigInteger.ONE,
                 java.math.BigInteger.TWO,
@@ -46,9 +56,89 @@ class CoreTestSupport {
                 null,
                 originatedTime,
                 payload,
+                headers,
                 null,
                 null
         );
+    }
+
+    static final class RecordingMessageContextPropagator implements MessageContextPropagator {
+        private final Map<String, String> injectedHeaders;
+        private Map<String, String> extractedHeaders = Map.of();
+        private boolean scopeClosed;
+
+        RecordingMessageContextPropagator(Map<String, String> injectedHeaders) {
+            this.injectedHeaders = Map.copyOf(injectedHeaders);
+        }
+
+        @Override
+        public Map<String, String> injectCurrentContext(Map<String, String> headers) {
+            var result = new java.util.LinkedHashMap<>(headers);
+            result.putAll(injectedHeaders);
+            return Map.copyOf(result);
+        }
+
+        @Override
+        public Scope extractToCurrentContext(Map<String, String> headers) {
+            extractedHeaders = Map.copyOf(headers);
+            scopeClosed = false;
+            return () -> scopeClosed = true;
+        }
+
+        Map<String, String> extractedHeaders() {
+            return extractedHeaders;
+        }
+
+        boolean isScopeClosed() {
+            return scopeClosed;
+        }
+    }
+
+    static final class RecordingMessageConsumerTelemetry implements MessageConsumerTelemetry {
+        private Message<?> startedMessage;
+        private QueueName startedQueueName;
+        private SubscriptionId startedSubscriptionId;
+        private Exception recordedException;
+        private boolean scopeClosed;
+
+        @Override
+        public <T> Scope start(Message<T> message, QueueName queueName, SubscriptionId subscriptionId) {
+            startedMessage = message;
+            startedQueueName = queueName;
+            startedSubscriptionId = subscriptionId;
+            scopeClosed = false;
+            return new Scope() {
+                @Override
+                public void recordError(Exception exception) {
+                    recordedException = exception;
+                }
+
+                @Override
+                public void close() {
+                    scopeClosed = true;
+                }
+            };
+        }
+
+        Message<?> startedMessage() {
+            return startedMessage;
+        }
+
+        QueueName startedQueueName() {
+            return startedQueueName;
+        }
+
+        SubscriptionId startedSubscriptionId() {
+            return startedSubscriptionId;
+        }
+
+        Exception recordedException() {
+            return recordedException;
+        }
+
+        boolean isScopeClosed() {
+            return scopeClosed;
+        }
     }
 
     static class DirectTransactionService implements TransactionService {

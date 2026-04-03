@@ -119,14 +119,15 @@ public class PgQueryService implements QueryService {
     @Override
     public <T> boolean insertMessage(QueueName queueName, Message<T> message) {
         var query = queryCache.computeIfAbsent("insertMessage|" + queueName.name(), k -> formatter.execute("""
-                        INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, payload)
-                        VALUES (CURRENT_TIMESTAMP,CURRENT_TIMESTAMP, ?, ?, ?)
+                        INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, headers, payload)
+                        VALUES (CURRENT_TIMESTAMP,CURRENT_TIMESTAMP, ?, ?, ?, ?)
                         ON CONFLICT (key, originated_at) DO NOTHING""",
                 Map.of("schema", schemaName.value(), "queueTable", queueTable(queueName))));
 
         return handleMissingPartition(() -> persistenceService.insert(query,
                         message.key(),
                         OffsetDateTime.ofInstant(message.originatedTime(), ZoneId.systemDefault()),
+                        jsonbConverter.toPGObject(message.headers()),
                         jsonbConverter.toPGObject(message.payload())) > 0,
                 () -> List.of(message.originatedTime())
         );
@@ -135,13 +136,14 @@ public class PgQueryService implements QueryService {
     @Override
     public <T> List<Boolean> insertBatchMessage(QueueName queueName, List<Message<T>> messages) {
         var query = queryCache.computeIfAbsent("insertBatchMessage|" + queueName.name(), k -> formatter.execute("""
-                        INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, payload)
-                        VALUES (CURRENT_TIMESTAMP,CURRENT_TIMESTAMP, ?, ?, ?) ON CONFLICT (key, originated_at) DO NOTHING""",
+                        INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, headers, payload)
+                        VALUES (CURRENT_TIMESTAMP,CURRENT_TIMESTAMP, ?, ?, ?, ?) ON CONFLICT (key, originated_at) DO NOTHING""",
                 Map.of("schema", schemaName.value(), "queueTable", queueTable(queueName))));
 
         var args = messages.stream()
                 .map(t -> new Object[]{t.key(),
                         OffsetDateTime.ofInstant(t.originatedTime(), ZoneId.systemDefault()),
+                        jsonbConverter.toPGObject(t.headers()),
                         jsonbConverter.toPGObject(t.payload())})
                 .toList();
 
@@ -157,7 +159,7 @@ public class PgQueryService implements QueryService {
     ) {
         var query = queryCache.computeIfAbsent("selectMessages|" + subscriptionId.id(), k -> formatter.execute("""
                         SELECT s.id, s.message_id, s.attempt, s.error_message, s.stack_trace, s.created_at, s.updated_at,
-                            s.execute_after, m.originated_at, m.key, m.payload
+                            s.execute_after, m.originated_at, m.key, m.headers, m.payload
                         FROM ${schema}.${subscriptionTable} s JOIN ${schema}.${queueTable} m ON s.message_id = m.id
                             AND s.originated_at = m.originated_at
                         WHERE s.execute_after < CURRENT_TIMESTAMP
@@ -183,6 +185,7 @@ public class PgQueryService implements QueryService {
                         ofNullable(rs.getObject("originated_at", OffsetDateTime.class)).map(OffsetDateTime::toInstant)
                                 .orElse(null),
                         jsonbConverter.toJsonb(rs.getObject("payload", PGobject.class)),
+                        jsonbConverter.toStringMap(rs.getObject("headers", PGobject.class)),
                         rs.getString("error_message"), rs.getString("stack_trace"));
             } catch (SQLException e) {
                 throw new NonRetrayablePersistenceException(e, e.getCause());

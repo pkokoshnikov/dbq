@@ -1,6 +1,7 @@
 package org.pak.messagebus.core;
 
 import java.time.Instant;
+import java.util.Map;
 
 public interface Message<T> {
     String key();
@@ -8,4 +9,10 @@ public interface Message<T> {
     Instant originatedTime();
 
     T payload();
+
+    Map<String, String> headers();
+
+    default Message<T> withHeaders(Map<String, String> headers) {
+        return new SimpleMessage<>(key(), originatedTime(), payload(), headers);
+    }
 }

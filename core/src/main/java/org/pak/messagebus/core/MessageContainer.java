@@ -5,6 +5,7 @@ import lombok.experimental.FieldDefaults;
 
 import java.math.BigInteger;
 import java.time.Instant;
+import java.util.Map;
 
 @Data
 @FieldDefaults(level = lombok.AccessLevel.PRIVATE)
@@ -13,6 +14,7 @@ public class MessageContainer<T> {
     BigInteger messageId;
     String key;
     T payload;
+    Map<String, String> headers;
     Integer attempt;
     Instant executeAfter;
     Instant created;
@@ -31,6 +33,7 @@ public class MessageContainer<T> {
             Instant updated,
             Instant originatedTime,
             T payload,
+            Map<String, String> headers,
             String errorMessage,
             String stackTrace
     ) {
@@ -43,6 +46,7 @@ public class MessageContainer<T> {
         this.updated = updated;
         this.originatedTime = originatedTime;
         this.payload = payload;
+        this.headers = Map.copyOf(headers);
         this.errorMessage = errorMessage;
         this.stackTrace = stackTrace;
     }

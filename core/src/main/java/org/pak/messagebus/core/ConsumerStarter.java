@@ -51,7 +51,8 @@ class ConsumerStarter<T> {
                                 consumerConfig.getBlockingPolicy(),
                                 queryService,
                                 transactionService,
-                                consumerConfig.getTraceIdExtractor(),
+                                consumerConfig.getMessageContextPropagator(),
+                                consumerConfig.getMessageConsumerTelemetry(),
                                 messageFactory,
                                 consumerConfig.getProperties());
                         fixedThreadPoolExecutor.submit(taskExecutor::poolLoop);

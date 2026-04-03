@@ -120,7 +120,7 @@ public class BaseIntegrationTest {
                                 .build())
                         .queueName(QUEUE_NAME)
                         .clazz(TestMessage.class)
-                        .traceIdExtractor(new NullTraceIdExtractor<>())
+                        .messageContextPropagator(new NoOpMessageContextPropagator())
                         .build())
                 .messageFactory(new StdMessageFactory())
                 .queryService(pgQueryService);
@@ -140,7 +140,8 @@ public class BaseIntegrationTest {
                 .nonRetryablePolicy(new SimpleNonRetryablePolicy())
                 .queueName(QUEUE_NAME)
                 .subscriptionId(SUBSCRIPTION_NAME_1)
-                .traceIdExtractor(object -> null)
+                .messageContextPropagator(new NoOpMessageContextPropagator())
+                .messageConsumerTelemetry(new NoOpMessageConsumerTelemetry())
                 .properties(ConsumerConfig.Properties.builder().build());
     }
 
@@ -191,7 +192,7 @@ public class BaseIntegrationTest {
     List<MessageContainer<TestMessage>> selectTestMessages(SubscriptionId subscriptionId) {
         var query = formatter.execute("""
                         SELECT s.id, s.message_id, s.attempt, s.error_message, s.stack_trace, s.created_at, s.updated_at,
-                            s.execute_after, m.payload, m.originated_at, m.key
+                            s.execute_after, m.payload, m.headers, m.originated_at, m.key
                         FROM ${schema}.${subscriptionTable} s JOIN ${schema}.${queueTable} m ON s.message_id = m.id""",
                 Map.of("schema", TEST_SCHEMA.value(),
                         "subscriptionTable", subscriptionId.id().replace("-", "_"),
@@ -212,6 +213,7 @@ public class BaseIntegrationTest {
                         ofNullable(rs.getObject("originated_at", OffsetDateTime.class))
                                 .map(OffsetDateTime::toInstant).orElse(null),
                         jsonbConverter.toJsonb(rs.getObject("payload", PGobject.class)),
+                        jsonbConverter.toStringMap(rs.getObject("headers", PGobject.class)),
                         rs.getString("error_message"),
                         rs.getString("stack_trace")));
     }

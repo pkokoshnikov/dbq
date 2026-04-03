@@ -9,11 +9,14 @@ class ProducerTest {
     @Test
     void sendCreatesAndInsertsMessageForPayload() {
         var queryService = new CoreTestSupport.RecordingQueryService();
+        var messageContextPropagator = new CoreTestSupport.RecordingMessageContextPropagator(
+                java.util.Map.of("traceparent", "00-test-parent"));
         var producer = new Producer<>(
                 ProducerConfig.<String>builder()
                         .queueName(QUEUE_NAME)
                         .clazz(String.class)
                         .properties(ProducerConfig.Properties.builder().storageDays(10).build())
+                        .messageContextPropagator(messageContextPropagator)
                         .build(),
                 queryService,
                 new StdMessageFactory()
@@ -27,5 +30,6 @@ class ProducerTest {
         assertThat(insert.message().payload()).isEqualTo("payload");
         assertThat(insert.message().key()).isNotBlank();
         assertThat(insert.message().originatedTime()).isNotNull();
+        assertThat(insert.message().headers()).containsEntry("traceparent", "00-test-parent");
     }
 }

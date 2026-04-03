@@ -16,6 +16,7 @@ import org.pak.messagebus.core.error.SerializerException;
 import org.postgresql.util.PGobject;
 
 import java.sql.SQLException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -77,6 +78,36 @@ public class JsonbConverter {
             var jsonObject = new PGobject();
             jsonObject.setType("jsonb");
             jsonObject.setValue(value);
+
+            return (T) jsonObject;
+        } catch (SQLException e) {
+            throw new RetrayablePersistenceException(e, e.getCause());
+        } catch (JsonProcessingException e) {
+            throw new SerializerException(e);
+        }
+    }
+
+    public Map<String, String> toStringMap(PGobject source) {
+        try {
+            if (source == null || source.getValue() == null) {
+                return Map.of();
+            }
+
+            return objectMapper.readValue(
+                    source.getValue(),
+                    objectMapper.getTypeFactory().constructMapType(HashMap.class, String.class, String.class)
+            );
+        } catch (JsonProcessingException e) {
+            throw new SerializerException(e);
+        }
+    }
+
+    public <T extends PGobject> T toPGObject(Map<String, String> source) {
+        try {
+            var jsonObject = new PGobject();
+            jsonObject.setType("jsonb");
+            jsonObject.setValue(objectMapper.writeValueAsString(
+                    source == null ? Collections.<String, String>emptyMap() : source));
 
             return (T) jsonObject;
         } catch (SQLException e) {

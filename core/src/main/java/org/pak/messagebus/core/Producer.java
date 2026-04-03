@@ -2,18 +2,15 @@ package org.pak.messagebus.core;
 
 import lombok.extern.slf4j.Slf4j;
 import org.pak.messagebus.core.service.QueryService;
-import org.slf4j.MDC;
 
 import java.time.Instant;
 import java.util.UUID;
-
-import static java.util.Optional.ofNullable;
 
 @Slf4j
 public class Producer<T> {
     private final QueueName queueName;
     private final QueryService queryService;
-    private final TraceIdExtractor<T> traceIdExtractor;
+    private final MessageContextPropagator messageContextPropagator;
     private final MessageFactory messageFactory;
 
     public Producer(
@@ -23,7 +20,7 @@ public class Producer<T> {
     ) {
         this.queueName = producerConfig.getQueueName();
         this.queryService = queryService;
-        this.traceIdExtractor = producerConfig.getTraceIdExtractor();
+        this.messageContextPropagator = producerConfig.getMessageContextPropagator();
         this.messageFactory = messageFactory;
     }
 
@@ -33,21 +30,18 @@ public class Producer<T> {
 
     //TODO: cleaner
     public void send(Message<T> message) {
-        var optionalTraceIdMDC = ofNullable(traceIdExtractor.extractTraceId(message.payload()))
-                .map(v -> MDC.putCloseable("traceId", v));
+        var messageToStore = message.withHeaders(messageContextPropagator.injectCurrentContext(message.headers()));
 
-        try (var ignoredCollectionMDC = MDC.putCloseable("queueName", queueName.name());
-                var ignoreKeyMDC = MDC.putCloseable("messageKey", message.key())) {
-            log.debug("Publish payload {}", message.payload());
+        try (var ignoredCollectionMDC = org.slf4j.MDC.putCloseable("queueName", queueName.name());
+                var ignoreKeyMDC = org.slf4j.MDC.putCloseable("messageKey", messageToStore.key())) {
+            log.debug("Publish payload {}", messageToStore.payload());
 
-            var inserted = queryService.insertMessage(queueName, message);
+            var inserted = queryService.insertMessage(queueName, messageToStore);
             if (inserted) {
                 log.info("Published payload");
             } else {
-                log.warn("Duplicate key {}, {}", message.key(), message.originatedTime());
+                log.warn("Duplicate key {}, {}", messageToStore.key(), messageToStore.originatedTime());
             }
-        } finally {
-            optionalTraceIdMDC.ifPresent(MDC.MDCCloseable::close);
         }
     }
 }

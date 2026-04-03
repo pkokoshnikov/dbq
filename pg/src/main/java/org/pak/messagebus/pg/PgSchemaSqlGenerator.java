@@ -23,6 +23,7 @@ public class PgSchemaSqlGenerator {
                     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     execute_after TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     originated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    headers JSONB NOT NULL DEFAULT '{}'::jsonb,
                     payload JSONB NOT NULL,
                     PRIMARY KEY (id, originated_at)
                 ) PARTITION BY RANGE (originated_at);

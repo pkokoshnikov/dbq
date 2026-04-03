@@ -27,7 +27,9 @@ public class ConsumerConfig<T> {
     @Builder.Default
     Properties properties = Properties.builder().build();
     @Builder.Default
-    TraceIdExtractor<T> traceIdExtractor = new NullTraceIdExtractor<T>();
+    MessageContextPropagator messageContextPropagator = new NoOpMessageContextPropagator();
+    @Builder.Default
+    MessageConsumerTelemetry messageConsumerTelemetry = new NoOpMessageConsumerTelemetry();
 
     @Builder
     @Getter
