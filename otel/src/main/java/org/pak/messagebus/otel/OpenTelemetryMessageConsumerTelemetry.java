@@ -13,7 +13,7 @@ import org.pak.messagebus.core.SubscriptionId;
 import org.slf4j.MDC;
 
 public final class OpenTelemetryMessageConsumerTelemetry implements MessageConsumerTelemetry {
-    private static final String INSTRUMENTATION_NAME = "org.pak.messagebus.otel";
+    private static final String INSTRUMENTATION_NAME = "org.pak.dbq.otel";
     private final Tracer tracer;
 
     public OpenTelemetryMessageConsumerTelemetry() {
@@ -32,11 +32,11 @@ public final class OpenTelemetryMessageConsumerTelemetry implements MessageConsu
     public <T> Scope start(Message<T> message, QueueName queueName, SubscriptionId subscriptionId) {
         var span = tracer.spanBuilder(queueName.name() + " process")
                 .setSpanKind(SpanKind.CONSUMER)
-                .setAttribute("messaging.system", "message-bus")
+                .setAttribute("messaging.system", "dbq")
                 .setAttribute("messaging.operation", "process")
                 .setAttribute("messaging.destination.name", queueName.name())
                 .setAttribute("messaging.destination.subscription.name", subscriptionId.id())
-                .setAttribute("messagebus.message.key", message.key())
+                .setAttribute("dbq.message.key", message.key())
                 .startSpan();
         var scope = span.makeCurrent();
         var traceId = MDC.putCloseable("traceId", span.getSpanContext().getTraceId());

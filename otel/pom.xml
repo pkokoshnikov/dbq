@@ -5,16 +5,16 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.pak.messagebus</groupId>
-        <artifactId>lib</artifactId>
-        <version>0.0.1</version>
+        <groupId>org.pak</groupId>
+        <artifactId>dbq</artifactId>
+        <version>1.0.0</version>
     </parent>
 
     <artifactId>otel</artifactId>
 
     <dependencies>
         <dependency>
-            <groupId>org.pak.messagebus</groupId>
+            <groupId>org.pak</groupId>
             <artifactId>core</artifactId>
             <version>${project.version}</version>
         </dependency>

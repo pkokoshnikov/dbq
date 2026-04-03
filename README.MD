@@ -1,8 +1,10 @@
-# Message Bus
+# DBQ
 
-Database-backed message bus for transactional outbox-style publishing and subscription processing.
+DBQ is a database-backed queue, which provides multiple independent subscriptions. It can be used for transactional 
+outbox-style publishing and subscription processing.
 
-The project is built around a simple idea: store messages in PostgreSQL, let independent subscriptions process them in their own transactions, and keep the API small enough to embed into an application without bringing a full broker.
+The project is built around a simple idea: store messages in DB, let independent subscriptions process them in their own 
+transactions, and keep the API small enough to embed into an application without bringing a full broker.
 
 ## What It Provides
 
@@ -33,7 +35,8 @@ The project is built around a simple idea: store messages in PostgreSQL, let ind
 - `QueueName` identifies a logical queue, for example `orders`
 - `SubscriptionId` identifies an independent consumer group, for example `billing`
 - `Producer<T>` publishes messages into a queue
-- `MessageHandler<T>` processes messages for a subscription
+- `Consumer<T>` consumes messages from a queue
+- `MessageHandler<T>` provides message handling
 - `Message<T>` contains:
   - `key`
   - `originatedTime`
@@ -49,27 +52,27 @@ Add the modules you actually use:
 
 ```xml
 <dependency>
-    <groupId>org.pak.messagebus</groupId>
+    <groupId>org.pak</groupId>
     <artifactId>core</artifactId>
-    <version>${messagebus.version}</version>
+    <version>${dbq.version}</version>
 </dependency>
 
 <dependency>
-    <groupId>org.pak.messagebus</groupId>
+    <groupId>org.pak</groupId>
     <artifactId>pg</artifactId>
-    <version>${messagebus.version}</version>
+    <version>${dbq.version}</version>
 </dependency>
 
 <dependency>
-    <groupId>org.pak.messagebus</groupId>
+    <groupId>org.pak</groupId>
     <artifactId>spring</artifactId>
-    <version>${messagebus.version}</version>
+    <version>${dbq.version}</version>
 </dependency>
 
 <dependency>
-    <groupId>org.pak.messagebus</groupId>
+    <groupId>org.pak</groupId>
     <artifactId>otel</artifactId>
-    <version>${messagebus.version}</version>
+    <version>${dbq.version}</version>
 </dependency>
 ```
 
@@ -291,7 +294,7 @@ Guidance:
 
 ## OpenTelemetry
 
-The `otel` module integrates with the new header-based propagation API.
+The `otel` module integrates DBQ with the new header-based propagation API.
 
 Use two separate pieces:
 
@@ -371,11 +374,3 @@ mvn -q -pl integration-tests -am test
 ```
 
 The full integration suite requires Docker because it uses Testcontainers.
-
-## Notes
-
-- the provided production storage implementation is PostgreSQL
-- payloads and headers are persisted as JSONB
-- `JsonbConverter` type registration is required before consuming stored payloads
-- table creation is explicit; there is no hidden auto-migration in `QueueManager`
-- use one queue per message contract unless you have a clear reason to mix heterogeneous payloads

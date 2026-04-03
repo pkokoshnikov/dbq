@@ -4,25 +4,25 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <groupId>org.pak.messagebus</groupId>
-        <artifactId>lib</artifactId>
-        <version>0.0.1</version>
+        <groupId>org.pak</groupId>
+        <artifactId>dbq</artifactId>
+        <version>1.0.0</version>
     </parent>
 
     <artifactId>integration-tests</artifactId>
     <dependencies>
         <dependency>
-            <groupId>org.pak.messagebus</groupId>
+            <groupId>org.pak</groupId>
             <artifactId>core</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.pak.messagebus</groupId>
+            <groupId>org.pak</groupId>
             <artifactId>spring</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.pak.messagebus</groupId>
+            <groupId>org.pak</groupId>
             <artifactId>pg</artifactId>
             <version>${project.version}</version>
         </dependency>

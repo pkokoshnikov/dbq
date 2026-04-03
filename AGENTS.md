@@ -2,9 +2,9 @@
 
 ## Project Structure & Module Organization
 
-This repository is a multi-module Maven project for a database-backed message bus.
+This repository is a multi-module Maven project for DBQ, a database-backed queue.
 
-- `core/`: domain model, message bus API, retry/blocking policies, Quartz scheduling, and unit tests in `core/src/test/java`.
+- `core/`: domain model, DBQ API, retry/blocking policies, Quartz scheduling, and unit tests in `core/src/test/java`.
 - `pg/`: PostgreSQL query implementation and JSONB conversion.
 - `spring/`: Spring JDBC and transaction adapters.
 - `integration-tests/`: end-to-end tests with Testcontainers and PostgreSQL.

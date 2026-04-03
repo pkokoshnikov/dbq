@@ -62,7 +62,7 @@ class OpenTelemetryMessageConsumerTelemetryTest {
         assertThat(consumerSpan.getAttributes().get(io.opentelemetry.api.common.AttributeKey.stringKey(
                 "messaging.destination.subscription.name"))).isEqualTo("billing");
         assertThat(consumerSpan.getAttributes().get(io.opentelemetry.api.common.AttributeKey.stringKey(
-                "messagebus.message.key"))).isEqualTo("message-key");
+                "dbq.message.key"))).isEqualTo("message-key");
         assertThat(MDC.get("traceId")).isNull();
         assertThat(MDC.get("spanId")).isNull();
         tracerProvider.close();
