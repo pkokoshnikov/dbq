@@ -1,5 +1,7 @@
 package org.pak.messagebus.pg;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.pak.messagebus.core.*;
@@ -17,6 +19,7 @@ import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,11 +33,15 @@ public class PgQueryService implements QueryService {
     private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy_MM_dd");
     private static final String MISSING_PARTITION_CODE = "23514";
     private static final String PARTITION_HAS_REFERENCES_CODE = "23503";
+    private static final long ENSURED_PARTITIONS_CACHE_SIZE = 10_000;
     private final PersistenceService persistenceService;
     private final SchemaName schemaName;
     private final JsonbConverter jsonbConverter;
     private final StringFormatter formatter = new StringFormatter();
     private final Map<String, String> queryCache = new ConcurrentHashMap<>();
+    private final Cache<String, Boolean> ensuredPartitions = CacheBuilder.newBuilder()
+            .maximumSize(ENSURED_PARTITIONS_CACHE_SIZE)
+            .build();
 
     public PgQueryService(
             PersistenceService persistenceService, SchemaName schemaName, JsonbConverter jsonbConverter
@@ -64,7 +71,9 @@ public class PgQueryService implements QueryService {
     }
 
     public void dropQueuePartition(QueueName queueName, LocalDate partition) {
-        var query = dropPartitionSql(queueTable(queueName), partitionName(queueTable(queueName), partition));
+        var table = queueTable(queueName);
+        var partitionName = partitionName(table, partition);
+        var query = dropPartitionSql(table, partitionName);
         try {
             persistenceService.execute(query);
         } catch (PersistenceException e) {
@@ -79,8 +88,9 @@ public class PgQueryService implements QueryService {
     }
 
     public void dropHistoryPartition(SubscriptionId subscriptionId, LocalDate partition) {
-        var query = dropPartitionSql(subscriptionHistoryTable(subscriptionId),
-                partitionName(subscriptionHistoryTable(subscriptionId), partition));
+        var table = subscriptionHistoryTable(subscriptionId);
+        var partitionName = partitionName(table, partition);
+        var query = dropPartitionSql(table, partitionName);
 
         persistenceService.execute(query);
     }
@@ -118,6 +128,8 @@ public class PgQueryService implements QueryService {
 
     @Override
     public <T> boolean insertMessage(QueueName queueName, Message<T> message) {
+        ensureQueuePartitionExists(queueName, message.originatedTime());
+
         var query = queryCache.computeIfAbsent("insertMessage|" + queueName.name(), k -> formatter.execute("""
                         INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, headers, payload)
                         VALUES (CURRENT_TIMESTAMP,CURRENT_TIMESTAMP, ?, ?, ?, ?)
@@ -135,6 +147,10 @@ public class PgQueryService implements QueryService {
 
     @Override
     public <T> List<Boolean> insertBatchMessage(QueueName queueName, List<Message<T>> messages) {
+        ensureQueuePartitionsExist(queueName, messages.stream()
+                .map(Message::originatedTime)
+                .toList());
+
         var query = queryCache.computeIfAbsent("insertBatchMessage|" + queueName.name(), k -> formatter.execute("""
                         INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, headers, payload)
                         VALUES (CURRENT_TIMESTAMP,CURRENT_TIMESTAMP, ?, ?, ?, ?) ON CONFLICT (key, originated_at) DO NOTHING""",
@@ -214,6 +230,8 @@ public class PgQueryService implements QueryService {
     public <T> void failMessage(
             SubscriptionId subscriptionId, MessageContainer<T> messageContainer, Exception e
     ) {
+        ensureHistoryPartitionExists(subscriptionId, messageContainer.getOriginatedTime());
+
         var query = queryCache.computeIfAbsent("failMessage|" + subscriptionId.id(), k -> formatter.execute("""
                         WITH deleted AS (DELETE FROM ${schema}.${subscriptionTable} WHERE id = ? RETURNING *)
                         INSERT INTO ${schema}.${subscriptionHistoryTable}
@@ -232,6 +250,8 @@ public class PgQueryService implements QueryService {
     public <T> void completeMessage(
             SubscriptionId subscriptionId, MessageContainer<T> messageContainer
     ) {
+        ensureHistoryPartitionExists(subscriptionId, messageContainer.getOriginatedTime());
+
         var query = queryCache.computeIfAbsent("completeMessage|" + subscriptionId.id(), k -> formatter.execute("""
                         WITH deleted AS (DELETE FROM ${schema}.${subscriptionTable} WHERE id = ? RETURNING *)
                         INSERT INTO ${schema}.${subscriptionHistoryTable}
@@ -261,6 +281,38 @@ public class PgQueryService implements QueryService {
 
     private String partitionName(String table, LocalDate partition) {
         return table + "_" + dateFormatter.format(partition);
+    }
+
+    private void ensureQueuePartitionExists(QueueName queueName, Instant originatedTime) {
+        ensurePartitionExists(queueTable(queueName), originatedTime);
+    }
+
+    private void ensureQueuePartitionsExist(QueueName queueName, List<Instant> originatedTimes) {
+        var table = queueTable(queueName);
+        originatedTimes.stream()
+                .map(originatedTime -> originatedTime.atOffset(ZoneOffset.UTC).toLocalDate())
+                .collect(Collectors.toCollection(LinkedHashSet::new))
+                .forEach(partitionDate -> ensurePartitionExists(table, partitionDate.atStartOfDay().toInstant(ZoneOffset.UTC)));
+    }
+
+    private void ensureHistoryPartitionExists(SubscriptionId subscriptionId, Instant originatedTime) {
+        ensurePartitionExists(subscriptionHistoryTable(subscriptionId), originatedTime);
+    }
+
+    private void ensurePartitionExists(String table, Instant originatedTime) {
+        var partitionDate = originatedTime.atOffset(ZoneOffset.UTC).toLocalDate();
+        var partition = partitionName(table, partitionDate);
+        if (ensuredPartitions.getIfPresent(partition) != null) {
+            return;
+        }
+
+        acquirePartitionLock(partition);
+        createPartition(table, partitionDate.atStartOfDay().toInstant(ZoneOffset.UTC));
+        ensuredPartitions.put(partition, Boolean.TRUE);
+    }
+
+    private void acquirePartitionLock(String partition) {
+        persistenceService.execute("SELECT pg_advisory_xact_lock(hashtext(?))", partition);
     }
 
     private String dropPartitionSql(String table, String partition) {

@@ -4,7 +4,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.pak.messagebus.core.error.MissingPartitionException;
 import org.pak.messagebus.core.error.PartitionHasReferencesException;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -112,52 +111,71 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testInsertMissingPartitionException() {
+    void testInsertCreatesQueuePartitionOnDemand() {
         createQueueTable();
 
         Instant originatedTime = Instant.now();
-        var exception = Assertions.assertThrows(MissingPartitionException.class, () -> {
-            pgQueryService.insertMessage(QUEUE_NAME,
-                    new SimpleMessage<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
-        });
+        var inserted = pgQueryService.insertMessage(QUEUE_NAME,
+                new SimpleMessage<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
 
-        assertThat(exception.getOriginationTimes().get(0)).isEqualTo(originatedTime);
+        assertThat(inserted).isTrue();
+        assertThat(pgQueryService.getAllQueuePartitions(QUEUE_NAME)).isNotEmpty();
     }
 
     @Test
-    void testBatchInsertMissingPartitionException() {
+    void testBatchInsertCreatesQueuePartitionsOnDemand() {
         createQueueTable();
 
         Instant originatedTime_1 = Instant.now();
-        Instant originatedTime_2 = Instant.now();
-        var exception = Assertions.assertThrows(MissingPartitionException.class,
-                () -> pgQueryService.insertBatchMessage(QUEUE_NAME,
-                        List.of(new SimpleMessage<>(UUID.randomUUID().toString(), originatedTime_1,
-                                        new TestMessage("test")),
-                                new SimpleMessage<>(UUID.randomUUID().toString(), originatedTime_2,
-                                        new TestMessage("test")))));
+        Instant originatedTime_2 = originatedTime_1.plus(2, ChronoUnit.DAYS);
+        var inserted = pgQueryService.insertBatchMessage(QUEUE_NAME,
+                List.of(new SimpleMessage<>(UUID.randomUUID().toString(), originatedTime_1,
+                                new TestMessage("test")),
+                        new SimpleMessage<>(UUID.randomUUID().toString(), originatedTime_2,
+                                new TestMessage("test"))));
 
-        assertThat(exception.getOriginationTimes()).containsExactlyInAnyOrder(originatedTime_1, originatedTime_2);
+        assertThat(inserted).containsExactly(true, true);
+        assertThat(pgQueryService.getAllQueuePartitions(QUEUE_NAME))
+                .contains(originatedTime_1.atOffset(java.time.ZoneOffset.UTC).toLocalDate(),
+                        originatedTime_2.atOffset(java.time.ZoneOffset.UTC).toLocalDate());
     }
 
     @Test
-    void testCompleteOrFailMissingPartitionException() {
+    void testCompleteAndFailCreateHistoryPartitionOnDemand() {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1);
-        Instant originatedTime = Instant.now();
-        pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
+        Instant originatedTimeComplete = Instant.now();
+        Instant originatedTimeFail = originatedTimeComplete.plus(1, ChronoUnit.DAYS);
 
-        pgQueryService.insertMessage(QUEUE_NAME,
-                new SimpleMessage<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
-        var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1);
+        pgQueryService.insertBatchMessage(QUEUE_NAME,
+                List.of(new SimpleMessage<>(UUID.randomUUID().toString(), originatedTimeComplete,
+                                new TestMessage("complete")),
+                        new SimpleMessage<>(UUID.randomUUID().toString(), originatedTimeFail,
+                                new TestMessage("fail"))));
 
-        var exception = Assertions.assertThrows(MissingPartitionException.class,
-                () -> pgQueryService.completeMessage(SUBSCRIPTION_NAME_1, messages.get(0)));
-        assertThat(exception.getOriginationTimes().get(0)).isEqualTo(originatedTime);
+        var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 10);
+        assertThat(messages).hasSize(2);
 
-        exception = Assertions.assertThrows(MissingPartitionException.class,
-                () -> pgQueryService.failMessage(SUBSCRIPTION_NAME_1, messages.get(0), new RuntimeException()));
-        assertThat(exception.getOriginationTimes().get(0)).isEqualTo(originatedTime);
+        var completeMessage = messages.stream()
+                .filter(message -> "complete".equals(((TestMessage) message.getPayload()).getName()))
+                .findFirst()
+                .orElseThrow();
+        var failMessage = messages.stream()
+                .filter(message -> "fail".equals(((TestMessage) message.getPayload()).getName()))
+                .findFirst()
+                .orElseThrow();
+
+        pgQueryService.completeMessage(SUBSCRIPTION_NAME_1, completeMessage);
+        pgQueryService.failMessage(SUBSCRIPTION_NAME_1, failMessage, new RuntimeException("fail"));
+
+        assertThat(pgQueryService.getAllHistoryPartitions(SUBSCRIPTION_NAME_1))
+                .contains(originatedTimeComplete.atOffset(java.time.ZoneOffset.UTC).toLocalDate(),
+                        originatedTimeFail.atOffset(java.time.ZoneOffset.UTC).toLocalDate());
+
+        var historyMessages = selectTestMessagesFromHistory(SUBSCRIPTION_NAME_1);
+        assertThat(historyMessages).hasSize(2);
+        assertThat(historyMessages).anySatisfy(message -> assertThat(message.getStatus()).isEqualTo(Status.PROCESSED));
+        assertThat(historyMessages).anySatisfy(message -> assertThat(message.getStatus()).isEqualTo(Status.FAILED));
     }
 
     @Test
