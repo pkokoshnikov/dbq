@@ -48,6 +48,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         assertPartitions(QUEUE_TABLE, partitions);
     }
 
+    @Test
     void createSubscriptionPartitionTest() {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1);
