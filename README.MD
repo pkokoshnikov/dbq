@@ -1,175 +1,381 @@
-# Message bus
+# Message Bus
 
-## Description
-This library is intended for supporting of **Outbox pattern** in general. And it can be used for publishing/subscribing of 
-domain events in eventual consistency manner. But of course it can be used as a simple queue on your db.
+Database-backed message bus for transactional outbox-style publishing and subscription processing.
 
-### The library supports:
-* publishing messages (single and batch)
-* consuming with multiple subscriptions (single and batch)
-* retrying of failed messages
-* blocking subscription processing in case of unavailable resources 
-* PostgreSQL CLI tool for generating message and subscription DDL
-* optional PostgreSQL partition management and cleanup
+The project is built around a simple idea: store messages in PostgreSQL, let independent subscriptions process them in their own transactions, and keep the API small enough to embed into an application without bringing a full broker.
 
-## Usage
-### Initialization
-First of all you need to initialize the queue, it should be one instance per application. It can be a singleton bean in Spring.
-```java
-    // init queue
-    PersistenceService persistenceService = new SpringPersistenceService(jdbcTemplate);
-    QueryService queryService = new PgQueryService(persistenceService, new SchemaName("schema"), jsonbConverter);
-    TransactionService transactionService = new SpringTransactionService(new TransactionTemplate(new JdbcTransactionManager(dataSource) {}));
-    QueueManager queue = new QueueManager(
-            queryService,
-            transactionService,
-            new StdMessageFactory());
+## What It Provides
+
+- transactional message publishing against your application database
+- multiple independent subscriptions for the same queue
+- retry, blocking, and non-retryable failure policies
+- PostgreSQL DDL generation for queue and subscription tables
+- optional PostgreSQL partition creation and cleanup
+- optional OpenTelemetry context propagation and consumer spans
+
+## Modules
+
+- `core` - queue API, producer/consumer runtime, policies, message model
+- `pg` - PostgreSQL `QueryService`, JSONB conversion, DDL generator, partition manager
+- `spring` - Spring JDBC persistence adapter and Spring transaction adapter
+- `otel` - OpenTelemetry propagation and consumer tracing integration
+- `integration-tests` - end-to-end tests with PostgreSQL and Testcontainers
+
+## Requirements
+
+- Java 25
+- PostgreSQL for the provided storage implementation
+- queue names and subscription ids must use lowercase letters and `-`
+- schema names must use lowercase letters and `_`
+
+## Core Concepts
+
+- `QueueName` identifies a logical queue, for example `orders`
+- `SubscriptionId` identifies an independent consumer group, for example `billing`
+- `Producer<T>` publishes messages into a queue
+- `MessageHandler<T>` processes messages for a subscription
+- `Message<T>` contains:
+  - `key`
+  - `originatedTime`
+  - `payload`
+  - `headers`
+- `QueueManager` wires producers and consumers on top of `QueryService` and `TransactionService`
+
+Each subscription has its own state. If two subscriptions are registered for the same queue, both will receive the same message and track their progress independently.
+
+## Maven Coordinates
+
+Add the modules you actually use:
+
+```xml
+<dependency>
+    <groupId>org.pak.messagebus</groupId>
+    <artifactId>core</artifactId>
+    <version>${messagebus.version}</version>
+</dependency>
+
+<dependency>
+    <groupId>org.pak.messagebus</groupId>
+    <artifactId>pg</artifactId>
+    <version>${messagebus.version}</version>
+</dependency>
+
+<dependency>
+    <groupId>org.pak.messagebus</groupId>
+    <artifactId>spring</artifactId>
+    <version>${messagebus.version}</version>
+</dependency>
+
+<dependency>
+    <groupId>org.pak.messagebus</groupId>
+    <artifactId>otel</artifactId>
+    <version>${messagebus.version}</version>
+</dependency>
 ```
 
-### Schema and partitions
-`QueueManager` no longer creates tables or manages partitions automatically. Applications should create
-message and subscription tables via migrations.
+## Quick Start
 
-For PostgreSQL you can generate the required DDL programmatically:
+### 1. Register payload types for JSONB
+
+The PostgreSQL module stores payloads as JSONB. `JsonbConverter` must know how to deserialize them back.
+
+Register every payload class under a unique type name:
+
 ```java
-    PgSchemaSqlGenerator sqlGenerator = new PgSchemaSqlGenerator(new SchemaName("public"));
-
-    String messageSql = sqlGenerator.createQueueTable(QUEUE_NAME);
-    String subscriptionSql = sqlGenerator.createSubscriptionTable(QUEUE_NAME, SUBSCRIPTION_NAME);
+JsonbConverter jsonbConverter = new JsonbConverter();
+jsonbConverter.registerType("order-created", OrderCreated.class);
 ```
 
-The same generator is available through a dedicated CLI tool:
+If you use several payload classes, register each one explicitly.
+
+### 2. Create infrastructure services
+
+```java
+QueueName queueName = new QueueName("orders");
+SubscriptionId subscriptionId = new SubscriptionId("billing");
+
+JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+
+SpringPersistenceService persistenceService =
+        new SpringPersistenceService(jdbcTemplate);
+
+PgQueryService queryService =
+        new PgQueryService(persistenceService, new SchemaName("public"), jsonbConverter);
+
+SpringTransactionService transactionService =
+        new SpringTransactionService(new TransactionTemplate(new JdbcTransactionManager(dataSource)));
+
+QueueManager queueManager = new QueueManager(queryService, transactionService);
+```
+
+### 3. Create database tables
+
+`QueueManager` does not create tables automatically. Create them through migrations or generate SQL from the PostgreSQL module.
+
+Programmatic generation:
+
+```java
+PgSchemaSqlGenerator sqlGenerator = new PgSchemaSqlGenerator(new SchemaName("public"));
+
+String queueSql = sqlGenerator.createQueueTable(queueName);
+String subscriptionSql = sqlGenerator.createSubscriptionTable(queueName, subscriptionId);
+```
+
+CLI generation:
+
 ```bash
-    java -cp pg/target/pg-0.0.1.jar org.pak.messagebus.pg.cli.PgSchemaCli queue public test-message
-    java -cp pg/target/pg-0.0.1.jar org.pak.messagebus.pg.cli.PgSchemaCli subscription public test-message test-subscription
-    java -cp pg/target/pg-0.0.1.jar org.pak.messagebus.pg.cli.PgSchemaCli all public test-message test-subscription
+java -cp pg/target/pg-0.0.1.jar org.pak.messagebus.pg.cli.PgSchemaCli queue public orders
+java -cp pg/target/pg-0.0.1.jar org.pak.messagebus.pg.cli.PgSchemaCli subscription public orders billing
+java -cp pg/target/pg-0.0.1.jar org.pak.messagebus.pg.cli.PgSchemaCli all public orders billing
 ```
 
-If you want automatic daily partition creation and cleanup for PostgreSQL, run a dedicated pg-specific manager explicitly:
+### 4. Register a producer
+
+`registerProducer(...)` returns a `Producer<T>`. Keep that instance and use it directly.
+
 ```java
-    PgTableManager pgTableManager = new PgTableManager(
-            new PgQueryService(persistenceService, new SchemaName("schema"), jsonbConverter),
-            "0 0 1 * * ?",
-            "0 0 2 * * ?");
-
-    // parent tables should already exist via migrations
-    pgTableManager.registerQueue(QUEUE_NAME, 30);
-    pgTableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME, 30);
-    pgTableManager.startCronJobs();
+Producer<OrderCreated> producer = queueManager.registerProducer(
+        ProducerConfig.<OrderCreated>builder()
+                .queueName(queueName)
+                .clazz(OrderCreated.class)
+                .build()
+);
 ```
-### Publishing 
-#### Registration
-To start publishing messages you need to register producers, it consumes producer config with queue name and class.
-Queue name is a unique identifier of queue.
+
+### 5. Register a consumer
+
 ```java
-    // register producer
-    var producer = queue.registerProducer(ProducerConfig.<Message>builder()
-        .queueName(QUEUE_NAME)
-        .clazz(Message.class)
-        .build());
+queueManager.registerConsumer(
+        ConsumerConfig.<OrderCreated>builder()
+                .queueName(queueName)
+                .subscriptionId(subscriptionId)
+                .messageHandler(message -> {
+                    OrderCreated payload = message.payload();
+                    System.out.println("Received order " + payload.orderId());
+                })
+                .properties(ConsumerConfig.Properties.builder()
+                        .concurrency(4)
+                        .maxPollRecords(1)
+                        .build())
+                .build()
+);
 ```
-#### Sending
-Message class should be serializable to JSON, because it will be serialized and stored in db.
-To publish message you need to call send method on producer with message payload.
+
+### 6. Start and stop consumers
+
 ```java
-    // publish message
-    producer.send(new Message("test"));
+queueManager.startConsumers();
+
+// on shutdown
+queueManager.stopConsumers();
 ```
-### Subscribing
-#### Registration
-To start consuming messages you need to register a consumer config with queue name and subscription id.
-Subscription id is a unique identifier of subscription. Besides you can specify properties for message handling, for example concurrency.
-The most important property is messageHandler where your business logic should be placed.
+
+### 7. Publish messages
+
+The simplest form generates a random message key and current timestamp:
+
 ```java
-    // register consumer
-    queue.registerConsumer(ConsumerConfig.<TestMessage>builder()
-        .messageHandler(message -> { // your business logic
-            System.out.println("Message received: " + message);
-        })
-        .queueName(QUEUE_NAME) // unique identifier of queue
-        .subscriptionId(SUBSCRIPTION_ID) // unique identifier of subscription group
-        .properties(ConsumerConfig.Properties.builder()
-            .concurrency(10) // number of threads for consuming messages
-            .build())
-        .build());
+producer.send(new OrderCreated("order-123"));
 ```
-#### Starting
-To start consuming messages you need to call `startConsumers` method.
+
+If you need your own deduplication key, timestamp, or headers, send a `Message<T>` explicitly:
+
 ```java
-    // start consumers
-    queue.startConsumers();
+producer.send(new SimpleMessage<>(
+        "order-123",
+        Instant.now(),
+        new OrderCreated("order-123"),
+        Map.of("tenant", "acme")
+));
 ```
-#### Stopping
-To stop consuming messages you need to call `stopConsumers` method.
+
+## Publishing Model
+
+Messages are inserted into the queue table. Duplicate suppression is based on the pair `(key, originated_at)`.
+
+That means:
+
+- `producer.send(payload)` always creates a fresh message identity
+- `producer.send(new SimpleMessage<>(...))` lets you control deduplication
+
+For outbox usage, call `producer.send(...)` inside the same database transaction as your business state change.
+
+## Consumption Model
+
+Each consumer subscription polls its own subscription table, locks rows with `FOR UPDATE SKIP LOCKED`, processes messages, and then marks them as:
+
+- `PROCESSED`
+- retried with a later `execute_after`
+- `FAILED`
+
+The message handler runs inside the consumer transaction. In practice this means your business-side database changes and the subscription status update are committed together.
+
+Because delivery is retry-based, handlers should be idempotent.
+
+## Message Headers
+
+Headers are stored separately from the payload as JSONB.
+
+Use headers for transport metadata such as:
+
+- tracing context
+- tenant identifiers
+- correlation ids
+- internal routing hints
+
+Do not put observability metadata into the payload unless it is part of the business contract.
+
+## Error Handling and Retry Policies
+
+Consumer behavior is configurable per subscription through `ConsumerConfig`.
+
+Defaults:
+
+- `SimpleRetryablePolicy`
+  - exponential backoff
+  - capped at 10 minutes
+  - stops retrying after attempt `10000`
+- `SimpleNonRetryablePolicy`
+  - nothing is non-retryable by default
+- `SimpleBlockingPolicy`
+  - nothing is blocking by default
+
+Policy contracts:
+
+- `RetryablePolicy`
+  - returns `Optional<Duration>`
+  - empty means "stop retrying and fail the message"
+- `NonRetryablePolicy`
+  - returns `true` when a message must fail immediately
+- `BlockingPolicy`
+  - returns a pause for the whole consumer loop without incrementing the attempt
+
+Example:
+
 ```java
-    // stop consumers
-    queue.stopConsumers();
+queueManager.registerConsumer(
+        ConsumerConfig.<OrderCreated>builder()
+                .queueName(queueName)
+                .subscriptionId(subscriptionId)
+                .messageHandler(message -> callRemoteService(message.payload()))
+                .nonRetryablePolicy(exception -> exception instanceof IllegalArgumentException)
+                .blockingPolicy(new BlockingPolicy() {
+                    @Override
+                    public boolean isBlocked(Exception exception) {
+                        return exception instanceof ConnectException;
+                    }
+
+                    @Override
+                    public Duration apply(Exception exception) {
+                        return Duration.ofSeconds(30);
+                    }
+                })
+                .retryablePolicy((exception, attempt) -> Optional.of(Duration.ofSeconds(5)))
+                .build()
+);
 ```
 
-## Abstraction layers:
-The library support abstraction layers for:
-* database queries layer - it can be used with any database that supports SQL that support select for update skip locked,
-  default impl is for `PostgreSQL`
-* persistence layer - it can be used with any frameworks that supports jdbc operations, default impl is for Spring
-* tracing propagation layer - core exposes message headers and propagator hooks, and `otel` module provides OpenTelemetry adapter
+## Consumer Tuning
 
-### OpenTelemetry
-If you use OpenTelemetry, prefer message headers propagation instead of extracting trace id from payload.
-You can attach the provided adapter on producer and consumer config:
+`ConsumerConfig.Properties` currently affects:
+
+- `maxPollRecords` - how many messages are locked in one transaction
+- `concurrency` - how many consumer threads are started for the subscription
+- `persistenceExceptionPause` - delay after retryable persistence failures
+- `unpredictedExceptionPause` - delay after unexpected consumer loop failures
+
+Guidance:
+
+- keep `maxPollRecords` small unless you know why you need a larger batch
+- increase `concurrency` only when the handler and downstream resources can handle parallelism
+
+## OpenTelemetry
+
+The `otel` module integrates with the new header-based propagation API.
+
+Use two separate pieces:
+
+- `OpenTelemetryMessageContextPropagator` for injecting and extracting W3C trace headers
+- `OpenTelemetryMessageConsumerTelemetry` for starting a consumer span around message processing
+
+Example:
+
 ```java
-    var propagator = new OpenTelemetryMessageContextPropagator();
+OpenTelemetry openTelemetry = GlobalOpenTelemetry.get();
 
-    var producer = queue.registerProducer(ProducerConfig.<Message>builder()
-        .queueName(QUEUE_NAME)
-        .clazz(Message.class)
-        .messageContextPropagator(propagator)
-        .build());
+var propagator = new OpenTelemetryMessageContextPropagator(openTelemetry);
+var consumerTelemetry = new OpenTelemetryMessageConsumerTelemetry(openTelemetry);
 
-    queue.registerConsumer(ConsumerConfig.<Message>builder()
-        .messageHandler(message -> System.out.println(message.payload()))
-        .queueName(QUEUE_NAME)
-        .subscriptionId(SUBSCRIPTION_ID)
-        .messageContextPropagator(propagator)
-        .build());
+Producer<OrderCreated> producer = queueManager.registerProducer(
+        ProducerConfig.<OrderCreated>builder()
+                .queueName(queueName)
+                .clazz(OrderCreated.class)
+                .messageContextPropagator(propagator)
+                .build()
+);
+
+queueManager.registerConsumer(
+        ConsumerConfig.<OrderCreated>builder()
+                .queueName(queueName)
+                .subscriptionId(subscriptionId)
+                .messageHandler(message -> handle(message.payload()))
+                .messageContextPropagator(propagator)
+                .messageConsumerTelemetry(consumerTelemetry)
+                .build()
+);
 ```
 
-## Outbox Pattern
-### Publishing
-You should always publish your messages(events) in the same transaction with your business logic. Only in this case you can be 
-sure that your message will be published consensually with main logic.
-### Subscribing
-When messageHandler processes a message, it starts transaction and you are not necessary to start new transaction. It gives you guarantee
-that your business logic changes will be committed with correct message subscription status(`PROCESSED` or `FAILED`).
-## Consumer properties 
-### maxPollRecords
-Please be cautious when configuring the maxPollRecords property, as a transaction is initiated for all messages polled 
-from the database in batch. If you have a message handler with a long running time, this can lead to extended transaction durations.
-It is advisable not to change the `maxPollRecords` value unless you are certain it is necessary for your specific case.
-A large `maxPollRecords` value can be useful when moving messages from DB to MB. However, it's important to consider the 
-impact on transaction duration and overall system performance before adjusting this value.
-It's always recommended to evaluate your specific use case and consider the potential implications before making any 
-changes to the `maxPollRecords` property or any other configuration settings related to message processing.
-### concurrency
-The `concurrency` property sets the number of message handlers that work simultaneously. If you don't have a high load, 
-it is not necessary to change it.
-### storageDays
-The storageDays property is used by PostgreSQL partition management. It sets the maximum number of days to retain event
-data. However, it does not guarantee that partitions will be deleted exactly after the specified date. If there are
-unprocessed messages in a partition, they will not be deleted.
-### persistenceExceptionPause
-The `persistenceExceptionPause` sets the pause duration if a persistence exception occurs. This pause allows for resolving 
-the persistence issue before resuming normal operations.
-### unpredictedExceptionPause
-The same for unpredicted exception.
+Behavior:
 
-## Retry
-During processing of message you can throw exception, in this case message subscription will be marked as `FAILED` or retried. 
-You can configure retryable policy, blocking policy, and non retrayble policy for each messageHandler. Please see ConsumerConfig.
-### Retryable policy
-It consumes Exception and attempt and returns duration. Please see `SimpleRetryablePolicy` for details. All your exceptions
-by default is retryable. If you want to mark some exceptions as non retryable you should use `NonRetryablePolicy`.
-### Non retryable policy
-It consumes Exception and returns boolean. If it returns true message will be marked as `FAILED` at once.
-### Blocking policy
-It consumes attempt and returns duration. You can use it for blocking message processing in case of unavailable your 
-resources. In this case message will be retried after duration and attempt will not be incremented.
+- producer injects `traceparent` and related headers into the message
+- consumer extracts context from message headers only
+- if no trace headers are present, consumer processing starts a new root span
+- consumer tracing writes `traceId` and `spanId` into MDC while the message is being processed
+
+## PostgreSQL Partition Management
+
+Partition management is optional and separate from `QueueManager`.
+
+If you want automatic partition creation and cleanup, start `PgTableManager` explicitly:
+
+```java
+PgTableManager pgTableManager = new PgTableManager(
+        queryService,
+        "0 0 1 * * ?",
+        "0 0 2 * * ?"
+);
+
+pgTableManager.registerQueue(queueName, 30);
+pgTableManager.registerSubscription(queueName, subscriptionId, 30);
+pgTableManager.startCronJobs();
+
+// on shutdown
+pgTableManager.stopCronJobs();
+```
+
+This manager:
+
+- creates the current and next day partitions on registration
+- creates future partitions on schedule
+- drops old queue and history partitions when they are older than the configured retention window
+
+Parent tables must already exist before you start the manager.
+
+## Build and Test
+
+```bash
+mvn -q -pl core test
+mvn -q -pl otel -am test
+mvn -q -pl integration-tests -am test -DskipTests
+mvn -q -pl integration-tests -am test
+```
+
+The full integration suite requires Docker because it uses Testcontainers.
+
+## Notes
+
+- the provided production storage implementation is PostgreSQL
+- payloads and headers are persisted as JSONB
+- `JsonbConverter` type registration is required before consuming stored payloads
+- table creation is explicit; there is no hidden auto-migration in `QueueManager`
+- use one queue per message contract unless you have a clear reason to mix heterogeneous payloads
