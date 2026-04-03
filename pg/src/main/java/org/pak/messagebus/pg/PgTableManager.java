@@ -3,7 +3,7 @@ package org.pak.messagebus.pg;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.pak.messagebus.core.QueueName;
-import org.pak.messagebus.core.SubscriptionName;
+import org.pak.messagebus.core.SubscriptionId;
 import org.pak.messagebus.core.error.PartitionHasReferencesException;
 import org.pak.messagebus.core.error.RetrayablePersistenceException;
 import org.quartz.*;
@@ -26,7 +26,7 @@ public class PgTableManager {
     private final String cronCreatePartitions;
     private final String cronDropPartitions;
     private final Map<QueueName, Integer> queueNameStorageDays = new ConcurrentHashMap<>();
-    private final Map<SubscriptionName, Integer> historyStorageDays = new ConcurrentHashMap<>();
+    private final Map<SubscriptionId, Integer> historyStorageDays = new ConcurrentHashMap<>();
     private Scheduler scheduler;
 
     public PgTableManager(PgQueryService pgQueryService, String cronCreatePartitions, String cronDropPartitions) {
@@ -41,10 +41,10 @@ public class PgTableManager {
         queueNameStorageDays.putIfAbsent(queueName, storageDays);
     }
 
-    public void registerSubscription(QueueName queueName, SubscriptionName subscriptionName, int storageDays) {
-        pgQueryService.createHistoryPartition(subscriptionName, Instant.now());
-        pgQueryService.createHistoryPartition(subscriptionName, Instant.now().plus(1, ChronoUnit.DAYS));
-        historyStorageDays.putIfAbsent(subscriptionName, storageDays);
+    public void registerSubscription(QueueName queueName, SubscriptionId subscriptionId, int storageDays) {
+        pgQueryService.createHistoryPartition(subscriptionId, Instant.now());
+        pgQueryService.createHistoryPartition(subscriptionId, Instant.now().plus(1, ChronoUnit.DAYS));
+        historyStorageDays.putIfAbsent(subscriptionId, storageDays);
     }
 
     public void startCronJobs() {
@@ -81,22 +81,22 @@ public class PgTableManager {
         var date = Instant.now().plus(Duration.ofDays(1));
 
         queueNameStorageDays.keySet().forEach(queueName -> pgQueryService.createQueuePartition(queueName, date));
-        historyStorageDays.keySet().forEach(subscriptionName -> pgQueryService.createHistoryPartition(subscriptionName, date));
+        historyStorageDays.keySet().forEach(subscriptionId -> pgQueryService.createHistoryPartition(subscriptionId, date));
     }
 
     public void cleanPartitions() {
-        historyStorageDays.forEach((subscriptionName, storageDays) -> {
-            var partitions = pgQueryService.getAllHistoryPartitions(subscriptionName);
+        historyStorageDays.forEach((subscriptionId, storageDays) -> {
+            var partitions = pgQueryService.getAllHistoryPartitions(subscriptionId);
             partitions.stream()
                     .filter(partition -> partition.isBefore(LocalDate.now().minusDays(storageDays)))
                     .forEach(partition -> {
                         try {
                             log.info("Dropping history subscription partition {} for {}", partition,
-                                    subscriptionName.name());
-                            pgQueryService.dropHistoryPartition(subscriptionName, partition);
+                                    subscriptionId.id());
+                            pgQueryService.dropHistoryPartition(subscriptionId, partition);
                         } catch (PartitionHasReferencesException e) {
                             log.warn("Partition {} for history {} still has references, skipping", partition,
-                                    subscriptionName.name());
+                                    subscriptionId.id());
                         }
                     });
         });

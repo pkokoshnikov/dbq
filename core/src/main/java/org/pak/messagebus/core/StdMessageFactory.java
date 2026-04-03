@@ -5,6 +5,6 @@ import java.time.Instant;
 public class StdMessageFactory implements MessageFactory {
     @Override
     public <T> Message<T> createMessage(String key, Instant originatedTime, T payload) {
-        return new StdMessage<>(key, originatedTime, payload);
+        return new SimpleMessage<>(key, originatedTime, payload);
     }
 }

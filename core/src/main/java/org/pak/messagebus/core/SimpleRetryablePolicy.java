@@ -3,7 +3,7 @@ package org.pak.messagebus.core;
 import java.time.Duration;
 import java.util.Optional;
 
-public class StdRetryablePolicy implements RetryablePolicy {
+public class SimpleRetryablePolicy implements RetryablePolicy {
 
     @Override
     public Optional<Duration> apply(Exception e, Integer attempt) {

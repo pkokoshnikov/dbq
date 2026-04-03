@@ -52,7 +52,7 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void publishSubscribeTest() throws InterruptedException {
-        queue.registerProducer(ProducerConfig.<TestMessage>builder()
+        var producer = queue.registerProducer(ProducerConfig.<TestMessage>builder()
                 .queueName(QUEUE_NAME)
                 .clazz(TestMessage.class)
                 .properties(ProducerConfig.Properties.builder()
@@ -65,26 +65,26 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
         var reference2 = new AtomicReference<TestMessage>();
 
         queue.registerConsumer(ConsumerConfig.<TestMessage>builder()
-                .consumer(message -> {
+                .messageHandler(message -> {
                     reference1.set(message.payload());
                     countDownLatch.countDown();
                 })
                 .queueName(QUEUE_NAME)
-                .subscriptionName(SUBSCRIPTION_NAME_1)
+                .subscriptionId(SUBSCRIPTION_NAME_1)
                 .build());
 
         queue.registerConsumer(ConsumerConfig.<TestMessage>builder()
-                .consumer(message -> {
+                .messageHandler(message -> {
                     reference2.set(message.payload());
                     countDownLatch.countDown();
                 })
                 .queueName(QUEUE_NAME)
-                .subscriptionName(SUBSCRIPTION_NAME_2)
+                .subscriptionId(SUBSCRIPTION_NAME_2)
                 .build());
 
         queue.startConsumers();
         TestMessage testMessage = new TestMessage("test-name");
-        queue.publish(testMessage);
+        producer.send(testMessage);
 
         countDownLatch.await();
         queue.stopConsumers();
@@ -99,16 +99,17 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
     @Test
     @Disabled
     void performanceTest() throws InterruptedException {
-        queue.registerProducer(ProducerConfig.<TestMessage>builder()
+        var producer = queue.registerProducer(ProducerConfig.<TestMessage>builder()
                 .queueName(QUEUE_NAME)
+                .clazz(TestMessage.class)
                 .build());
 
         var countDownLatch = new CountDownLatch(100_000);
 
         queue.registerConsumer(ConsumerConfig.<TestMessage>builder()
-                .consumer(message -> countDownLatch.countDown())
+                .messageHandler(message -> countDownLatch.countDown())
                 .queueName(QUEUE_NAME)
-                .subscriptionName(SUBSCRIPTION_NAME_1)
+                .subscriptionId(SUBSCRIPTION_NAME_1)
                 .properties(ConsumerConfig.Properties.builder()
                         .concurrency(50)
                         .build())
@@ -118,7 +119,7 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
 
         for (int i = 0; i < 100_000; i++) {
             TestMessage testMessage = new TestMessage("test-name");
-            queue.publish(testMessage);
+            producer.send(testMessage);
         }
 
         countDownLatch.await();

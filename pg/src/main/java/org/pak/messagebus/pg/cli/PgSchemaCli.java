@@ -2,7 +2,7 @@ package org.pak.messagebus.pg.cli;
 
 import org.pak.messagebus.core.QueueName;
 import org.pak.messagebus.core.SchemaName;
-import org.pak.messagebus.core.SubscriptionName;
+import org.pak.messagebus.core.SubscriptionId;
 import org.pak.messagebus.pg.PgSchemaSqlGenerator;
 
 public final class PgSchemaCli {
@@ -25,14 +25,14 @@ public final class PgSchemaCli {
                 case "queue" -> System.out.print(sqlGenerator.createQueueTable(queueName));
                 case "subscription" -> {
                     requireArgs(args, 4);
-                    System.out.print(sqlGenerator.createSubscriptionTable(queueName, new SubscriptionName(args[3])));
+                    System.out.print(sqlGenerator.createSubscriptionTable(queueName, new SubscriptionId(args[3])));
                 }
                 case "all" -> {
                     requireArgs(args, 4);
-                    var subscriptionName = new SubscriptionName(args[3]);
+                    var subscriptionId = new SubscriptionId(args[3]);
                     System.out.print(sqlGenerator.createQueueTable(queueName));
                     System.out.println();
-                    System.out.print(sqlGenerator.createSubscriptionTable(queueName, subscriptionName));
+                    System.out.print(sqlGenerator.createSubscriptionTable(queueName, subscriptionId));
                 }
                 default -> fail("Unknown command: " + command);
             }

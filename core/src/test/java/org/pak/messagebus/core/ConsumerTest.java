@@ -12,7 +12,7 @@ import static org.pak.messagebus.core.CoreTestSupport.QUEUE_NAME;
 import static org.pak.messagebus.core.CoreTestSupport.SUBSCRIPTION_NAME;
 import static org.pak.messagebus.core.CoreTestSupport.messageContainer;
 
-class QueueProcessorTest {
+class ConsumerTest {
     @Test
     void poolAndProcessCompletesMessageWhenConsumerSucceeds() {
         var queryService = new CoreTestSupport.RecordingQueryService();
@@ -36,7 +36,7 @@ class QueueProcessorTest {
         assertThat(queryService.completions).hasSize(1);
         assertThat(queryService.failures).isEmpty();
         assertThat(queryService.retries).isEmpty();
-        assertThat(handledMessage.get()).isEqualTo(new StdMessage<>("key-1", originatedTime, "payload"));
+        assertThat(handledMessage.get()).isEqualTo(new SimpleMessage<>("key-1", originatedTime, "payload"));
     }
 
     @Test
@@ -142,16 +142,16 @@ class QueueProcessorTest {
         assertThat(queryService.completions).isEmpty();
     }
 
-    private QueueProcessor<String> processor(
+    private Consumer<String> processor(
             CoreTestSupport.RecordingQueryService queryService,
             CoreTestSupport.DirectTransactionService transactionService,
-            Consumer<String> consumer,
+            MessageHandler<String> messageHandler,
             BlockingPolicy blockingPolicy,
             RetryablePolicy retryablePolicy,
             NonRetryablePolicy nonRetryablePolicy
     ) {
-        return new QueueProcessor<>(
-                consumer,
+        return new Consumer<>(
+                messageHandler,
                 QUEUE_NAME,
                 SUBSCRIPTION_NAME,
                 retryablePolicy,

@@ -7,18 +7,18 @@ import static org.pak.messagebus.core.CoreTestSupport.QUEUE_NAME;
 
 class QueueManagerTest {
     @Test
-    void registerProducerAndPublishStoreMessageThroughFacade() {
+    void registerProducerReturnsProducerThatStoresMessage() {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var queue = new QueueManager(queryService, transactionService);
 
-        queue.registerProducer(ProducerConfig.<String>builder()
+        var producer = queue.registerProducer(ProducerConfig.<String>builder()
                 .queueName(QUEUE_NAME)
                 .clazz(String.class)
                 .properties(ProducerConfig.Properties.builder().storageDays(10).build())
                 .build());
 
-        queue.publish("payload");
+        producer.send("payload");
 
         assertThat(queryService.inserts).hasSize(1);
         assertThat(queryService.inserts.getFirst().queueName()).isEqualTo(QUEUE_NAME);

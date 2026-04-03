@@ -16,10 +16,10 @@ class CoreBasicsTest {
     }
 
     @Test
-    void subscriptionNameRejectsInvalidFormat() {
-        var exception = assertThrows(IllegalArgumentException.class, () -> new SubscriptionName("Invalid_Name"));
+    void subscriptionIdRejectsInvalidFormat() {
+        var exception = assertThrows(IllegalArgumentException.class, () -> new SubscriptionId("Invalid_Name"));
 
-        assertThat(exception.getMessage()).isEqualTo("Subscription name must be lowercase and -");
+        assertThat(exception.getMessage()).isEqualTo("Subscription id must be lowercase and -");
     }
 
     @Test
@@ -30,8 +30,8 @@ class CoreBasicsTest {
     }
 
     @Test
-    void stdRetryablePolicyUsesExponentialBackoffAndCapsDelay() {
-        var policy = new StdRetryablePolicy();
+    void simpleRetryablePolicyUsesExponentialBackoffAndCapsDelay() {
+        var policy = new SimpleRetryablePolicy();
 
         assertThat(policy.apply(new RuntimeException("boom"), 0)).contains(Duration.ofSeconds(1));
         assertThat(policy.apply(new RuntimeException("boom"), 3)).contains(Duration.ofSeconds(8));

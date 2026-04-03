@@ -15,15 +15,15 @@ public class ConsumerConfig<T> {
     @NonNull
     QueueName queueName;
     @NonNull
-    SubscriptionName subscriptionName;
+    SubscriptionId subscriptionId;
     @NonNull
-    Consumer<T> consumer;
+    MessageHandler<T> messageHandler;
     @Builder.Default
-    BlockingPolicy blockingPolicy = new StdBlockingPolicy();
+    BlockingPolicy blockingPolicy = new SimpleBlockingPolicy();
     @Builder.Default
-    RetryablePolicy retryablePolicy = new StdRetryablePolicy();
+    RetryablePolicy retryablePolicy = new SimpleRetryablePolicy();
     @Builder.Default
-    NonRetryablePolicy nonRetryablePolicy = new StdNonRetryablePolicy();
+    NonRetryablePolicy nonRetryablePolicy = new SimpleNonRetryablePolicy();
     @Builder.Default
     Properties properties = Properties.builder().build();
     @Builder.Default

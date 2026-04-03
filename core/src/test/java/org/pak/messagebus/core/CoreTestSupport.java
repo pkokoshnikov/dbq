@@ -13,16 +13,16 @@ import java.util.function.Supplier;
 
 class CoreTestSupport {
     static final QueueName QUEUE_NAME = new QueueName("test-message");
-    static final SubscriptionName SUBSCRIPTION_NAME = new SubscriptionName("test-subscription");
+    static final SubscriptionId SUBSCRIPTION_NAME = new SubscriptionId("test-subscription");
 
-    record CompletionCall(SubscriptionName subscriptionName, MessageContainer<?> messageContainer) {
+    record CompletionCall(SubscriptionId subscriptionId, MessageContainer<?> messageContainer) {
     }
 
-    record FailureCall(SubscriptionName subscriptionName, MessageContainer<?> messageContainer, Exception exception) {
+    record FailureCall(SubscriptionId subscriptionId, MessageContainer<?> messageContainer, Exception exception) {
     }
 
     record RetryCall(
-            SubscriptionName subscriptionName,
+            SubscriptionId subscriptionId,
             MessageContainer<?> messageContainer,
             Duration retryDuration,
             Exception exception
@@ -74,7 +74,7 @@ class CoreTestSupport {
         @Override
         public <T> List<MessageContainer<T>> selectMessages(
                 QueueName queueName,
-                SubscriptionName subscriptionName,
+                SubscriptionId subscriptionId,
                 Integer maxPollRecords
         ) {
             return (List<MessageContainer<T>>) selectedMessages;
@@ -82,22 +82,22 @@ class CoreTestSupport {
 
         @Override
         public <T> void retryMessage(
-                SubscriptionName subscriptionName,
+                SubscriptionId subscriptionId,
                 MessageContainer<T> messageContainer,
                 Duration retryDuration,
                 Exception e
         ) {
-            retries.add(new RetryCall(subscriptionName, messageContainer, retryDuration, e));
+            retries.add(new RetryCall(subscriptionId, messageContainer, retryDuration, e));
         }
 
         @Override
-        public <T> void failMessage(SubscriptionName subscriptionName, MessageContainer<T> messageContainer, Exception e) {
-            failures.add(new FailureCall(subscriptionName, messageContainer, e));
+        public <T> void failMessage(SubscriptionId subscriptionId, MessageContainer<T> messageContainer, Exception e) {
+            failures.add(new FailureCall(subscriptionId, messageContainer, e));
         }
 
         @Override
-        public <T> void completeMessage(SubscriptionName subscriptionName, MessageContainer<T> messageContainer) {
-            completions.add(new CompletionCall(subscriptionName, messageContainer));
+        public <T> void completeMessage(SubscriptionId subscriptionId, MessageContainer<T> messageContainer) {
+            completions.add(new CompletionCall(subscriptionId, messageContainer));
         }
 
         @SuppressWarnings("unchecked")

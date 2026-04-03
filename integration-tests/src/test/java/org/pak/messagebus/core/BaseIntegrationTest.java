@@ -34,12 +34,12 @@ import static org.pak.messagebus.core.TestMessage.QUEUE_NAME;
 
 public class BaseIntegrationTest {
     static final String QUEUE_TABLE = QUEUE_NAME.name().replace("-", "_");
-    static SubscriptionName SUBSCRIPTION_NAME_1 = new SubscriptionName("test-subscription-one");
-    static String SUBSCRIPTION_TABLE_1 = SUBSCRIPTION_NAME_1.name().replace("-", "_");
-    static String SUBSCRIPTION_TABLE_1_HISTORY = SUBSCRIPTION_NAME_1.name().replace("-", "_") + "_history";
-    static SubscriptionName SUBSCRIPTION_NAME_2 = new SubscriptionName("test-subscription-two");
-    static String SUBSCRIPTION_TABLE_2 = SUBSCRIPTION_NAME_2.name().replace("-", "_");
-    static String SUBSCRIPTION_TABLE_2_HISTORY = SUBSCRIPTION_NAME_2.name().replace("-", "_") + "_history";
+    static SubscriptionId SUBSCRIPTION_NAME_1 = new SubscriptionId("test-subscription-one");
+    static String SUBSCRIPTION_TABLE_1 = SUBSCRIPTION_NAME_1.id().replace("-", "_");
+    static String SUBSCRIPTION_TABLE_1_HISTORY = SUBSCRIPTION_NAME_1.id().replace("-", "_") + "_history";
+    static SubscriptionId SUBSCRIPTION_NAME_2 = new SubscriptionId("test-subscription-two");
+    static String SUBSCRIPTION_TABLE_2 = SUBSCRIPTION_NAME_2.id().replace("-", "_");
+    static String SUBSCRIPTION_TABLE_2_HISTORY = SUBSCRIPTION_NAME_2.id().replace("-", "_") + "_history";
     static SchemaName TEST_SCHEMA = new SchemaName("public");
     static String TEST_VALUE = "test-value";
     static String TEST_EXCEPTION_MESSAGE = "test-exception-payload";
@@ -132,14 +132,14 @@ public class BaseIntegrationTest {
     ) {
         return QueueProcessorFactory.<TestMessage>builder()
                 .messageFactory(new StdMessageFactory())
-                .consumer(testMessage -> {})
+                .messageHandler(testMessage -> {})
                 .queryService(pgQueryService)
                 .transactionService(springTransactionService)
-                .retryablePolicy(new StdRetryablePolicy())
-                .blockingPolicy(new StdBlockingPolicy())
-                .nonRetryablePolicy(new StdNonRetryablePolicy())
+                .retryablePolicy(new SimpleRetryablePolicy())
+                .blockingPolicy(new SimpleBlockingPolicy())
+                .nonRetryablePolicy(new SimpleNonRetryablePolicy())
                 .queueName(QUEUE_NAME)
-                .subscriptionName(SUBSCRIPTION_NAME_1)
+                .subscriptionId(SUBSCRIPTION_NAME_1)
                 .traceIdExtractor(object -> null)
                 .properties(ConsumerConfig.Properties.builder().build());
     }
@@ -152,8 +152,8 @@ public class BaseIntegrationTest {
         jdbcTemplate.execute(schemaSqlGenerator.createQueueTable(QUEUE_NAME));
     }
 
-    void createSubscriptionTable(SubscriptionName subscriptionName) {
-        jdbcTemplate.execute(schemaSqlGenerator.createSubscriptionTable(QUEUE_NAME, subscriptionName));
+    void createSubscriptionTable(SubscriptionId subscriptionId) {
+        jdbcTemplate.execute(schemaSqlGenerator.createSubscriptionTable(QUEUE_NAME, subscriptionId));
     }
 
     void clearTables() {
@@ -188,13 +188,13 @@ public class BaseIntegrationTest {
         return testMessageContainers.get(0);
     }
 
-    List<MessageContainer<TestMessage>> selectTestMessages(SubscriptionName subscriptionName) {
+    List<MessageContainer<TestMessage>> selectTestMessages(SubscriptionId subscriptionId) {
         var query = formatter.execute("""
                         SELECT s.id, s.message_id, s.attempt, s.error_message, s.stack_trace, s.created_at, s.updated_at,
                             s.execute_after, m.payload, m.originated_at, m.key
                         FROM ${schema}.${subscriptionTable} s JOIN ${schema}.${queueTable} m ON s.message_id = m.id""",
                 Map.of("schema", TEST_SCHEMA.value(),
-                        "subscriptionTable", subscriptionName.name().replace("-", "_"),
+                        "subscriptionTable", subscriptionId.id().replace("-", "_"),
                         "queueTable", "test_message"));
 
         return jdbcTemplate.query(query,
@@ -216,12 +216,12 @@ public class BaseIntegrationTest {
                         rs.getString("stack_trace")));
     }
 
-    List<MessageHistoryContainer<TestMessage>> selectTestMessagesFromHistory(SubscriptionName subscriptionName) {
+    List<MessageHistoryContainer<TestMessage>> selectTestMessagesFromHistory(SubscriptionId subscriptionId) {
         var query = formatter.execute("""
                         SELECT s.id, s.message_id, s.attempt, s.status, s.error_message, s.stack_trace, s.created_at, m.payload
                         FROM ${schema}.${subscriptionTableHistory} s JOIN ${schema}.${queueTable} m ON s.message_id = m.id""",
                 Map.of("schema", TEST_SCHEMA.value(),
-                        "subscriptionTableHistory", subscriptionName.name().replace("-", "_") + "_history",
+                        "subscriptionTableHistory", subscriptionId.id().replace("-", "_") + "_history",
                         "queueTable", "test_message"));
 
         return jdbcTemplate.query(query,

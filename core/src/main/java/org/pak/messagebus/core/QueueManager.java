@@ -15,23 +15,6 @@ public class QueueManager {
     public QueueManager(
             QueryService queryService,
             TransactionService transactionService,
-            MessageFactory messageFactory,
-            CronConfig cronConfig
-    ) {
-        this(queryService, transactionService, messageFactory);
-    }
-
-    public QueueManager(
-            QueryService queryService,
-            TransactionService transactionService,
-            CronConfig cronConfig
-    ) {
-        this(queryService, transactionService);
-    }
-
-    public QueueManager(
-            QueryService queryService,
-            TransactionService transactionService,
             MessageFactory messageFactory
     ) {
         this.queryService = queryService;
@@ -48,37 +31,33 @@ public class QueueManager {
         this.messageFactory = new StdMessageFactory();
     }
 
-    private final ConcurrentHashMap<String, QueueProcessorStarter<?>> consumerStarters =
+    private final ConcurrentHashMap<String, ConsumerStarter<?>> consumerStarters =
             new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Class<?>, Producer<?>> producers =
             new ConcurrentHashMap<>();
 
-    public <T> void registerProducer(ProducerConfig<T> producerConfig) {
-        producers.computeIfAbsent(producerConfig.getClazz(),
+    public <T> Producer<T> registerProducer(ProducerConfig<T> producerConfig) {
+        return (Producer<T>) producers.computeIfAbsent(producerConfig.getClazz(),
                 k -> new Producer<>(producerConfig, queryService, messageFactory));
     }
 
     public <T> void registerConsumer(ConsumerConfig<T> consumerConfig) {
         consumerStarters.computeIfAbsent(
-                consumerConfig.getQueueName() + "_" + consumerConfig.getSubscriptionName(), s -> {
-                    var starter = new QueueProcessorStarter<>(consumerConfig, queryService, transactionService,
+                consumerConfig.getQueueName() + "_" + consumerConfig.getSubscriptionId(), s -> {
+                    var starter = new ConsumerStarter<>(consumerConfig, queryService, transactionService,
                             messageFactory);
                     log.info("Register consumer on queue {} with subscription {}",
-                            consumerConfig.getQueueName().name(),
-                            consumerConfig.getSubscriptionName().name());
+                            consumerConfig.getQueueName(),
+                            consumerConfig.getSubscriptionId());
                     return starter;
                 });
     }
 
-    public <T> void publish(T message) {
-        ((Producer<T>) producers.get(message.getClass())).publish(message);
-    }
-
     public void startConsumers() {
-        consumerStarters.values().forEach(QueueProcessorStarter::start);
+        consumerStarters.values().forEach(ConsumerStarter::start);
     }
 
     public void stopConsumers() {
-        consumerStarters.values().forEach(QueueProcessorStarter::stop);
+        consumerStarters.values().forEach(ConsumerStarter::stop);
     }
 }

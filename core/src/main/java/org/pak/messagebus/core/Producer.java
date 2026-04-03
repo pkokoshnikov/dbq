@@ -10,7 +10,7 @@ import java.util.UUID;
 import static java.util.Optional.ofNullable;
 
 @Slf4j
-class Producer<T> {
+public class Producer<T> {
     private final QueueName queueName;
     private final QueryService queryService;
     private final TraceIdExtractor<T> traceIdExtractor;
@@ -27,12 +27,12 @@ class Producer<T> {
         this.messageFactory = messageFactory;
     }
 
-    public void publish(T message) {
-        publish(messageFactory.createMessage(UUID.randomUUID().toString(), Instant.now(), message));
+    public void send(T payload) {
+        send(messageFactory.createMessage(UUID.randomUUID().toString(), Instant.now(), payload));
     }
 
     //TODO: cleaner
-    public void publish(Message<T> message) {
+    public void send(Message<T> message) {
         var optionalTraceIdMDC = ofNullable(traceIdExtractor.extractTraceId(message.payload()))
                 .map(v -> MDC.putCloseable("traceId", v));
 

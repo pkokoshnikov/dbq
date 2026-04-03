@@ -3,7 +3,7 @@ package org.pak.messagebus.pg;
 import org.pak.messagebus.core.QueueName;
 import org.pak.messagebus.core.SchemaName;
 import org.pak.messagebus.core.StringFormatter;
-import org.pak.messagebus.core.SubscriptionName;
+import org.pak.messagebus.core.SubscriptionId;
 
 import java.util.Map;
 
@@ -31,7 +31,7 @@ public class PgSchemaSqlGenerator {
                 """, Map.of("schema", schemaName.value(), "queueTable", queueTable(queueName)));
     }
 
-    public String createSubscriptionTable(QueueName queueName, SubscriptionName subscriptionName) {
+    public String createSubscriptionTable(QueueName queueName, SubscriptionId subscriptionId) {
         return formatter.execute("""
                         CREATE TABLE IF NOT EXISTS ${schema}.${subscriptionTable} (
                             id BIGSERIAL PRIMARY KEY,
@@ -83,21 +83,21 @@ public class PgSchemaSqlGenerator {
                             EXECUTE PROCEDURE ${schema}.${insertFunction};
                         """,
                 Map.of("schema", schemaName.value(), "queueTable", queueTable(queueName), "subscriptionTable",
-                        subscriptionTable(subscriptionName), "subscriptionHistoryTable",
-                        subscriptionHistoryTable(subscriptionName), "insertTrigger",
-                        subscriptionTable(subscriptionName) + "_insert_trigger", "insertFunction",
-                        subscriptionTable(subscriptionName) + "_insert_function()"));
+                        subscriptionTable(subscriptionId), "subscriptionHistoryTable",
+                        subscriptionHistoryTable(subscriptionId), "insertTrigger",
+                        subscriptionTable(subscriptionId) + "_insert_trigger", "insertFunction",
+                        subscriptionTable(subscriptionId) + "_insert_function()"));
     }
 
     private String queueTable(QueueName queueName) {
         return queueName.name().replace("-", "_");
     }
 
-    private String subscriptionTable(SubscriptionName subscriptionName) {
-        return subscriptionName.name().replace("-", "_");
+    private String subscriptionTable(SubscriptionId subscriptionId) {
+        return subscriptionId.id().replace("-", "_");
     }
 
-    private String subscriptionHistoryTable(SubscriptionName subscriptionName) {
-        return subscriptionName.name().replace("-", "_") + "_history";
+    private String subscriptionHistoryTable(SubscriptionId subscriptionId) {
+        return subscriptionId.id().replace("-", "_") + "_history";
     }
 }

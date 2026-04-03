@@ -14,17 +14,17 @@ import java.util.stream.IntStream;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 @Slf4j
-class QueueProcessorStarter<T> {
+class ConsumerStarter<T> {
     private final QueryService queryService;
     private final TransactionService transactionService;
     private final ConsumerConfig<T> consumerConfig;
     private final int concurrency;
     private final MessageFactory messageFactory;
     private ExecutorService fixedThreadPoolExecutor;
-    private List<QueueProcessor<T>> queueProcessors = List.of();
+    private List<Consumer<T>> consumers = List.of();
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
-    QueueProcessorStarter(
+    ConsumerStarter(
             ConsumerConfig<T> consumerConfig,
             QueryService queryService,
             TransactionService transactionService,
@@ -40,12 +40,12 @@ class QueueProcessorStarter<T> {
     public void start() {
         if (isRunning.compareAndSet(false, true)) {
             fixedThreadPoolExecutor = createExecutor();
-            queueProcessors = IntStream.range(0, concurrency).boxed()
+            consumers = IntStream.range(0, concurrency).boxed()
                     .map(i -> {
-                        var taskExecutor = new QueueProcessor<>(
-                                consumerConfig.getConsumer(),
+                        var taskExecutor = new Consumer<>(
+                                consumerConfig.getMessageHandler(),
                                 consumerConfig.getQueueName(),
-                                consumerConfig.getSubscriptionName(),
+                                consumerConfig.getSubscriptionId(),
                                 consumerConfig.getRetryablePolicy(),
                                 consumerConfig.getNonRetryablePolicy(),
                                 consumerConfig.getBlockingPolicy(),
@@ -58,38 +58,38 @@ class QueueProcessorStarter<T> {
                         return taskExecutor;
                     }).toList();
         } else {
-            log.warn("Queue processor starter should be started only once");
+            log.warn("Consumer starter should be started only once");
         }
     }
 
     public void stop() {
         if (isRunning.compareAndSet(true, false)) {
-            queueProcessors.forEach(QueueProcessor::stop);
+            consumers.forEach(Consumer::stop);
 
             fixedThreadPoolExecutor.shutdown();
             try {
                 if (fixedThreadPoolExecutor.awaitTermination(30, SECONDS)) {
-                    log.info("Queue processor executor stopped");
+                    log.info("Consumer stopped");
                 } else {
-                    log.warn("Queue processor executor did not stop in time");
+                    log.warn("Consumer did not stop in time");
                     fixedThreadPoolExecutor.shutdownNow();
                 }
             } catch (InterruptedException e) {
-                log.warn("Queue processor executor did not stop in time", e);
+                log.warn("Consumer did not stop in time", e);
                 Thread.currentThread().interrupt();
             } finally {
                 fixedThreadPoolExecutor = null;
-                queueProcessors = List.of();
+                consumers = List.of();
             }
         } else {
-            log.warn("Queue processor starter should be stopped only once");
+            log.warn("Consumer starter should be stopped only once");
         }
     }
 
     private ExecutorService createExecutor() {
         return Executors.newFixedThreadPool(concurrency,
                 r -> new ThreadFactoryBuilder()
-                        .setNameFormat(consumerConfig.getQueueName().name() + "-processor-%d")
+                        .setNameFormat(consumerConfig.getQueueName() + "-processor-%d")
                         .setDaemon(true)
                         .setUncaughtExceptionHandler((t, e) -> {
                             log.error("Uncaught exception in thread {}", t.getName(), e);

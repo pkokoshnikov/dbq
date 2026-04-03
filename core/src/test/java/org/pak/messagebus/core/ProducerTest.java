@@ -7,7 +7,7 @@ import static org.pak.messagebus.core.CoreTestSupport.QUEUE_NAME;
 
 class ProducerTest {
     @Test
-    void publishCreatesAndInsertsMessageForPayload() {
+    void sendCreatesAndInsertsMessageForPayload() {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var producer = new Producer<>(
                 ProducerConfig.<String>builder()
@@ -19,7 +19,7 @@ class ProducerTest {
                 new StdMessageFactory()
         );
 
-        producer.publish("payload");
+        producer.send("payload");
 
         assertThat(queryService.inserts).hasSize(1);
         var insert = queryService.inserts.getFirst();

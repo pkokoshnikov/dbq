@@ -27,7 +27,7 @@ Use `-pl <module> -am` when changing one module and its dependencies.
 - Use 4-space indentation and keep formatting consistent with existing files.
 - Packages stay lowercase under `org.pak.messagebus`.
 - Class names use `UpperCamelCase`; methods and fields use `lowerCamelCase`.
-- Value objects such as `MessageName`, `SubscriptionName`, and `SchemaName` follow explicit naming wrappers rather than raw strings.
+- Value objects such as `QueueName`, `SubscriptionId`, and `SchemaName` follow explicit naming wrappers rather than raw strings.
 - No formatter or lint plugin is configured; keep changes minimal and consistent with the surrounding code.
 
 ## Testing Guidelines

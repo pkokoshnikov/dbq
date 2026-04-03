@@ -78,9 +78,9 @@ public class PgQueryService implements QueryService {
 
     }
 
-    public void dropHistoryPartition(SubscriptionName subscriptionName, LocalDate partition) {
-        var query = dropPartitionSql(subscriptionHistoryTable(subscriptionName),
-                partitionName(subscriptionHistoryTable(subscriptionName), partition));
+    public void dropHistoryPartition(SubscriptionId subscriptionId, LocalDate partition) {
+        var query = dropPartitionSql(subscriptionHistoryTable(subscriptionId),
+                partitionName(subscriptionHistoryTable(subscriptionId), partition));
 
         persistenceService.execute(query);
     }
@@ -89,16 +89,16 @@ public class PgQueryService implements QueryService {
         createPartition(queueTable(queueName), includeDateTime);
     }
 
-    public void createHistoryPartition(SubscriptionName subscriptionName, Instant includeDateTime) {
-        createPartition(subscriptionHistoryTable(subscriptionName), includeDateTime);
+    public void createHistoryPartition(SubscriptionId subscriptionId, Instant includeDateTime) {
+        createPartition(subscriptionHistoryTable(subscriptionId), includeDateTime);
     }
 
     public List<LocalDate> getAllQueuePartitions(QueueName queueName) {
         return getAllPartitions(queueTable(queueName));
     }
 
-    public List<LocalDate> getAllHistoryPartitions(SubscriptionName subscriptionName) {
-        return getAllPartitions(subscriptionHistoryTable(subscriptionName));
+    public List<LocalDate> getAllHistoryPartitions(SubscriptionId subscriptionId) {
+        return getAllPartitions(subscriptionHistoryTable(subscriptionId));
     }
 
     private List<LocalDate> getAllPartitions(String tableName) {
@@ -153,9 +153,9 @@ public class PgQueryService implements QueryService {
 
     @Override
     public <T> List<MessageContainer<T>> selectMessages(
-            QueueName queueName, SubscriptionName subscriptionName, Integer maxPollRecords
+            QueueName queueName, SubscriptionId subscriptionId, Integer maxPollRecords
     ) {
-        var query = queryCache.computeIfAbsent("selectMessages|" + subscriptionName.name(), k -> formatter.execute("""
+        var query = queryCache.computeIfAbsent("selectMessages|" + subscriptionId.id(), k -> formatter.execute("""
                         SELECT s.id, s.message_id, s.attempt, s.error_message, s.stack_trace, s.created_at, s.updated_at,
                             s.execute_after, m.originated_at, m.key, m.payload
                         FROM ${schema}.${subscriptionTable} s JOIN ${schema}.${queueTable} m ON s.message_id = m.id
@@ -164,7 +164,7 @@ public class PgQueryService implements QueryService {
                         ORDER BY s.execute_after ASC
                         LIMIT ${maxPollRecords} FOR UPDATE OF s SKIP LOCKED""",
                 Map.of("schema", schemaName.value(),
-                        "subscriptionTable", subscriptionTable(subscriptionName),
+                        "subscriptionTable", subscriptionTable(subscriptionId),
                         "queueTable", queueTable(queueName),
                         "maxPollRecords", maxPollRecords.toString())));
 
@@ -192,14 +192,14 @@ public class PgQueryService implements QueryService {
 
     @Override
     public <T> void retryMessage(
-            SubscriptionName subscriptionName, MessageContainer<T> messageContainer, Duration retryDuration, Exception e
+            SubscriptionId subscriptionId, MessageContainer<T> messageContainer, Duration retryDuration, Exception e
     ) {
-        var query = queryCache.computeIfAbsent("retryMessage|" + subscriptionName.name(), k -> formatter.execute("""
+        var query = queryCache.computeIfAbsent("retryMessage|" + subscriptionId.id(), k -> formatter.execute("""
                         UPDATE ${schema}.${subscriptionTable} SET updated_at = CURRENT_TIMESTAMP,
                             execute_after = CURRENT_TIMESTAMP + (? * INTERVAL '1 second'), attempt = attempt + 1,
                             error_message = ?, stack_trace = ?
                         WHERE id = ?""",
-                Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionName))));
+                Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionId))));
 
         var updated = persistenceService.update(query, retryDuration.getSeconds(), e.getMessage(),
                 ExceptionUtils.getStackTrace(e),
@@ -209,15 +209,15 @@ public class PgQueryService implements QueryService {
     }
 
     public <T> void failMessage(
-            SubscriptionName subscriptionName, MessageContainer<T> messageContainer, Exception e
+            SubscriptionId subscriptionId, MessageContainer<T> messageContainer, Exception e
     ) {
-        var query = queryCache.computeIfAbsent("failMessage|" + subscriptionName.name(), k -> formatter.execute("""
+        var query = queryCache.computeIfAbsent("failMessage|" + subscriptionId.id(), k -> formatter.execute("""
                         WITH deleted AS (DELETE FROM ${schema}.${subscriptionTable} WHERE id = ? RETURNING *)
                         INSERT INTO ${schema}.${subscriptionHistoryTable}
                             (id, message_id, originated_at, attempt, status, error_message, stack_trace)
                             SELECT id, message_id, originated_at, attempt, 'FAILED' as status, ?, ? FROM deleted""",
-                Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionName),
-                        "subscriptionHistoryTable", subscriptionHistoryTable(subscriptionName))));
+                Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionId),
+                        "subscriptionHistoryTable", subscriptionHistoryTable(subscriptionId))));
 
         var updated = handleMissingPartition(
                 () -> persistenceService.update(query, messageContainer.getId(), e.getMessage(),
@@ -227,15 +227,15 @@ public class PgQueryService implements QueryService {
     }
 
     public <T> void completeMessage(
-            SubscriptionName subscriptionName, MessageContainer<T> messageContainer
+            SubscriptionId subscriptionId, MessageContainer<T> messageContainer
     ) {
-        var query = queryCache.computeIfAbsent("completeMessage|" + subscriptionName.name(), k -> formatter.execute("""
+        var query = queryCache.computeIfAbsent("completeMessage|" + subscriptionId.id(), k -> formatter.execute("""
                         WITH deleted AS (DELETE FROM ${schema}.${subscriptionTable} WHERE id = ? RETURNING *)
                         INSERT INTO ${schema}.${subscriptionHistoryTable}
                             (id, message_id, originated_at, attempt, status, error_message, stack_trace)
                             SELECT id, message_id, originated_at, attempt, 'PROCESSED' as status, error_message, stack_trace FROM deleted""",
-                Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionName),
-                        "subscriptionHistoryTable", subscriptionHistoryTable(subscriptionName))));
+                Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionId),
+                        "subscriptionHistoryTable", subscriptionHistoryTable(subscriptionId))));
 
         var updated = handleMissingPartition(
                 () -> persistenceService.update(query, messageContainer.getId()),
@@ -248,12 +248,12 @@ public class PgQueryService implements QueryService {
         return queueName.name().replace("-", "_");
     }
 
-    private String subscriptionTable(SubscriptionName subscriptionName) {
-        return subscriptionName.name().replace("-", "_");
+    private String subscriptionTable(SubscriptionId subscriptionId) {
+        return subscriptionId.id().replace("-", "_");
     }
 
-    private String subscriptionHistoryTable(SubscriptionName subscriptionName) {
-        return subscriptionName.name().replace("-", "_") + "_history";
+    private String subscriptionHistoryTable(SubscriptionId subscriptionId) {
+        return subscriptionId.id().replace("-", "_") + "_history";
     }
 
     private String partitionName(String table, LocalDate partition) {

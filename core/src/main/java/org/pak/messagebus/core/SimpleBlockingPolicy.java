@@ -6,7 +6,7 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 
 
-public class StdBlockingPolicy implements BlockingPolicy {
+public class SimpleBlockingPolicy implements BlockingPolicy {
 
     @Override
     public boolean isBlocked(Exception exception) {

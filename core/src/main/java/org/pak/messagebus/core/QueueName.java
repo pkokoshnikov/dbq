@@ -3,7 +3,6 @@ package org.pak.messagebus.core;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
 
-@ToString
 @EqualsAndHashCode
 public class QueueName {
     private final String queueName;
@@ -17,6 +16,11 @@ public class QueueName {
     }
 
     public String name() {
+        return queueName;
+    }
+
+    @Override
+    public String toString() {
         return queueName;
     }
 }
