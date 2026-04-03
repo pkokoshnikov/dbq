@@ -9,8 +9,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -70,6 +72,38 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
+    void dropQueuePartitionIsIdempotent() {
+        createQueueTable();
+        Instant originatedTime = Instant.now();
+        pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
+        LocalDate partition = originatedTime.atOffset(java.time.ZoneOffset.UTC).toLocalDate();
+
+        pgQueryService.dropQueuePartition(QUEUE_NAME, partition);
+        pgQueryService.dropQueuePartition(QUEUE_NAME, partition);
+
+        assertThat(pgQueryService.getAllQueuePartitions(QUEUE_NAME)).isEmpty();
+    }
+
+    @Test
+    void dropQueuePartitionIgnoresAlreadyDetachedPartition() {
+        createQueueTable();
+        Instant originatedTime = Instant.now();
+        pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
+        LocalDate partition = originatedTime.atOffset(java.time.ZoneOffset.UTC).toLocalDate();
+        String partitionName = QUEUE_TABLE + "_" + partition.format(java.time.format.DateTimeFormatter.ofPattern("yyyy_MM_dd"));
+
+        jdbcTemplate.execute(formatter.execute("""
+                ALTER TABLE ${schema}.${table} DETACH PARTITION ${schema}.${partition} CONCURRENTLY;
+                """, Map.of("schema", TEST_SCHEMA.value(), "table", QUEUE_TABLE, "partition", partitionName)));
+
+        pgQueryService.dropQueuePartition(QUEUE_NAME, partition);
+
+        assertThat(pgQueryService.getAllQueuePartitions(QUEUE_NAME)).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT to_regclass(?)", String.class,
+                TEST_SCHEMA.value() + "." + partitionName)).isNull();
+    }
+
+    @Test
     void dropQueuePartitionHasReferencesException() {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1);
@@ -108,6 +142,20 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
         partitions = pgQueryService.getAllHistoryPartitions(SUBSCRIPTION_NAME_1);
         assertThat(partitions).hasSize(0);
+    }
+
+    @Test
+    void dropSubscriptionPartitionIsIdempotent() {
+        createQueueTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1);
+        Instant originatedTime = Instant.now();
+        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
+        LocalDate partition = originatedTime.atOffset(java.time.ZoneOffset.UTC).toLocalDate();
+
+        pgQueryService.dropHistoryPartition(SUBSCRIPTION_NAME_1, partition);
+        pgQueryService.dropHistoryPartition(SUBSCRIPTION_NAME_1, partition);
+
+        assertThat(pgQueryService.getAllHistoryPartitions(SUBSCRIPTION_NAME_1)).isEmpty();
     }
 
     @Test

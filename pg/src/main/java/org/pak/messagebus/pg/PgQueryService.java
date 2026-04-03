@@ -21,6 +21,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
@@ -33,6 +34,8 @@ public class PgQueryService implements QueryService {
     private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy_MM_dd");
     private static final String MISSING_PARTITION_CODE = "23514";
     private static final String PARTITION_HAS_REFERENCES_CODE = "23503";
+    private static final String UNDEFINED_TABLE_CODE = "42P01";
+    private static final String UNDEFINED_OBJECT_CODE = "42704";
     private static final long ENSURED_PARTITIONS_CACHE_SIZE = 10_000;
     private final PersistenceService persistenceService;
     private final SchemaName schemaName;
@@ -73,26 +76,13 @@ public class PgQueryService implements QueryService {
     public void dropQueuePartition(QueueName queueName, LocalDate partition) {
         var table = queueTable(queueName);
         var partitionName = partitionName(table, partition);
-        var query = dropPartitionSql(table, partitionName);
-        try {
-            persistenceService.execute(query);
-        } catch (PersistenceException e) {
-            if (PSQLException.class.isAssignableFrom(e.getOriginalCause().getClass()) &&
-                    ((PSQLException) e.getOriginalCause()).getSQLState().equals(PARTITION_HAS_REFERENCES_CODE)) {
-                throw new PartitionHasReferencesException();
-            } else {
-                throw e;
-            }
-        }
-
+        dropPartition(table, partitionName, true);
     }
 
     public void dropHistoryPartition(SubscriptionId subscriptionId, LocalDate partition) {
         var table = subscriptionHistoryTable(subscriptionId);
         var partitionName = partitionName(table, partition);
-        var query = dropPartitionSql(table, partitionName);
-
-        persistenceService.execute(query);
+        dropPartition(table, partitionName, false);
     }
 
     public void createQueuePartition(QueueName queueName, Instant includeDateTime) {
@@ -315,11 +305,76 @@ public class PgQueryService implements QueryService {
         persistenceService.execute("SELECT pg_advisory_xact_lock(hashtext(?))", partition);
     }
 
-    private String dropPartitionSql(String table, String partition) {
+    private void dropPartition(String table, String partition, boolean failOnReferences) {
+        try {
+            persistenceService.execute(detachPartitionSql(table, partition));
+        } catch (PersistenceException e) {
+            if (failOnReferences && hasPartitionReferences(e)) {
+                throw new PartitionHasReferencesException();
+            }
+            if (!isIgnorableDetachException(e)) {
+                throw e;
+            }
+            log.debug("Partition {} is already absent or detached from {}, continue cleanup", partition, table);
+        }
+
+        try {
+            persistenceService.execute(dropPartitionTableSql(partition));
+        } catch (PersistenceException e) {
+            if (!isIgnorableMissingPartitionException(e)) {
+                throw e;
+            }
+            log.debug("Partition {} is already removed, skip drop", partition);
+        }
+
+        ensuredPartitions.invalidate(partition);
+    }
+
+    private String detachPartitionSql(String table, String partition) {
         return formatter.execute("""
                 ALTER TABLE ${schema}.${table} DETACH PARTITION ${schema}.${partition} CONCURRENTLY;
-                DROP TABLE IF EXISTS ${schema}.${partition};
                 """, Map.of("schema", schemaName.value(), "table", table, "partition", partition));
+    }
+
+    private String dropPartitionTableSql(String partition) {
+        return formatter.execute("""
+                DROP TABLE IF EXISTS ${schema}.${partition};
+                """, Map.of("schema", schemaName.value(), "partition", partition));
+    }
+
+    private boolean hasPartitionReferences(PersistenceException exception) {
+        var sqlException = findSqlException(exception);
+        return sqlException != null && PARTITION_HAS_REFERENCES_CODE.equals(sqlException.getSQLState());
+    }
+
+    private boolean isIgnorableDetachException(PersistenceException exception) {
+        var sqlException = findSqlException(exception);
+        if (sqlException == null) {
+            return false;
+        }
+
+        var message = ofNullable(sqlException.getMessage()).orElse("").toLowerCase(Locale.ROOT);
+        return UNDEFINED_TABLE_CODE.equals(sqlException.getSQLState())
+                || UNDEFINED_OBJECT_CODE.equals(sqlException.getSQLState())
+                || message.contains("is not a partition of relation");
+    }
+
+    private boolean isIgnorableMissingPartitionException(PersistenceException exception) {
+        var sqlException = findSqlException(exception);
+        if (sqlException == null) {
+            return false;
+        }
+
+        return UNDEFINED_TABLE_CODE.equals(sqlException.getSQLState())
+                || UNDEFINED_OBJECT_CODE.equals(sqlException.getSQLState());
+    }
+
+    private SQLException findSqlException(PersistenceException exception) {
+        return ExceptionUtils.getThrowableList(exception).stream()
+                .filter(SQLException.class::isInstance)
+                .map(SQLException.class::cast)
+                .findFirst()
+                .orElse(null);
     }
 
     private void assertNonEmptyUpdate(int updated, String query) {
