@@ -1,8 +1,8 @@
 package org.pak.qdb.support;
 
-import org.pak.qdb.api.Message;
 import org.pak.qdb.api.QueueName;
 import org.pak.qdb.api.SubscriptionId;
+import org.pak.qdb.api.Message;
 import org.pak.qdb.spi.MessageConsumerTelemetry;
 
 public final class NoOpMessageConsumerTelemetry implements MessageConsumerTelemetry {

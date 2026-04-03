@@ -5,9 +5,9 @@ import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
-import org.pak.qdb.api.Message;
 import org.pak.qdb.api.QueueName;
 import org.pak.qdb.api.SubscriptionId;
+import org.pak.qdb.api.Message;
 import org.pak.qdb.spi.MessageConsumerTelemetry;
 import org.slf4j.MDC;
 

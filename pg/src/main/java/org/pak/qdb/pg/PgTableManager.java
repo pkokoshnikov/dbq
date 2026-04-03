@@ -4,8 +4,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.pak.qdb.api.QueueName;
 import org.pak.qdb.api.SubscriptionId;
-import org.pak.qdb.error.PartitionHasReferencesException;
-import org.pak.qdb.error.RetrayablePersistenceException;
+import org.pak.qdb.api.error.RetrayablePersistenceException;
 import org.quartz.*;
 import org.quartz.impl.StdSchedulerFactory;
 

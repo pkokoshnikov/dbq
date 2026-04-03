@@ -1,7 +1,7 @@
 package org.pak.qdb.spring;
 
-import org.pak.qdb.error.NonRetrayablePersistenceException;
-import org.pak.qdb.error.RetrayablePersistenceException;
+import org.pak.qdb.api.error.NonRetrayablePersistenceException;
+import org.pak.qdb.api.error.RetrayablePersistenceException;
 import org.pak.qdb.spi.PersistenceService;
 import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.core.ArgumentPreparedStatementSetter;

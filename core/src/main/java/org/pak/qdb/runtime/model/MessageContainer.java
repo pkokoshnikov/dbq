@@ -1,4 +1,4 @@
-package org.pak.qdb.model;
+package org.pak.qdb.runtime.model;
 
 import lombok.Data;
 import lombok.experimental.FieldDefaults;

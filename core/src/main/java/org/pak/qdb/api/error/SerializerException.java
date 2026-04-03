@@ -1,4 +1,4 @@
-package org.pak.qdb.error;
+package org.pak.qdb.api.error;
 
 public class SerializerException extends RuntimeException {
     public SerializerException(Throwable throwable) {

@@ -7,9 +7,9 @@ import org.pak.qdb.api.ConsumerConfig;
 import org.pak.qdb.api.MessageHandler;
 import org.pak.qdb.api.QueueName;
 import org.pak.qdb.api.SubscriptionId;
-import org.pak.qdb.policy.BlockingPolicy;
-import org.pak.qdb.policy.NonRetryablePolicy;
-import org.pak.qdb.policy.RetryablePolicy;
+import org.pak.qdb.api.policy.BlockingPolicy;
+import org.pak.qdb.api.policy.NonRetryablePolicy;
+import org.pak.qdb.api.policy.RetryablePolicy;
 import org.pak.qdb.spi.*;
 
 @Builder(toBuilder = true)

@@ -1,9 +1,9 @@
 package org.pak.qdb.runtime;
 
-import org.pak.qdb.api.Message;
 import org.pak.qdb.api.QueueName;
 import org.pak.qdb.api.SubscriptionId;
-import org.pak.qdb.model.MessageContainer;
+import org.pak.qdb.runtime.model.MessageContainer;
+import org.pak.qdb.api.Message;
 import org.pak.qdb.spi.MessageConsumerTelemetry;
 import org.pak.qdb.spi.MessageContextPropagator;
 import org.pak.qdb.spi.QueryService;

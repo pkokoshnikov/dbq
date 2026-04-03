@@ -8,10 +8,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.pak.qdb.api.error.RetrayablePersistenceException;
 import org.pak.qdb.api.Message;
-import org.pak.qdb.error.RetrayablePersistenceException;
-import org.pak.qdb.model.SimpleMessage;
-import org.pak.qdb.policy.BlockingPolicy;
+import org.pak.qdb.api.policy.BlockingPolicy;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.IOException;
@@ -22,8 +21,8 @@ import java.util.UUID;
 
 import static java.util.Optional.of;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.qdb.model.Status.FAILED;
-import static org.pak.qdb.model.Status.PROCESSED;
+import static org.pak.qdb.runtime.model.Status.FAILED;
+import static org.pak.qdb.runtime.model.Status.PROCESSED;
 import static org.pak.qdb.runtime.TestMessage.QUEUE_NAME;
 
 @Testcontainers
@@ -241,7 +240,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         TestMessage testMessage = new TestMessage(TEST_VALUE);
         var key = UUID.randomUUID().toString();
         var originatedTime = Instant.now();
-        Message<TestMessage> message = new SimpleMessage<>(key, originatedTime, testMessage);
+        Message<TestMessage> message = new Message<>(key, originatedTime, testMessage);
         producer.send(message);
         producer.send(message);
 

@@ -4,15 +4,13 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.pak.qdb.api.Message;
 import org.pak.qdb.api.QueueName;
 import org.pak.qdb.api.SubscriptionId;
-import org.pak.qdb.error.MissingPartitionException;
-import org.pak.qdb.error.NonRetrayablePersistenceException;
-import org.pak.qdb.error.PartitionHasReferencesException;
-import org.pak.qdb.error.PersistenceException;
-import org.pak.qdb.error.RetrayablePersistenceException;
-import org.pak.qdb.model.MessageContainer;
+import org.pak.qdb.api.error.NonRetrayablePersistenceException;
+import org.pak.qdb.api.error.PersistenceException;
+import org.pak.qdb.api.error.RetrayablePersistenceException;
+import org.pak.qdb.runtime.model.MessageContainer;
+import org.pak.qdb.api.Message;
 import org.pak.qdb.spi.PersistenceService;
 import org.pak.qdb.spi.QueryService;
 import org.pak.qdb.support.StringFormatter;
@@ -320,7 +318,7 @@ public class PgQueryService implements QueryService {
             persistenceService.execute(detachPartitionSql(table, partition));
         } catch (PersistenceException e) {
             if (failOnReferences && hasPartitionReferences(e)) {
-                throw new PartitionHasReferencesException();
+                throw new PartitionHasReferencesException(e);
             }
             if (!isIgnorableDetachException(e)) {
                 throw e;

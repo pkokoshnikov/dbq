@@ -2,9 +2,8 @@ package org.pak.qdb.runtime;
 
 import org.junit.jupiter.api.Test;
 import org.pak.qdb.api.QueueName;
-import org.pak.qdb.api.SchemaName;
 import org.pak.qdb.api.SubscriptionId;
-import org.pak.qdb.policy.SimpleRetryablePolicy;
+import org.pak.qdb.api.policy.SimpleRetryablePolicy;
 
 import java.time.Duration;
 
@@ -26,12 +25,7 @@ class CoreBasicsTest {
         assertThat(exception.getMessage()).isEqualTo("Subscription id must be lowercase and -");
     }
 
-    @Test
-    void schemaNameRejectsInvalidFormat() {
-        var exception = assertThrows(IllegalArgumentException.class, () -> new SchemaName("invalid-schema"));
 
-        assertThat(exception.getMessage()).isEqualTo("Schema name must be lowercase");
-    }
 
     @Test
     void simpleRetryablePolicyUsesExponentialBackoffAndCapsDelay() {

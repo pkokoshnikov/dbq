@@ -6,12 +6,12 @@ import lombok.NonNull;
 import lombok.experimental.FieldDefaults;
 import org.pak.qdb.spi.MessageConsumerTelemetry;
 import org.pak.qdb.spi.MessageContextPropagator;
-import org.pak.qdb.policy.BlockingPolicy;
-import org.pak.qdb.policy.NonRetryablePolicy;
-import org.pak.qdb.policy.RetryablePolicy;
-import org.pak.qdb.policy.SimpleBlockingPolicy;
-import org.pak.qdb.policy.SimpleNonRetryablePolicy;
-import org.pak.qdb.policy.SimpleRetryablePolicy;
+import org.pak.qdb.api.policy.BlockingPolicy;
+import org.pak.qdb.api.policy.NonRetryablePolicy;
+import org.pak.qdb.api.policy.RetryablePolicy;
+import org.pak.qdb.api.policy.SimpleBlockingPolicy;
+import org.pak.qdb.api.policy.SimpleNonRetryablePolicy;
+import org.pak.qdb.api.policy.SimpleRetryablePolicy;
 import org.pak.qdb.support.NoOpMessageConsumerTelemetry;
 import org.pak.qdb.support.NoOpMessageContextPropagator;
 

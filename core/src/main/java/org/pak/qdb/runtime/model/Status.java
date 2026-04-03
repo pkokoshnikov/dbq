@@ -1,4 +1,4 @@
-package org.pak.qdb.model;
+package org.pak.qdb.runtime.model;
 
 public enum Status {
     PROCESSED, FAILED

@@ -11,8 +11,8 @@ import com.fasterxml.jackson.databind.cfg.CoercionAction;
 import com.fasterxml.jackson.databind.cfg.CoercionInputShape;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
-import org.pak.qdb.error.RetrayablePersistenceException;
-import org.pak.qdb.error.SerializerException;
+import org.pak.qdb.api.error.RetrayablePersistenceException;
+import org.pak.qdb.api.error.SerializerException;
 import org.postgresql.util.PGobject;
 
 import java.sql.SQLException;

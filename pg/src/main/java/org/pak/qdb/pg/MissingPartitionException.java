@@ -1,4 +1,4 @@
-package org.pak.qdb.error;
+package org.pak.qdb.pg;
 
 import lombok.Getter;
 

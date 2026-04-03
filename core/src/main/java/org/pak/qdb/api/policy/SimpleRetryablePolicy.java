@@ -1,4 +1,4 @@
-package org.pak.qdb.policy;
+package org.pak.qdb.api.policy;
 
 import java.time.Duration;
 import java.util.Optional;

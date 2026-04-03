@@ -2,12 +2,11 @@ package org.pak.qdb.runtime;
 
 import org.junit.jupiter.api.Test;
 import org.pak.qdb.api.ConsumerConfig;
-import org.pak.qdb.api.Message;
 import org.pak.qdb.api.MessageHandler;
-import org.pak.qdb.model.SimpleMessage;
-import org.pak.qdb.policy.BlockingPolicy;
-import org.pak.qdb.policy.NonRetryablePolicy;
-import org.pak.qdb.policy.RetryablePolicy;
+import org.pak.qdb.api.Message;
+import org.pak.qdb.api.policy.BlockingPolicy;
+import org.pak.qdb.api.policy.NonRetryablePolicy;
+import org.pak.qdb.api.policy.RetryablePolicy;
 import org.pak.qdb.spi.MessageConsumerTelemetry;
 import org.pak.qdb.spi.MessageContextPropagator;
 import org.pak.qdb.support.NoOpMessageConsumerTelemetry;
@@ -54,7 +53,7 @@ class ConsumerTest {
         assertThat(queryService.completions).hasSize(1);
         assertThat(queryService.failures).isEmpty();
         assertThat(queryService.retries).isEmpty();
-        assertThat(handledMessage.get()).isEqualTo(new SimpleMessage<>("key-1", originatedTime, "payload", headers));
+        assertThat(handledMessage.get()).isEqualTo(new Message<>("key-1", originatedTime, "payload", headers));
         assertThat(messageContextPropagator.extractedHeaders()).isEqualTo(headers);
         assertThat(messageContextPropagator.isScopeClosed()).isTrue();
         assertThat(messageConsumerTelemetry.startedMessage()).isEqualTo(handledMessage.get());

@@ -10,7 +10,7 @@ import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import org.junit.jupiter.api.Test;
 import org.pak.qdb.api.QueueName;
 import org.pak.qdb.api.SubscriptionId;
-import org.pak.qdb.model.SimpleMessage;
+import org.pak.qdb.api.Message;
 import org.slf4j.MDC;
 
 import java.time.Instant;
@@ -33,7 +33,7 @@ class OpenTelemetryMessageConsumerTelemetryTest {
         var parent = tracer.spanBuilder("parent").startSpan();
         try (var ignoredParentScope = parent.makeCurrent()) {
             try (var ignoredTelemetry = telemetry.start(
-                    new SimpleMessage<>("message-key", Instant.parse("2026-04-03T10:15:30Z"), "payload"),
+                    new Message<>("message-key", Instant.parse("2026-04-03T10:15:30Z"), "payload"),
                     new QueueName("orders"),
                     new SubscriptionId("billing")
             )) {
@@ -81,7 +81,7 @@ class OpenTelemetryMessageConsumerTelemetryTest {
         var exception = new IllegalStateException("boom");
 
         try (var ignoredTelemetry = telemetry.start(
-                new SimpleMessage<>("message-key", Instant.parse("2026-04-03T10:15:30Z"), "payload"),
+                new Message<>("message-key", Instant.parse("2026-04-03T10:15:30Z"), "payload"),
                 new QueueName("orders"),
                 new SubscriptionId("billing")
         )) {
