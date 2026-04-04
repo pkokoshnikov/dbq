@@ -1,4 +1,4 @@
-package org.pak.qdb.runtime;
+package org.pak.qdb.internal;
 
 import lombok.AccessLevel;
 import lombok.Builder;

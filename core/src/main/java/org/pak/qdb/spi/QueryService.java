@@ -2,7 +2,7 @@ package org.pak.qdb.spi;
 
 import org.pak.qdb.api.QueueName;
 import org.pak.qdb.api.SubscriptionId;
-import org.pak.qdb.runtime.model.MessageContainer;
+import org.pak.qdb.internal.persistence.MessageContainer;
 import org.pak.qdb.api.Message;
 
 import java.time.Duration;

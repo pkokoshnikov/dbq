@@ -1,4 +1,4 @@
-package org.pak.qdb.runtime;
+package org.pak.qdb.internal;
 
 import org.junit.jupiter.api.Test;
 import org.pak.qdb.support.StringFormatter;

@@ -1,4 +1,4 @@
-package org.pak.qdb.runtime;
+package org.pak.qdb.internal.consumer;
 
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -9,7 +9,7 @@ import org.pak.qdb.api.SubscriptionId;
 import org.pak.qdb.api.error.NonRetrayablePersistenceException;
 import org.pak.qdb.api.error.RetrayablePersistenceException;
 import org.pak.qdb.api.error.SerializerException;
-import org.pak.qdb.runtime.model.MessageContainer;
+import org.pak.qdb.internal.persistence.MessageContainer;
 import org.pak.qdb.api.policy.BlockingPolicy;
 import org.pak.qdb.api.policy.NonRetryablePolicy;
 import org.pak.qdb.api.policy.RetryablePolicy;

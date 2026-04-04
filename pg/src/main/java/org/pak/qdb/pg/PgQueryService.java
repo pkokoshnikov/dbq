@@ -9,7 +9,7 @@ import org.pak.qdb.api.SubscriptionId;
 import org.pak.qdb.api.error.NonRetrayablePersistenceException;
 import org.pak.qdb.api.error.PersistenceException;
 import org.pak.qdb.api.error.RetrayablePersistenceException;
-import org.pak.qdb.runtime.model.MessageContainer;
+import org.pak.qdb.internal.persistence.MessageContainer;
 import org.pak.qdb.api.Message;
 import org.pak.qdb.spi.PersistenceService;
 import org.pak.qdb.spi.QueryService;

@@ -1,7 +1,8 @@
-package org.pak.qdb.runtime;
+package org.pak.qdb.internal;
 
 import org.junit.jupiter.api.Test;
 import org.pak.qdb.api.ConsumerConfig;
+import org.pak.qdb.internal.consumer.ConsumerStarter;
 import org.pak.qdb.support.StdMessageFactory;
 
 class ConsumerStarterTest {

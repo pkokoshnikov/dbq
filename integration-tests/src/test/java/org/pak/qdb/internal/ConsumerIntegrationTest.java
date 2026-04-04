@@ -1,4 +1,4 @@
-package org.pak.qdb.runtime;
+package org.pak.qdb.internal;
 
 
 import eu.rekawek.toxiproxy.model.ToxicDirection;
@@ -21,9 +21,9 @@ import java.util.UUID;
 
 import static java.util.Optional.of;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.qdb.runtime.model.Status.FAILED;
-import static org.pak.qdb.runtime.model.Status.PROCESSED;
-import static org.pak.qdb.runtime.TestMessage.QUEUE_NAME;
+import static org.pak.qdb.internal.persistence.Status.FAILED;
+import static org.pak.qdb.internal.persistence.Status.PROCESSED;
+import static org.pak.qdb.internal.TestMessage.QUEUE_NAME;
 
 @Testcontainers
 @Slf4j

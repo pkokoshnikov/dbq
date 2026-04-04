@@ -1,4 +1,4 @@
-package org.pak.qdb.runtime;
+package org.pak.qdb.internal;
 
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -10,6 +10,7 @@ import org.pak.qdb.api.SubscriptionId;
 import org.pak.qdb.api.policy.BlockingPolicy;
 import org.pak.qdb.api.policy.NonRetryablePolicy;
 import org.pak.qdb.api.policy.RetryablePolicy;
+import org.pak.qdb.internal.consumer.Consumer;
 import org.pak.qdb.spi.*;
 
 @Builder(toBuilder = true)

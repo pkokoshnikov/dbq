@@ -1,4 +1,4 @@
-package org.pak.qdb.runtime;
+package org.pak.qdb.internal;
 
 import org.junit.jupiter.api.Test;
 import org.pak.qdb.api.ConsumerConfig;
@@ -7,6 +7,7 @@ import org.pak.qdb.api.Message;
 import org.pak.qdb.api.policy.BlockingPolicy;
 import org.pak.qdb.api.policy.NonRetryablePolicy;
 import org.pak.qdb.api.policy.RetryablePolicy;
+import org.pak.qdb.internal.consumer.Consumer;
 import org.pak.qdb.spi.MessageConsumerTelemetry;
 import org.pak.qdb.spi.MessageContextPropagator;
 import org.pak.qdb.support.NoOpMessageConsumerTelemetry;
@@ -20,9 +21,9 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.qdb.runtime.CoreTestSupport.QUEUE_NAME;
-import static org.pak.qdb.runtime.CoreTestSupport.SUBSCRIPTION_NAME;
-import static org.pak.qdb.runtime.CoreTestSupport.messageContainer;
+import static org.pak.qdb.internal.CoreTestSupport.QUEUE_NAME;
+import static org.pak.qdb.internal.CoreTestSupport.SUBSCRIPTION_NAME;
+import static org.pak.qdb.internal.CoreTestSupport.messageContainer;
 
 class ConsumerTest {
     @Test

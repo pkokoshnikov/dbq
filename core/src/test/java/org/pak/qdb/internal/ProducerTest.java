@@ -1,4 +1,4 @@
-package org.pak.qdb.runtime;
+package org.pak.qdb.internal;
 
 import org.junit.jupiter.api.Test;
 import org.pak.qdb.api.Producer;
@@ -6,7 +6,7 @@ import org.pak.qdb.api.ProducerConfig;
 import org.pak.qdb.support.StdMessageFactory;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.qdb.runtime.CoreTestSupport.QUEUE_NAME;
+import static org.pak.qdb.internal.CoreTestSupport.QUEUE_NAME;
 
 class ProducerTest {
     @Test

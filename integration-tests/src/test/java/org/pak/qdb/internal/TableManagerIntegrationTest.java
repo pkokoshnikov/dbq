@@ -1,4 +1,4 @@
-package org.pak.qdb.runtime;
+package org.pak.qdb.internal;
 
 
 import lombok.extern.slf4j.Slf4j;
@@ -15,7 +15,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.qdb.runtime.TestMessage.QUEUE_NAME;
+import static org.pak.qdb.internal.TestMessage.QUEUE_NAME;
 
 @Testcontainers
 @Slf4j

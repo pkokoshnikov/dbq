@@ -1,4 +1,4 @@
-package org.pak.qdb.runtime;
+package org.pak.qdb.internal;
 
 import eu.rekawek.toxiproxy.Proxy;
 import eu.rekawek.toxiproxy.ToxiproxyClient;
@@ -7,9 +7,9 @@ import org.pak.qdb.api.ProducerConfig;
 import org.pak.qdb.pg.SchemaName;
 import org.pak.qdb.api.SubscriptionId;
 import org.junit.jupiter.api.BeforeAll;
-import org.pak.qdb.runtime.model.MessageContainer;
-import org.pak.qdb.runtime.model.MessageHistoryContainer;
-import org.pak.qdb.runtime.model.Status;
+import org.pak.qdb.internal.persistence.MessageContainer;
+import org.pak.qdb.internal.persistence.MessageHistoryContainer;
+import org.pak.qdb.internal.persistence.Status;
 import org.pak.qdb.api.policy.SimpleBlockingPolicy;
 import org.pak.qdb.api.policy.SimpleNonRetryablePolicy;
 import org.pak.qdb.api.policy.SimpleRetryablePolicy;
@@ -44,7 +44,7 @@ import java.util.regex.Pattern;
 
 import static java.util.Optional.ofNullable;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.qdb.runtime.TestMessage.QUEUE_NAME;
+import static org.pak.qdb.internal.TestMessage.QUEUE_NAME;
 
 public class BaseIntegrationTest {
     static final String QUEUE_TABLE = QUEUE_NAME.name().replace("-", "_");

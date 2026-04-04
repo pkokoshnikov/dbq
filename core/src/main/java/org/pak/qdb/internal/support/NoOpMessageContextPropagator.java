@@ -1,4 +1,4 @@
-package org.pak.qdb.support;
+package org.pak.qdb.internal.support;
 
 import org.pak.qdb.spi.MessageContextPropagator;
 

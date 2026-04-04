@@ -1,7 +1,7 @@
 package org.pak.qdb.api;
 
 import lombok.extern.slf4j.Slf4j;
-import org.pak.qdb.runtime.ConsumerStarter;
+import org.pak.qdb.internal.consumer.ConsumerStarter;
 import org.pak.qdb.spi.MessageFactory;
 import org.pak.qdb.spi.QueryService;
 import org.pak.qdb.spi.TransactionService;
