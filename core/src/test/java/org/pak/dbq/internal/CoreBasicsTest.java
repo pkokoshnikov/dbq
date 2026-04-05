@@ -33,7 +33,8 @@ class CoreBasicsTest {
 
         assertThat(policy.apply(new RuntimeException("boom"), 0)).contains(Duration.ofSeconds(1));
         assertThat(policy.apply(new RuntimeException("boom"), 3)).contains(Duration.ofSeconds(8));
-        assertThat(policy.apply(new RuntimeException("boom"), 20)).contains(Duration.ofMinutes(10));
-        assertThat(policy.apply(new RuntimeException("boom"), 10001)).isEmpty();
+        assertThat(policy.apply(new RuntimeException("boom"), 12)).contains(Duration.ofMinutes(60));
+        assertThat(policy.apply(new RuntimeException("boom"), 20)).contains(Duration.ofMinutes(60));
+        assertThat(policy.apply(new RuntimeException("boom"), Integer.MAX_VALUE)).isEmpty();
     }
 }

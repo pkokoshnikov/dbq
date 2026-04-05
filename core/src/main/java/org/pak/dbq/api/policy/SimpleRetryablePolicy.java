@@ -7,10 +7,10 @@ public class SimpleRetryablePolicy implements RetryablePolicy {
 
     @Override
     public Optional<Duration> apply(Exception e, Integer attempt) {
-        if (attempt > 10000) {
+        if (attempt == Integer.MAX_VALUE) {
             return Optional.empty();
         } else {
-            return Optional.of(Duration.ofSeconds(Math.min((long) Math.pow(2, attempt), 10 * 60)));
+            return Optional.of(Duration.ofSeconds(Math.min((long) Math.pow(2, attempt), 60 * 60)));
         }
     }
 }
