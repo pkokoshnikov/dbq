@@ -1,8 +1,5 @@
 # Issues
-1. Нет валидации `ConsumerConfig.Properties`.
-Решение: валидировать `concurrency > 0`, `maxPollRecords > 0`, паузы `>= 0` в конструкторе/билдере и падать сразу с понятной ошибкой.
-
-2. `ProducerConfig.Properties.retentionDays` и `ConsumerConfig.Properties.retentionDays` сейчас не влияют на поведение.
+1. `ProducerConfig.Properties.retentionDays` и `ConsumerConfig.Properties.retentionDays` сейчас не влияют на поведение.
 Решение: прокинуть их в интеграцию с `PgTableManager`.
 
 ## Notes
