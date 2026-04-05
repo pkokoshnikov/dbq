@@ -3,10 +3,12 @@ package org.pak.dbq.spring;
 import org.pak.dbq.spi.error.NonRetrayablePersistenceException;
 import org.pak.dbq.spi.error.RetryablePersistenceException;
 import org.pak.dbq.spi.PersistenceService;
-import org.springframework.jdbc.BadSqlGrammarException;
+import org.springframework.dao.RecoverableDataAccessException;
 import org.springframework.jdbc.core.ArgumentPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementCallback;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
+import org.springframework.dao.TransientDataAccessException;
 
 import java.sql.ResultSet;
 import java.util.List;
@@ -64,11 +66,12 @@ public class SpringPersistenceService implements PersistenceService {
     }
 
     private void classifyException(Exception e) {
-        if (BadSqlGrammarException.class.isAssignableFrom(e.getClass())) {
-            throw new NonRetrayablePersistenceException(e, e.getCause());
-        } else {
+        if (e instanceof TransientDataAccessException
+                || e instanceof RecoverableDataAccessException
+                || e instanceof CannotGetJdbcConnectionException) {
             throw new RetryablePersistenceException(e, e.getCause());
         }
+        throw new NonRetrayablePersistenceException(e, e.getCause());
     }
 
     @Override

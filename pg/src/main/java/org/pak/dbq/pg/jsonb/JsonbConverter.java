@@ -11,8 +11,8 @@ import com.fasterxml.jackson.databind.cfg.CoercionAction;
 import com.fasterxml.jackson.databind.cfg.CoercionInputShape;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
-import org.pak.dbq.spi.error.RetryablePersistenceException;
 import org.pak.dbq.error.MessageSerializationException;
+import org.pak.dbq.spi.error.NonRetrayablePersistenceException;
 import org.postgresql.util.PGobject;
 
 import java.sql.SQLException;
@@ -81,7 +81,7 @@ public class JsonbConverter {
 
             return (T) jsonObject;
         } catch (SQLException e) {
-            throw new RetryablePersistenceException(e, e.getCause());
+            throw new NonRetrayablePersistenceException(e, e.getCause());
         } catch (JsonProcessingException e) {
             throw new MessageSerializationException(e);
         }
@@ -111,7 +111,7 @@ public class JsonbConverter {
 
             return (T) jsonObject;
         } catch (SQLException e) {
-            throw new RetryablePersistenceException(e, e.getCause());
+            throw new NonRetrayablePersistenceException(e, e.getCause());
         } catch (JsonProcessingException e) {
             throw new MessageSerializationException(e);
         }

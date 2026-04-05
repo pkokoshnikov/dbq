@@ -108,7 +108,7 @@ public class Consumer<T> {
                     log.error("Non recoverable persistence exception occurred, stop processing", e);
                     isRunning.set(false);
                 } catch (RetryablePersistenceException e) {
-                    log.error("Recoverable persistence exception occurred", e);
+                    log.warn("Retryable persistence exception occurred, pause processing", e);
                     pause = persistenceExceptionPause;
                 } catch (InterruptedException e) {  /*app layer exceptions*/
                     log.warn("Consumer is interrupted", e);
@@ -144,12 +144,11 @@ public class Consumer<T> {
                         messageContainer.getPayload(),
                         messageContainer.getHeaders());
                 Optional<Exception> optionalException = Optional.empty();
-                try (var ignoredConsumerTelemetry =
-                             messageConsumerTelemetry.start(message, queueName, subscriptionId)) {
+                try (var telemetry = messageConsumerTelemetry.start(message, queueName, subscriptionId)) {
                     try {
                         messageHandler.handle(message);
                     } catch (Exception e) {
-                        ignoredConsumerTelemetry.recordError(e);
+                        telemetry.recordError(e);
                         optionalException = of(e);
                     }
 
