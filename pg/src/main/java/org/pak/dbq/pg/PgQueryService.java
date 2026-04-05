@@ -35,6 +35,7 @@ import static java.util.Optional.ofNullable;
 
 @Slf4j
 public class PgQueryService implements QueryService {
+    private static final StringFormatter STATIC_FORMATTER = new StringFormatter();
     private record PartitionBounds(Instant from, Instant to) {
     }
 
@@ -61,7 +62,6 @@ public class PgQueryService implements QueryService {
     private final PersistenceService persistenceService;
     private final SchemaName schemaName;
     private final JsonbConverter jsonbConverter;
-    private final PgSchemaSqlGenerator schemaSqlGenerator;
     private final StringFormatter formatter = new StringFormatter();
     private final Map<String, String> queryCache = new ConcurrentHashMap<>();
     private final Cache<String, Boolean> ensuredPartitions = CacheBuilder.newBuilder()
@@ -74,15 +74,112 @@ public class PgQueryService implements QueryService {
         this.persistenceService = persistenceService;
         this.schemaName = schemaName;
         this.jsonbConverter = jsonbConverter;
-        this.schemaSqlGenerator = new PgSchemaSqlGenerator(schemaName);
     }
 
     public void createQueueTable(QueueName queueName) {
-        persistenceService.execute(schemaSqlGenerator.createQueueTable(queueName));
+        persistenceService.execute(createQueueTableSql(schemaName, queueName));
     }
 
     public void createSubscriptionTable(QueueName queueName, SubscriptionId subscriptionId, boolean historyEnabled) {
-        persistenceService.execute(schemaSqlGenerator.createSubscriptionTable(queueName, subscriptionId, historyEnabled));
+        persistenceService.execute(createSubscriptionTableSql(schemaName, queueName, subscriptionId, historyEnabled));
+    }
+
+    public static String createQueueTableSql(SchemaName schemaName, QueueName queueName) {
+        return STATIC_FORMATTER.execute("""
+                CREATE TABLE IF NOT EXISTS ${schema}.${queueTable} (
+                    id BIGSERIAL,
+                    key TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    execute_after TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    originated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    headers JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    payload JSONB NOT NULL,
+                    PRIMARY KEY (id, originated_at)
+                ) PARTITION BY RANGE (originated_at);
+                CREATE INDEX IF NOT EXISTS ${queueTable}_created_at_idx ON ${schema}.${queueTable}(created_at);
+                CREATE UNIQUE INDEX IF NOT EXISTS ${queueTable}_message_key_idx ON ${schema}.${queueTable}(originated_at, key);
+                """, Map.of(
+                "schema", schemaName.value(),
+                "queueTable", queueTableName(queueName))
+        );
+    }
+
+    public static String createSubscriptionTableSql(
+            SchemaName schemaName,
+            QueueName queueName,
+            SubscriptionId subscriptionId,
+            boolean historyEnabled
+    ) {
+        var params = Map.of("schema", schemaName.value(),
+                "queueTable", queueTableName(queueName),
+                "subscriptionTable", subscriptionTableName(subscriptionId),
+                "subscriptionHistoryTable", subscriptionHistoryTableName(subscriptionId),
+                "insertTrigger", subscriptionTableName(subscriptionId) + "_insert_trigger",
+                "insertFunction", subscriptionTableName(subscriptionId) + "_insert_function()");
+        var historySql = historyEnabled
+                ? STATIC_FORMATTER.execute("""
+                        CREATE TABLE IF NOT EXISTS ${schema}.${subscriptionHistoryTable} (
+                            id BIGINT,
+                            message_id BIGINT NOT NULL,
+                            attempt INTEGER NOT NULL DEFAULT 0,
+                            status TEXT NOT NULL DEFAULT 'PROCESSED',
+                            error_message TEXT,
+                            stack_trace TEXT,
+                            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                            originated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                            FOREIGN KEY (message_id, originated_at) REFERENCES ${schema}.${queueTable}(id, originated_at),
+                            PRIMARY KEY (id, originated_at)
+                        ) PARTITION BY RANGE (originated_at);
+
+                        CREATE UNIQUE INDEX IF NOT EXISTS ${subscriptionHistoryTable}_message_id_idx ON ${schema}.${subscriptionHistoryTable}(originated_at, message_id);
+                        CREATE INDEX IF NOT EXISTS ${subscriptionHistoryTable}_created_at_idx ON ${schema}.${subscriptionHistoryTable}(created_at);
+                        """, params)
+                : "";
+
+        return STATIC_FORMATTER.execute("""
+                        CREATE TABLE IF NOT EXISTS ${schema}.${subscriptionTable} (
+                            id BIGSERIAL PRIMARY KEY,
+                            message_id BIGINT NOT NULL,
+                            attempt INTEGER NOT NULL DEFAULT 0,
+                            error_message TEXT,
+                            stack_trace TEXT,
+                            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP WITH TIME ZONE,
+                            originated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                            execute_after TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (message_id, originated_at) REFERENCES ${schema}.${queueTable}(id, originated_at)
+                        );
+
+                        CREATE UNIQUE INDEX IF NOT EXISTS ${subscriptionTable}_message_id_idx ON ${schema}.${subscriptionTable}(message_id);
+                        CREATE INDEX IF NOT EXISTS ${subscriptionTable}_created_at_idx ON ${schema}.${subscriptionTable}(created_at);
+                        CREATE INDEX IF NOT EXISTS ${subscriptionTable}_execute_after_idx ON ${schema}.${subscriptionTable}(execute_after ASC);
+
+                        ${historySql}
+
+                        CREATE OR REPLACE FUNCTION ${schema}.${insertFunction}
+                          RETURNS trigger AS
+                        $$
+                            BEGIN
+                            INSERT INTO ${schema}.${subscriptionTable}(message_id, created_at, execute_after, originated_at)
+                                 VALUES(NEW.id, NEW.created_at, NEW.execute_after, NEW.originated_at);
+                            RETURN NEW;
+                            END;
+                        $$
+                        LANGUAGE 'plpgsql';
+
+                        CREATE OR REPLACE TRIGGER ${insertTrigger}
+                            AFTER INSERT ON ${schema}.${queueTable}
+                            FOR EACH ROW
+                            EXECUTE PROCEDURE ${schema}.${insertFunction};
+                        """,
+                Map.of("schema", schemaName.value(),
+                        "queueTable", queueTableName(queueName),
+                        "subscriptionTable", subscriptionTableName(subscriptionId),
+                        "subscriptionHistoryTable", subscriptionHistoryTableName(subscriptionId),
+                        "insertTrigger", subscriptionTableName(subscriptionId) + "_insert_trigger",
+                        "insertFunction", subscriptionTableName(subscriptionId) + "_insert_function()",
+                        "historySql", historySql)
+        );
     }
 
     public void createPartition(String table, Instant dateTime) {
@@ -309,16 +406,28 @@ public class PgQueryService implements QueryService {
         assertNonEmptyUpdate(updated, query);
     }
 
-    private String queueTable(QueueName queueName) {
+    private static String queueTableName(QueueName queueName) {
         return queueName.name().replace("-", "_");
     }
 
-    private String subscriptionTable(SubscriptionId subscriptionId) {
+    private static String subscriptionTableName(SubscriptionId subscriptionId) {
         return subscriptionId.id().replace("-", "_");
     }
 
-    private String subscriptionHistoryTable(SubscriptionId subscriptionId) {
+    private static String subscriptionHistoryTableName(SubscriptionId subscriptionId) {
         return subscriptionId.id().replace("-", "_") + "_history";
+    }
+
+    private String queueTable(QueueName queueName) {
+        return queueTableName(queueName);
+    }
+
+    private String subscriptionTable(SubscriptionId subscriptionId) {
+        return subscriptionTableName(subscriptionId);
+    }
+
+    private String subscriptionHistoryTable(SubscriptionId subscriptionId) {
+        return subscriptionHistoryTableName(subscriptionId);
     }
 
     private String partitionName(String table, LocalDate partition) {

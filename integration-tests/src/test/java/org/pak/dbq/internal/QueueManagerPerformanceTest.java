@@ -40,7 +40,6 @@ class QueueManagerPerformanceTest extends BaseIntegrationTest {
         jdbcTemplate = setupJdbcTemplate(dataSource);
         persistenceService = setupPersistenceService(jdbcTemplate);
         jsonbConverter = setupJsonbConverter();
-        schemaSqlGenerator = setupSchemaSqlGenerator();
         pgQueryService = setupQueryService(persistenceService, jsonbConverter);
         tableManager = setupTableManager(pgQueryService);
 

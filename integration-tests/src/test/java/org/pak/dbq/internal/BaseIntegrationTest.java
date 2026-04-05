@@ -18,7 +18,6 @@ import org.pak.dbq.internal.support.NoOpMessageContextPropagator;
 import org.pak.dbq.internal.support.SimpleMessageFactory;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.PgQueryService;
-import org.pak.dbq.pg.PgSchemaSqlGenerator;
 import org.pak.dbq.pg.PgTableManager;
 import org.pak.dbq.pg.jsonb.JsonbConverter;
 import org.pak.dbq.spring.SpringPersistenceService;
@@ -59,7 +58,6 @@ public class BaseIntegrationTest {
     protected static final String TEST_EXCEPTION_MESSAGE = "test-exception-payload";
     protected PgQueryService pgQueryService;
     protected PgTableManager tableManager;
-    protected PgSchemaSqlGenerator schemaSqlGenerator;
     protected static final StringFormatter formatter = new StringFormatter();
     protected static final Network network = Network.newNetwork();
     protected static String jdbcUrl;
@@ -123,10 +121,6 @@ public class BaseIntegrationTest {
         return jsonbConverter;
     }
 
-    protected static PgSchemaSqlGenerator setupSchemaSqlGenerator() {
-        return new PgSchemaSqlGenerator(TEST_SCHEMA);
-    }
-
     protected static ProducerFactory.ProducerFactoryBuilder<TestMessage> setupProducerFactory(
             PgQueryService pgQueryService
     ) {
@@ -166,7 +160,7 @@ public class BaseIntegrationTest {
     }
 
     protected void createQueueTable() {
-        jdbcTemplate.execute(schemaSqlGenerator.createQueueTable(QUEUE_NAME));
+        pgQueryService.createQueueTable(QUEUE_NAME);
     }
 
     protected void createSubscriptionTable(SubscriptionId subscriptionId) {
@@ -174,7 +168,7 @@ public class BaseIntegrationTest {
     }
 
     protected void createSubscriptionTable(SubscriptionId subscriptionId, boolean historyEnabled) {
-        jdbcTemplate.execute(schemaSqlGenerator.createSubscriptionTable(QUEUE_NAME, subscriptionId, historyEnabled));
+        pgQueryService.createSubscriptionTable(QUEUE_NAME, subscriptionId, historyEnabled);
     }
 
     protected void clearTables() {
