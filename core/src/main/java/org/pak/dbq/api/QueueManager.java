@@ -36,11 +36,12 @@ public class QueueManager {
 
     private final ConcurrentHashMap<String, ConsumerStarter<?>> consumerStarters =
             new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Class<?>, Producer<?>> producers =
+    private final ConcurrentHashMap<String, Producer<?>> producers =
             new ConcurrentHashMap<>();
 
     public <T> Producer<T> registerProducer(ProducerConfig<T> producerConfig) {
-        return (Producer<T>) producers.computeIfAbsent(producerConfig.getClazz(),
+        var producerKey = producerConfig.getQueueName().name() + "|" + producerConfig.getClazz().getName();
+        return (Producer<T>) producers.computeIfAbsent(producerKey,
                 k -> new Producer<>(producerConfig, queryService, messageFactory));
     }
 
