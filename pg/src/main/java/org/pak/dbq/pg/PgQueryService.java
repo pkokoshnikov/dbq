@@ -8,7 +8,6 @@ import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.spi.error.NonRetrayablePersistenceException;
 import org.pak.dbq.spi.error.PersistenceException;
-import org.pak.dbq.spi.error.RetryablePersistenceException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.api.Message;
 import org.pak.dbq.spi.PersistenceService;
@@ -16,10 +15,8 @@ import org.pak.dbq.spi.QueryService;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.jsonb.JsonbConverter;
 import org.postgresql.util.PGobject;
-import org.postgresql.util.PSQLException;
 
 import java.math.BigInteger;
-import java.sql.BatchUpdateException;
 import java.sql.SQLException;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
@@ -29,7 +26,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static java.util.Optional.ofNullable;
@@ -44,7 +40,6 @@ public class PgQueryService implements QueryService {
 
     private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy_MM_dd");
     private static final DateTimeFormatter partitionBoundaryFormatter = DateTimeFormatter.ISO_INSTANT;
-    private static final String MISSING_PARTITION_CODE = "23514";
     private static final String PARTITION_HAS_REFERENCES_CODE = "23503";
     private static final String UNDEFINED_TABLE_CODE = "42P01";
     private static final String UNDEFINED_OBJECT_CODE = "42704";
@@ -140,13 +135,11 @@ public class PgQueryService implements QueryService {
                         ON CONFLICT (key, originated_at) DO NOTHING""",
                 Map.of("schema", schemaName.value(), "queueTable", queueTable(queueName))));
 
-        return handleMissingPartition(() -> persistenceService.insert(query,
-                        message.key(),
-                        OffsetDateTime.ofInstant(message.originatedTime(), ZoneId.systemDefault()),
-                        jsonbConverter.toPGObject(message.headers()),
-                        jsonbConverter.toPGObject(message.payload())) > 0,
-                () -> List.of(message.originatedTime())
-        );
+        return persistenceService.insert(query,
+                message.key(),
+                OffsetDateTime.ofInstant(message.originatedTime(), ZoneId.systemDefault()),
+                jsonbConverter.toPGObject(message.headers()),
+                jsonbConverter.toPGObject(message.payload())) > 0;
     }
 
     @Override
@@ -167,8 +160,7 @@ public class PgQueryService implements QueryService {
                         jsonbConverter.toPGObject(t.payload())})
                 .toList();
 
-        var result = handleMissingPartition(() -> persistenceService.batchInsert(query, args),
-                () -> messages.stream().map(Message::originatedTime).collect(Collectors.toList()));
+        var result = persistenceService.batchInsert(query, args);
 
         return Arrays.stream(result).mapToObj(i -> i > 0).toList();
     }
@@ -257,9 +249,8 @@ public class PgQueryService implements QueryService {
                 Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionId),
                         "subscriptionHistoryTable", subscriptionHistoryTable(subscriptionId))));
 
-        var updated = handleMissingPartition(
-                () -> persistenceService.update(query, messageContainer.getId(), e.getMessage(),
-                        ExceptionUtils.getStackTrace(e)), () -> List.of(messageContainer.getOriginatedTime()));
+        var updated = persistenceService.update(query, messageContainer.getId(), e.getMessage(),
+                ExceptionUtils.getStackTrace(e));
 
         assertNonEmptyUpdate(updated, query);
     }
@@ -289,9 +280,7 @@ public class PgQueryService implements QueryService {
                 Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionId),
                         "subscriptionHistoryTable", subscriptionHistoryTable(subscriptionId))));
 
-        var updated = handleMissingPartition(
-                () -> persistenceService.update(query, messageContainer.getId()),
-                () -> List.of(messageContainer.getOriginatedTime()));
+        var updated = persistenceService.update(query, messageContainer.getId());
 
         assertNonEmptyUpdate(updated, query);
     }
@@ -423,27 +412,6 @@ public class PgQueryService implements QueryService {
     private void assertNonEmptyUpdate(int updated, String query) {
         if (updated == 0) {
             log.warn("No records were updated by query '{}'", query);
-        }
-    }
-
-    private <T> T handleMissingPartition(Supplier<T> operation, Supplier<List<Instant>> originationTimes) {
-        try {
-            return operation.get();
-        } catch (RetryablePersistenceException e) {
-            if ((e.getOriginalCause().getClass().isAssignableFrom(PSQLException.class))
-                    && MISSING_PARTITION_CODE.equals(((SQLException) e.getOriginalCause()).getSQLState())) {
-                throw new MissingPartitionException(originationTimes.get());
-            } else if (e.getOriginalCause().getClass().isAssignableFrom(BatchUpdateException.class)) {
-                for (Throwable throwable : (BatchUpdateException) e.getOriginalCause()) {
-                    var sqlException = (SQLException) throwable;
-                    if (MISSING_PARTITION_CODE.equals(sqlException.getSQLState())) {
-                        throw new MissingPartitionException(originationTimes.get());
-                    }
-                }
-                throw e;
-            } else {
-                throw e;
-            }
         }
     }
 }
