@@ -11,7 +11,7 @@ public final class PgSchemaCli {
 
     public static void main(String[] args) {
         if (args.length < 3) {
-            fail("Usage: queue <schema> <queue-name> | subscription <schema> <queue-name> <subscription-name> | all <schema> <queue-name> <subscription-name>");
+            fail("Usage: queue <schema> <queue-name> | subscription <schema> <queue-name> <subscription-name> [history-enabled] | all <schema> <queue-name> <subscription-name> [history-enabled]");
             return;
         }
 
@@ -25,14 +25,20 @@ public final class PgSchemaCli {
                 case "queue" -> System.out.print(sqlGenerator.createQueueTable(queueName));
                 case "subscription" -> {
                     requireArgs(args, 4);
-                    System.out.print(sqlGenerator.createSubscriptionTable(queueName, new SubscriptionId(args[3])));
+                    System.out.print(sqlGenerator.createSubscriptionTable(
+                            queueName,
+                            new SubscriptionId(args[3]),
+                            parseHistoryEnabled(args, 4)));
                 }
                 case "all" -> {
                     requireArgs(args, 4);
                     var subscriptionId = new SubscriptionId(args[3]);
                     System.out.print(sqlGenerator.createQueueTable(queueName));
                     System.out.println();
-                    System.out.print(sqlGenerator.createSubscriptionTable(queueName, subscriptionId));
+                    System.out.print(sqlGenerator.createSubscriptionTable(
+                            queueName,
+                            subscriptionId,
+                            parseHistoryEnabled(args, 4)));
                 }
                 default -> fail("Unknown command: " + command);
             }
@@ -45,6 +51,10 @@ public final class PgSchemaCli {
         if (args.length < required) {
             throw new IllegalArgumentException("Not enough arguments");
         }
+    }
+
+    private static boolean parseHistoryEnabled(String[] args, int index) {
+        return args.length > index && Boolean.parseBoolean(args[index]);
     }
 
     private static void fail(String message) {

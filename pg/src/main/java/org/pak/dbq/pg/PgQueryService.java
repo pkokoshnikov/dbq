@@ -226,8 +226,21 @@ public class PgQueryService implements QueryService {
     }
 
     public <T> void failMessage(
-            SubscriptionId subscriptionId, MessageContainer<T> messageContainer, Exception e
+            SubscriptionId subscriptionId,
+            MessageContainer<T> messageContainer,
+            Exception e,
+            boolean historyEnabled
     ) {
+        if (!historyEnabled) {
+            var query = queryCache.computeIfAbsent("deleteFailedMessage|" + subscriptionId.id(), k -> formatter.execute("""
+                            DELETE FROM ${schema}.${subscriptionTable} WHERE id = ?""",
+                    Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionId))));
+
+            var updated = persistenceService.update(query, messageContainer.getId());
+            assertNonEmptyUpdate(updated, query);
+            return;
+        }
+
         ensureHistoryPartitionExists(subscriptionId, messageContainer.getOriginatedTime());
 
         var query = queryCache.computeIfAbsent("failMessage|" + subscriptionId.id(), k -> formatter.execute("""
@@ -246,8 +259,20 @@ public class PgQueryService implements QueryService {
     }
 
     public <T> void completeMessage(
-            SubscriptionId subscriptionId, MessageContainer<T> messageContainer
+            SubscriptionId subscriptionId,
+            MessageContainer<T> messageContainer,
+            boolean historyEnabled
     ) {
+        if (!historyEnabled) {
+            var query = queryCache.computeIfAbsent("deleteCompletedMessage|" + subscriptionId.id(), k -> formatter.execute("""
+                            DELETE FROM ${schema}.${subscriptionTable} WHERE id = ?""",
+                    Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionId))));
+
+            var updated = persistenceService.update(query, messageContainer.getId());
+            assertNonEmptyUpdate(updated, query);
+            return;
+        }
+
         ensureHistoryPartitionExists(subscriptionId, messageContainer.getOriginatedTime());
 
         var query = queryCache.computeIfAbsent("completeMessage|" + subscriptionId.id(), k -> formatter.execute("""

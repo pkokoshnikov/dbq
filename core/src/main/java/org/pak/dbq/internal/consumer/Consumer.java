@@ -42,6 +42,7 @@ public class Consumer<T> {
     private final MessageFactory messageFactory;
     private final Integer maxPollRecords;
     private final Duration persistenceExceptionPause;
+    private final boolean historyEnabled;
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
     public Consumer(
@@ -72,6 +73,7 @@ public class Consumer<T> {
         this.maxPollRecords = properties.getMaxPollRecords();
         this.persistenceExceptionPause = properties.getPersistenceExceptionPause();
         this.unpredictedExceptionPause = properties.getUnpredictedExceptionPause();
+        this.historyEnabled = properties.isHistoryEnabled();
     }
 
     public void poolLoop() {
@@ -152,7 +154,7 @@ public class Consumer<T> {
                     }
 
                     if (optionalException.isEmpty()) {
-                        queryService.completeMessage(subscriptionId, messageContainer);
+                        queryService.completeMessage(subscriptionId, messageContainer, historyEnabled);
                         log.info("Message processing completed");
                     } else {
                         var exception = optionalException.get();
@@ -173,7 +175,7 @@ public class Consumer<T> {
 
     private void handleNonRetryableException(MessageContainer<T> messageContainer, Exception e) {
         log.error("Non retryable exception occurred", e);
-        queryService.failMessage(subscriptionId, messageContainer, e);
+        queryService.failMessage(subscriptionId, messageContainer, e, historyEnabled);
     }
 
     private void handleRetryableException(MessageContainer<T> messageContainer, Exception e) {
@@ -181,7 +183,7 @@ public class Consumer<T> {
         var optionalDuration = retryablePolicy.apply(e, messageContainer.getAttempt());
 
         if (optionalDuration.isEmpty() || messageContainer.getAttempt().equals(Integer.MAX_VALUE - 1)) {
-            queryService.failMessage(subscriptionId, messageContainer, e);
+            queryService.failMessage(subscriptionId, messageContainer, e, historyEnabled);
         } else {
             queryService.retryMessage(subscriptionId, messageContainer, optionalDuration.get(), e);
 

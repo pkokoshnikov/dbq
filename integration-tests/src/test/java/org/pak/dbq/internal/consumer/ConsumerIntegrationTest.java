@@ -8,6 +8,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.pak.dbq.api.ConsumerConfig;
 import org.pak.dbq.internal.BaseIntegrationTest;
 import org.pak.dbq.internal.TestMessage;
 import org.pak.dbq.spi.error.RetryablePersistenceException;
@@ -44,9 +45,9 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         consumerFactoryBuilder = setupQueueProcessorFactory(pgQueryService, springTransactionService);
 
         createQueueTable();
-        createSubscriptionTable(SUBSCRIPTION_NAME_1);
+        createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         tableManager.registerQueue(QUEUE_NAME, 30);
-        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_1, 30);
+        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_1, 30, true);
     }
 
     @AfterEach
@@ -319,5 +320,29 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         assertThat(testMessageContainer.getAttempt()).isEqualTo(0);
         assertThat(testMessageContainer.getErrorMessage()).isNull();
         assertThat(testMessageContainer.getStackTrace()).isNull();
+    }
+
+    @Test
+    void testSuccessHandleWithoutHistory() {
+        clearTables();
+        createQueueTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1, false);
+        tableManager.registerQueue(QUEUE_NAME, 30);
+
+        var consumer = consumerFactoryBuilder
+                .properties(ConsumerConfig.Properties.builder()
+                        .historyEnabled(false)
+                        .build())
+                .build()
+                .create();
+        var producer = producerFactory.build().create();
+
+        producer.send(new TestMessage(TEST_VALUE));
+
+        assertThat(consumer.poolAndProcess()).isTrue();
+        assertThat(consumer.poolAndProcess()).isFalse();
+        assertThat(selectTestMessages(SUBSCRIPTION_NAME_1)).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT to_regclass(?)", String.class,
+                TEST_SCHEMA.value() + "." + SUBSCRIPTION_TABLE_1_HISTORY)).isNull();
     }
 }

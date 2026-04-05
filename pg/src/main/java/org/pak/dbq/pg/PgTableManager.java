@@ -41,6 +41,19 @@ public class PgTableManager {
     }
 
     public void registerSubscription(QueueName queueName, SubscriptionId subscriptionId, int storageDays) {
+        registerSubscription(queueName, subscriptionId, storageDays, false);
+    }
+
+    public void registerSubscription(
+            QueueName queueName,
+            SubscriptionId subscriptionId,
+            int storageDays,
+            boolean historyEnabled
+    ) {
+        if (!historyEnabled) {
+            return;
+        }
+
         pgQueryService.createHistoryPartition(subscriptionId, Instant.now());
         pgQueryService.createHistoryPartition(subscriptionId, Instant.now().plus(1, ChronoUnit.DAYS));
         historyStorageDays.putIfAbsent(subscriptionId, storageDays);

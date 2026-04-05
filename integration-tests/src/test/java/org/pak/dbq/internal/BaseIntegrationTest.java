@@ -159,7 +159,9 @@ public class BaseIntegrationTest {
                 .subscriptionId(SUBSCRIPTION_NAME_1)
                 .messageContextPropagator(new NoOpMessageContextPropagator())
                 .messageConsumerTelemetry(new NoOpMessageConsumerTelemetry())
-                .properties(ConsumerConfig.Properties.builder().build());
+                .properties(ConsumerConfig.Properties.builder()
+                        .historyEnabled(true)
+                        .build());
     }
 
     protected static PgTableManager setupTableManager(PgQueryService pgQueryService) {
@@ -171,7 +173,11 @@ public class BaseIntegrationTest {
     }
 
     protected void createSubscriptionTable(SubscriptionId subscriptionId) {
-        jdbcTemplate.execute(schemaSqlGenerator.createSubscriptionTable(QUEUE_NAME, subscriptionId));
+        createSubscriptionTable(subscriptionId, false);
+    }
+
+    protected void createSubscriptionTable(SubscriptionId subscriptionId, boolean historyEnabled) {
+        jdbcTemplate.execute(schemaSqlGenerator.createSubscriptionTable(QUEUE_NAME, subscriptionId, historyEnabled));
     }
 
     protected void clearTables() {

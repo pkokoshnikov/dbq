@@ -22,13 +22,18 @@ public class CoreTestSupport {
     public static final QueueName QUEUE_NAME = new QueueName("test-message");
     public static final SubscriptionId SUBSCRIPTION_NAME = new SubscriptionId("test-subscription");
 
-    public record CompletionCall(SubscriptionId subscriptionId, MessageContainer<?> messageContainer) {
+    public record CompletionCall(
+            SubscriptionId subscriptionId,
+            MessageContainer<?> messageContainer,
+            boolean historyEnabled
+    ) {
     }
 
     public record FailureCall(
             SubscriptionId subscriptionId,
             MessageContainer<?> messageContainer,
-            Exception exception
+            Exception exception,
+            boolean historyEnabled
     ) {
     }
 
@@ -220,13 +225,22 @@ public class CoreTestSupport {
         }
 
         @Override
-        public <T> void failMessage(SubscriptionId subscriptionId, MessageContainer<T> messageContainer, Exception e) {
-            failures.add(new FailureCall(subscriptionId, messageContainer, e));
+        public <T> void failMessage(
+                SubscriptionId subscriptionId,
+                MessageContainer<T> messageContainer,
+                Exception e,
+                boolean historyEnabled
+        ) {
+            failures.add(new FailureCall(subscriptionId, messageContainer, e, historyEnabled));
         }
 
         @Override
-        public <T> void completeMessage(SubscriptionId subscriptionId, MessageContainer<T> messageContainer) {
-            completions.add(new CompletionCall(subscriptionId, messageContainer));
+        public <T> void completeMessage(
+                SubscriptionId subscriptionId,
+                MessageContainer<T> messageContainer,
+                boolean historyEnabled
+        ) {
+            completions.add(new CompletionCall(subscriptionId, messageContainer, historyEnabled));
         }
 
         @SuppressWarnings("unchecked")

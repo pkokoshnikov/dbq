@@ -35,6 +35,36 @@ public class PgSchemaSqlGenerator {
     }
 
     public String createSubscriptionTable(QueueName queueName, SubscriptionId subscriptionId) {
+        return createSubscriptionTable(queueName, subscriptionId, false);
+    }
+
+    public String createSubscriptionTable(QueueName queueName, SubscriptionId subscriptionId, boolean historyEnabled) {
+        var params = Map.of("schema", schemaName.value(),
+                "queueTable", queueTable(queueName),
+                "subscriptionTable", subscriptionTable(subscriptionId),
+                "subscriptionHistoryTable", subscriptionHistoryTable(subscriptionId),
+                "insertTrigger", subscriptionTable(subscriptionId) + "_insert_trigger",
+                "insertFunction", subscriptionTable(subscriptionId) + "_insert_function()");
+        var historySql = historyEnabled
+                ? formatter.execute("""
+                        CREATE TABLE IF NOT EXISTS ${schema}.${subscriptionHistoryTable} (
+                            id BIGINT,
+                            message_id BIGINT NOT NULL,
+                            attempt INTEGER NOT NULL DEFAULT 0,
+                            status TEXT NOT NULL DEFAULT 'PROCESSED',
+                            error_message TEXT,
+                            stack_trace TEXT,
+                            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                            originated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                            FOREIGN KEY (message_id, originated_at) REFERENCES ${schema}.${queueTable}(id, originated_at),
+                            PRIMARY KEY (id, originated_at)
+                        ) PARTITION BY RANGE (originated_at);
+                        
+                        CREATE UNIQUE INDEX IF NOT EXISTS ${subscriptionHistoryTable}_message_id_idx ON ${schema}.${subscriptionHistoryTable}(originated_at, message_id);
+                        CREATE INDEX IF NOT EXISTS ${subscriptionHistoryTable}_created_at_idx ON ${schema}.${subscriptionHistoryTable}(created_at);
+                        """, params)
+                : "";
+
         return formatter.execute("""
                         CREATE TABLE IF NOT EXISTS ${schema}.${subscriptionTable} (
                             id BIGSERIAL PRIMARY KEY,
@@ -53,21 +83,7 @@ public class PgSchemaSqlGenerator {
                         CREATE INDEX IF NOT EXISTS ${subscriptionTable}_created_at_idx ON ${schema}.${subscriptionTable}(created_at);
                         CREATE INDEX IF NOT EXISTS ${subscriptionTable}_execute_after_idx ON ${schema}.${subscriptionTable}(execute_after ASC);
                         
-                        CREATE TABLE IF NOT EXISTS ${schema}.${subscriptionHistoryTable} (
-                            id BIGINT,
-                            message_id BIGINT NOT NULL,
-                            attempt INTEGER NOT NULL DEFAULT 0,
-                            status TEXT NOT NULL DEFAULT 'PROCESSED',
-                            error_message TEXT,
-                            stack_trace TEXT,
-                            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                            originated_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                            FOREIGN KEY (message_id, originated_at) REFERENCES ${schema}.${queueTable}(id, originated_at),
-                            PRIMARY KEY (id, originated_at)
-                        ) PARTITION BY RANGE (originated_at);
-                        
-                        CREATE UNIQUE INDEX IF NOT EXISTS ${subscriptionHistoryTable}_message_id_idx ON ${schema}.${subscriptionHistoryTable}(originated_at, message_id);
-                        CREATE INDEX IF NOT EXISTS ${subscriptionHistoryTable}_created_at_idx ON ${schema}.${subscriptionHistoryTable}(created_at);
+                        ${historySql}
                         
                         CREATE OR REPLACE FUNCTION ${schema}.${insertFunction}
                           RETURNS trigger AS
@@ -90,7 +106,8 @@ public class PgSchemaSqlGenerator {
                         "subscriptionTable", subscriptionTable(subscriptionId),
                         "subscriptionHistoryTable", subscriptionHistoryTable(subscriptionId),
                         "insertTrigger", subscriptionTable(subscriptionId) + "_insert_trigger",
-                        "insertFunction", subscriptionTable(subscriptionId) + "_insert_function()")
+                        "insertFunction", subscriptionTable(subscriptionId) + "_insert_function()",
+                        "historySql", historySql)
         );
     }
 

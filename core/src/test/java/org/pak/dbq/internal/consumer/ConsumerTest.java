@@ -52,6 +52,7 @@ class ConsumerTest {
 
         assertThat(pooled).isTrue();
         assertThat(queryService.getCompletions()).hasSize(1);
+        assertThat(queryService.getCompletions().getFirst().historyEnabled()).isFalse();
         assertThat(queryService.getFailures()).isEmpty();
         assertThat(queryService.getRetries()).isEmpty();
         assertThat(handledMessage.get()).isEqualTo(new Message<>("key-1", originatedTime, "payload", headers));
@@ -118,6 +119,7 @@ class ConsumerTest {
 
         assertThat(queryService.getFailures()).hasSize(1);
         assertThat(queryService.getFailures().getFirst().exception()).isSameAs(expectedException);
+        assertThat(queryService.getFailures().getFirst().historyEnabled()).isFalse();
         assertThat(queryService.getRetries()).isEmpty();
         assertThat(queryService.getCompletions()).isEmpty();
         assertThat(messageConsumerTelemetry.recordedException()).isSameAs(expectedException);
@@ -148,6 +150,7 @@ class ConsumerTest {
 
         assertThat(queryService.getFailures()).hasSize(1);
         assertThat(queryService.getFailures().getFirst().exception()).isSameAs(expectedException);
+        assertThat(queryService.getFailures().getFirst().historyEnabled()).isFalse();
         assertThat(queryService.getRetries()).isEmpty();
         assertThat(queryService.getCompletions()).isEmpty();
     }
@@ -178,6 +181,31 @@ class ConsumerTest {
         assertThat(queryService.getCompletions()).isEmpty();
     }
 
+    @Test
+    void poolAndProcessCompletesMessageWithHistoryWhenEnabled() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var transactionService = new CoreTestSupport.DirectTransactionService();
+        var container = CoreTestSupport.messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
+        queryService.setSelectedMessages(List.of(container));
+        var consumer = processor(
+                queryService,
+                transactionService,
+                message -> {
+                },
+                blockingPolicy(false, Duration.ZERO),
+                (exception, attempt) -> java.util.Optional.of(Duration.ofSeconds(5)),
+                exception -> false,
+                new NoOpMessageContextPropagator(),
+                new NoOpMessageConsumerTelemetry(),
+                true
+        );
+
+        consumer.poolAndProcess();
+
+        assertThat(queryService.getCompletions()).hasSize(1);
+        assertThat(queryService.getCompletions().getFirst().historyEnabled()).isTrue();
+    }
+
     private Consumer<String> processor(
             CoreTestSupport.RecordingQueryService queryService,
             CoreTestSupport.DirectTransactionService transactionService,
@@ -187,6 +215,21 @@ class ConsumerTest {
             NonRetryablePolicy nonRetryablePolicy,
             MessageContextPropagator messageContextPropagator,
             MessageConsumerTelemetry messageConsumerTelemetry
+    ) {
+        return processor(queryService, transactionService, messageHandler, blockingPolicy, retryablePolicy,
+                nonRetryablePolicy, messageContextPropagator, messageConsumerTelemetry, false);
+    }
+
+    private Consumer<String> processor(
+            CoreTestSupport.RecordingQueryService queryService,
+            CoreTestSupport.DirectTransactionService transactionService,
+            MessageHandler<String> messageHandler,
+            BlockingPolicy blockingPolicy,
+            RetryablePolicy retryablePolicy,
+            NonRetryablePolicy nonRetryablePolicy,
+            MessageContextPropagator messageContextPropagator,
+            MessageConsumerTelemetry messageConsumerTelemetry,
+            boolean historyEnabled
     ) {
         return new Consumer<>(
                 messageHandler,
@@ -200,7 +243,9 @@ class ConsumerTest {
                 messageContextPropagator,
                 messageConsumerTelemetry,
                 new SimpleMessageFactory(),
-                ConsumerConfig.Properties.builder().build()
+                ConsumerConfig.Properties.builder()
+                        .historyEnabled(historyEnabled)
+                        .build()
         );
     }
 

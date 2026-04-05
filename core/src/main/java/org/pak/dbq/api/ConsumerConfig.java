@@ -58,6 +58,8 @@ public class ConsumerConfig<T> {
         @Builder.Default
         Duration unpredictedExceptionPause = Duration.of(30, ChronoUnit.SECONDS);
         @Builder.Default
+        boolean historyEnabled = false;
+        @Builder.Default
         int storageDays = 30;
     }
 }

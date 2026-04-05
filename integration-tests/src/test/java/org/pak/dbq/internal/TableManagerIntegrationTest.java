@@ -33,9 +33,9 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
         tableManager = setupTableManager(pgQueryService);
 
         createQueueTable();
-        createSubscriptionTable(SUBSCRIPTION_NAME_1);
+        createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         tableManager.registerQueue(QUEUE_NAME, 30);
-        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_1, 30);
+        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_1, 30, true);
     }
 
     @AfterEach
@@ -80,7 +80,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
         assertPartitions(SUBSCRIPTION_TABLE_1_HISTORY, partitions);
 
         var tm = new PgTableManager(pgQueryService, "* * * * * ?", "* * * * * ?");
-        tm.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, 2);
+        tm.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, 2, true);
         tm.cleanPartitions();
 
         partitions = selectPartitions(SUBSCRIPTION_TABLE_1_HISTORY);
@@ -106,7 +106,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testCreateSubscriptionPartitions() {
-        tableManager.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, 1);
+        tableManager.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true);
 
         List<String> partitions = selectPartitions(SUBSCRIPTION_TABLE_1_HISTORY);
 
@@ -117,7 +117,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testStartCronJobSuccessfully() {
-        tableManager.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, 1);
+        tableManager.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true);
         tableManager.registerQueue(TestMessage.QUEUE_NAME, 1);
         tableManager.startCronJobs();
         tableManager.stopCronJobs();
@@ -126,7 +126,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
     @Test
     void testStartCronJobFailed() {
         var corruptedTableManager = new PgTableManager(pgQueryService, "* * * * ?", "* * * * * ?");
-        corruptedTableManager.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, 1);
+        corruptedTableManager.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true);
         corruptedTableManager.registerQueue(TestMessage.QUEUE_NAME, 1);
         var exception = Assertions.assertThrows(RuntimeException.class, corruptedTableManager::startCronJobs);
         assertThat(exception.getMessage()).isEqualTo("CronExpression '* * * * ?' is invalid.");
