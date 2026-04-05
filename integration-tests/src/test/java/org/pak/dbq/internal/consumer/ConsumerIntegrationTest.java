@@ -46,7 +46,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
 
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
-        tableManager.registerQueue(QUEUE_NAME, 30);
+        tableManager.registerQueue(QUEUE_NAME, 30, false);
         tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_1, true);
     }
 
@@ -327,7 +327,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         clearTables();
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, false);
-        tableManager.registerQueue(QUEUE_NAME, 30);
+        tableManager.registerQueue(QUEUE_NAME, 30, false);
 
         var consumer = consumerFactoryBuilder
                 .properties(ConsumerConfig.Properties.builder()

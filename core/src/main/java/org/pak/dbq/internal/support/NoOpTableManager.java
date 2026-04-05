@@ -6,7 +6,7 @@ import org.pak.dbq.spi.TableManager;
 
 public class NoOpTableManager implements TableManager {
     @Override
-    public void registerQueue(QueueName queueName, int retentionDays) {
+    public void registerQueue(QueueName queueName, int retentionDays, boolean autoDdl) {
     }
 
     @Override

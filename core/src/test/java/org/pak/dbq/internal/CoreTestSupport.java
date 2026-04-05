@@ -52,7 +52,7 @@ public class CoreTestSupport {
     public record BatchInsertCall<T>(QueueName queueName, List<Message<T>> messages) {
     }
 
-    public record QueueRegistrationCall(QueueName queueName, int retentionDays) {
+    public record QueueRegistrationCall(QueueName queueName, int retentionDays, boolean autoDdl) {
     }
 
     public record SubscriptionRegistrationCall(
@@ -183,8 +183,8 @@ public class CoreTestSupport {
         private final List<SubscriptionRegistrationCall> subscriptionRegistrations = new ArrayList<>();
 
         @Override
-        public void registerQueue(QueueName queueName, int retentionDays) {
-            queueRegistrations.add(new QueueRegistrationCall(queueName, retentionDays));
+        public void registerQueue(QueueName queueName, int retentionDays, boolean autoDdl) {
+            queueRegistrations.add(new QueueRegistrationCall(queueName, retentionDays, autoDdl));
         }
 
         @Override

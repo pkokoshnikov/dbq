@@ -29,6 +29,7 @@ public class PgTableManager implements TableManager {
     private final String cronDropPartitions;
     private final Clock clock;
     private final Map<QueueName, Integer> queueRetentionDays = new ConcurrentHashMap<>();
+    private final Map<QueueName, Boolean> queueAutoDdl = new ConcurrentHashMap<>();
     private final Map<SubscriptionId, Integer> historyRetentionDays = new ConcurrentHashMap<>();
     private Scheduler scheduler;
 
@@ -48,8 +49,12 @@ public class PgTableManager implements TableManager {
         this.clock = clock.withZone(ZoneOffset.UTC);
     }
 
-    public void registerQueue(QueueName queueName, int retentionDays) {
+    public void registerQueue(QueueName queueName, int retentionDays, boolean autoDdl) {
         validateRetentionDays(retentionDays);
+        registerQueueAutoDdl(queueName, autoDdl);
+        if (autoDdl) {
+            pgQueryService.createQueueTable(queueName);
+        }
         var now = Instant.now(clock);
         pgQueryService.createQueuePartition(queueName, now);
         pgQueryService.createQueuePartition(queueName, now.plus(1, ChronoUnit.DAYS));
@@ -62,13 +67,24 @@ public class PgTableManager implements TableManager {
             boolean historyEnabled
     ) {
         if (!historyEnabled) {
-            return;
+            if (!queueAutoDdl.getOrDefault(queueName, false)) {
+                return;
+            }
         }
 
         var retentionDays = queueRetentionDays.get(queueName);
         if (retentionDays == null) {
             throw new IllegalStateException("Queue %s is not registered. Register queue retention first."
                     .formatted(queueName));
+        }
+
+        if (queueAutoDdl.getOrDefault(queueName, false)) {
+            pgQueryService.createQueueTable(queueName);
+            pgQueryService.createSubscriptionTable(queueName, subscriptionId, historyEnabled);
+        }
+
+        if (!historyEnabled) {
+            return;
         }
 
         var now = Instant.now(clock);
@@ -163,6 +179,15 @@ public class PgTableManager implements TableManager {
     private void validateRetentionDays(int retentionDays) {
         if (retentionDays <= 0) {
             throw new IllegalArgumentException("retentionDays must be > 0");
+        }
+    }
+
+    private void registerQueueAutoDdl(QueueName queueName, boolean autoDdl) {
+        var existingAutoDdl = queueAutoDdl.putIfAbsent(queueName, autoDdl);
+        if (existingAutoDdl != null && existingAutoDdl != autoDdl) {
+            throw new IllegalArgumentException(
+                    "Conflicting autoDdl for queue %s: existing=%s, requested=%s"
+                            .formatted(queueName, existingAutoDdl, autoDdl));
         }
     }
 

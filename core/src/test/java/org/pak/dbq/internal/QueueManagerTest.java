@@ -140,7 +140,28 @@ class QueueManagerTest {
                 .build());
 
         assertThat(tableManager.getQueueRegistrations())
-                .containsExactly(new CoreTestSupport.QueueRegistrationCall(QUEUE_NAME, 10));
+                .containsExactly(new CoreTestSupport.QueueRegistrationCall(QUEUE_NAME, 10, false));
+    }
+
+    @Test
+    void registerQueuePropagatesAutoDdlFromQueueManagerProperties() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var transactionService = new CoreTestSupport.DirectTransactionService();
+        var tableManager = new CoreTestSupport.RecordingTableManager();
+        var queueManager = new QueueManager(
+                queryService,
+                transactionService,
+                tableManager,
+                QueueManager.Properties.builder()
+                        .autoDdl(true)
+                        .build());
+
+        queueManager.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .build());
+
+        assertThat(tableManager.getQueueRegistrations())
+                .containsExactly(new CoreTestSupport.QueueRegistrationCall(QUEUE_NAME, 30, true));
     }
 
     @Test
@@ -163,7 +184,11 @@ class QueueManagerTest {
         queueManager.registerConsumer(consumerConfig);
         queueManager.registerConsumer(consumerConfig);
 
-        assertThat(tableManager.getSubscriptionRegistrations()).isEmpty();
+        assertThat(tableManager.getSubscriptionRegistrations())
+                .containsExactly(new CoreTestSupport.SubscriptionRegistrationCall(
+                        QUEUE_NAME,
+                        SUBSCRIPTION_ID,
+                        false));
     }
 
     @Test
@@ -191,7 +216,7 @@ class QueueManagerTest {
                 .build());
 
         assertThat(tableManager.getQueueRegistrations())
-                .containsExactly(new CoreTestSupport.QueueRegistrationCall(QUEUE_NAME, 7));
+                .containsExactly(new CoreTestSupport.QueueRegistrationCall(QUEUE_NAME, 7, false));
         assertThat(tableManager.getSubscriptionRegistrations())
                 .containsExactly(new CoreTestSupport.SubscriptionRegistrationCall(
                         QUEUE_NAME,

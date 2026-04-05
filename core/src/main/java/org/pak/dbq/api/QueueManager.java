@@ -1,6 +1,9 @@
 package org.pak.dbq.api;
 
+import lombok.Builder;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import lombok.experimental.FieldDefaults;
 import org.pak.dbq.internal.consumer.ConsumerStarter;
 import org.pak.dbq.internal.support.NoOpTableManager;
 import org.pak.dbq.spi.MessageFactory;
@@ -18,6 +21,21 @@ public class QueueManager {
     private final TransactionService transactionService;
     private final MessageFactory messageFactory;
     private final TableManager tableManager;
+    private final Properties properties;
+
+    public QueueManager(
+            QueryService queryService,
+            TransactionService transactionService,
+            MessageFactory messageFactory,
+            TableManager tableManager,
+            Properties properties
+    ) {
+        this.queryService = queryService;
+        this.transactionService = transactionService;
+        this.messageFactory = messageFactory;
+        this.tableManager = tableManager;
+        this.properties = properties != null ? properties : Properties.builder().build();
+    }
 
     public QueueManager(
             QueryService queryService,
@@ -25,10 +43,7 @@ public class QueueManager {
             MessageFactory messageFactory,
             TableManager tableManager
     ) {
-        this.queryService = queryService;
-        this.transactionService = transactionService;
-        this.messageFactory = messageFactory;
-        this.tableManager = tableManager;
+        this(queryService, transactionService, messageFactory, tableManager, Properties.builder().build());
     }
 
     public QueueManager(
@@ -36,7 +51,16 @@ public class QueueManager {
             TransactionService transactionService,
             MessageFactory messageFactory
     ) {
-        this(queryService, transactionService, messageFactory, new NoOpTableManager());
+        this(queryService, transactionService, messageFactory, new NoOpTableManager(), Properties.builder().build());
+    }
+
+    public QueueManager(
+            QueryService queryService,
+            TransactionService transactionService,
+            MessageFactory messageFactory,
+            Properties properties
+    ) {
+        this(queryService, transactionService, messageFactory, new NoOpTableManager(), properties);
     }
 
     public QueueManager(
@@ -44,14 +68,24 @@ public class QueueManager {
             TransactionService transactionService,
             TableManager tableManager
     ) {
-        this(queryService, transactionService, new SimpleMessageFactory(), tableManager);
+        this(queryService, transactionService, new SimpleMessageFactory(), tableManager, Properties.builder().build());
+    }
+
+    public QueueManager(
+            QueryService queryService,
+            TransactionService transactionService,
+            TableManager tableManager,
+            Properties properties
+    ) {
+        this(queryService, transactionService, new SimpleMessageFactory(), tableManager, properties);
     }
 
     public QueueManager(
             QueryService queryService,
             TransactionService transactionService
     ) {
-        this(queryService, transactionService, new SimpleMessageFactory(), new NoOpTableManager());
+        this(queryService, transactionService, new SimpleMessageFactory(), new NoOpTableManager(),
+                Properties.builder().build());
     }
 
     private final ConcurrentHashMap<String, ConsumerStarter<?>> consumerStarters =
@@ -79,7 +113,8 @@ public class QueueManager {
         try {
             tableManager.registerQueue(
                     queueConfig.getQueueName(),
-                    queueConfig.getProperties().getRetentionDays());
+                    queueConfig.getProperties().getRetentionDays(),
+                    properties.isAutoDdl());
         } catch (RuntimeException e) {
             queueConfigs.remove(queueConfig.getQueueName(), queueConfig);
             throw e;
@@ -120,7 +155,7 @@ public class QueueManager {
         }
 
         try {
-            registerHistoryRetention(consumerConfig);
+            registerSubscription(consumerConfig);
 
             consumerStarters.put(consumerKey, new ConsumerStarter<>(consumerConfig, queryService, transactionService,
                     messageFactory));
@@ -164,15 +199,11 @@ public class QueueManager {
                 && left.getProperties().getRetentionDays() == right.getProperties().getRetentionDays();
     }
 
-    private void registerHistoryRetention(ConsumerConfig<?> consumerConfig) {
-        if (!consumerConfig.getProperties().isHistoryEnabled()) {
-            return;
-        }
-
+    private void registerSubscription(ConsumerConfig<?> consumerConfig) {
         tableManager.registerSubscription(
                 consumerConfig.getQueueName(),
                 consumerConfig.getSubscriptionId(),
-                true);
+                consumerConfig.getProperties().isHistoryEnabled());
     }
 
     private void requireInitializedQueue(QueueName queueName) {
@@ -192,5 +223,12 @@ public class QueueManager {
 
     public void stopConsumers() {
         consumerStarters.values().forEach(ConsumerStarter::stop);
+    }
+
+    @Builder
+    @Getter
+    @FieldDefaults(makeFinal = true, level = lombok.AccessLevel.PRIVATE)
+    public static class Properties {
+        boolean autoDdl;
     }
 }

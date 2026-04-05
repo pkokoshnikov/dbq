@@ -61,6 +61,7 @@ public class PgQueryService implements QueryService {
     private final PersistenceService persistenceService;
     private final SchemaName schemaName;
     private final JsonbConverter jsonbConverter;
+    private final PgSchemaSqlGenerator schemaSqlGenerator;
     private final StringFormatter formatter = new StringFormatter();
     private final Map<String, String> queryCache = new ConcurrentHashMap<>();
     private final Cache<String, Boolean> ensuredPartitions = CacheBuilder.newBuilder()
@@ -73,6 +74,15 @@ public class PgQueryService implements QueryService {
         this.persistenceService = persistenceService;
         this.schemaName = schemaName;
         this.jsonbConverter = jsonbConverter;
+        this.schemaSqlGenerator = new PgSchemaSqlGenerator(schemaName);
+    }
+
+    public void createQueueTable(QueueName queueName) {
+        persistenceService.execute(schemaSqlGenerator.createQueueTable(queueName));
+    }
+
+    public void createSubscriptionTable(QueueName queueName, SubscriptionId subscriptionId, boolean historyEnabled) {
+        persistenceService.execute(schemaSqlGenerator.createSubscriptionTable(queueName, subscriptionId, historyEnabled));
     }
 
     public void createPartition(String table, Instant dateTime) {
