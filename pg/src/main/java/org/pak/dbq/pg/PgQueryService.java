@@ -20,18 +20,24 @@ import java.math.BigInteger;
 import java.sql.SQLException;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.temporal.ChronoField;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static java.util.Optional.ofNullable;
 
 @Slf4j
 public class PgQueryService implements QueryService {
+    private record PartitionBounds(Instant from, Instant to) {
+    }
+
     public enum DropPartitionResult {
         DROPPED,
         ALREADY_ABSENT,
@@ -40,6 +46,14 @@ public class PgQueryService implements QueryService {
 
     private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy_MM_dd");
     private static final DateTimeFormatter partitionBoundaryFormatter = DateTimeFormatter.ISO_INSTANT;
+    private static final DateTimeFormatter partitionValueFormatter = new DateTimeFormatterBuilder()
+            .appendPattern("yyyy-MM-dd['T'][' ']HH:mm:ss")
+            .optionalStart()
+            .appendFraction(ChronoField.NANO_OF_SECOND, 0, 6, true)
+            .optionalEnd()
+            .appendOffset("+HH:MM", "Z")
+            .toFormatter();
+    private static final Pattern partitionBoundsPattern = Pattern.compile("FOR VALUES FROM \\('([^']+)'\\) TO \\('([^']+)'\\)");
     private static final String PARTITION_HAS_REFERENCES_CODE = "23503";
     private static final String UNDEFINED_TABLE_CODE = "42P01";
     private static final String UNDEFINED_OBJECT_CODE = "42704";
@@ -320,17 +334,48 @@ public class PgQueryService implements QueryService {
     private void ensurePartitionExists(String table, Instant originatedTime) {
         var partitionDate = originatedTime.atOffset(ZoneOffset.UTC).toLocalDate();
         var partition = partitionName(table, partitionDate);
+        var from = partitionDate.atStartOfDay().toInstant(ZoneOffset.UTC);
+        var to = partitionDate.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
         if (ensuredPartitions.getIfPresent(partition) != null) {
             return;
         }
 
         acquirePartitionLock(partition);
-        createPartition(table, partitionDate.atStartOfDay().toInstant(ZoneOffset.UTC));
+        createPartition(table, from);
+        validatePartitionBounds(partition, from, to);
         ensuredPartitions.put(partition, Boolean.TRUE);
     }
 
     private void acquirePartitionLock(String partition) {
         persistenceService.execute("SELECT pg_advisory_xact_lock(hashtext(?))", partition);
+    }
+
+    private void validatePartitionBounds(String partition, Instant expectedFrom, Instant expectedTo) {
+        var query = formatter.execute("""
+                SELECT pg_get_expr(c.relpartbound, c.oid) AS partition_bound
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = '${schema}' AND c.relname = '${partition}'
+                """, Map.of("schema", schemaName.value(), "partition", partition));
+
+        var bounds = persistenceService.query(query, rs -> {
+            try {
+                return parsePartitionBounds(rs.getString("partition_bound"));
+            } catch (SQLException e) {
+                throw new NonRetrayablePersistenceException(e, e.getCause());
+            }
+        });
+
+        if (bounds.isEmpty()) {
+            throw new IllegalStateException("Ensured partition %s was not found after creation".formatted(partition));
+        }
+
+        var actualBounds = bounds.getFirst();
+        if (!expectedFrom.equals(actualBounds.from()) || !expectedTo.equals(actualBounds.to())) {
+            throw new IllegalStateException(
+                    "Unexpected partition bounds for %s. Expected [%s, %s), actual [%s, %s)"
+                            .formatted(partition, expectedFrom, expectedTo, actualBounds.from(), actualBounds.to()));
+        }
     }
 
     private DropPartitionResult dropPartition(String table, String partition, boolean failOnReferences) {
@@ -407,6 +452,20 @@ public class PgQueryService implements QueryService {
                 .map(SQLException.class::cast)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private PartitionBounds parsePartitionBounds(String partitionBound) {
+        var matcher = partitionBoundsPattern.matcher(partitionBound);
+        if (!matcher.matches()) {
+            throw new IllegalStateException("Unexpected partition bound expression: " + partitionBound);
+        }
+
+        return new PartitionBounds(parsePartitionBoundary(matcher.group(1)), parsePartitionBoundary(matcher.group(2)));
+    }
+
+    private Instant parsePartitionBoundary(String value) {
+        var normalized = value.replace(' ', 'T').replaceAll("([+-]\\d{2})$", "$1:00");
+        return OffsetDateTime.parse(normalized, partitionValueFormatter).toInstant();
     }
 
     private void assertNonEmptyUpdate(int updated, String query) {

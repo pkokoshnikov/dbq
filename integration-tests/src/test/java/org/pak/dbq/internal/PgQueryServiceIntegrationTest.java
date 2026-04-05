@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.pak.dbq.internal.TestMessage.QUEUE_NAME;
 
 @Testcontainers
@@ -196,6 +197,23 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         assertThat(rows).containsExactlyInAnyOrder(
                 Map.entry(beforeKey, "test_message_2026_04_03"),
                 Map.entry(afterKey, "test_message_2026_04_04"));
+    }
+
+    @Test
+    void testInsertFailsWhenExistingPartitionHasUnexpectedBounds() {
+        createQueueTable();
+        Instant originatedTime = Instant.parse("2026-04-04T12:00:00Z");
+
+        jdbcTemplate.execute("""
+                CREATE TABLE public.test_message_2026_04_04
+                PARTITION OF public.test_message
+                FOR VALUES FROM ('2026-04-04T01:00:00Z') TO ('2026-04-05T01:00:00Z')
+                """);
+
+        assertThatThrownBy(() -> pgQueryService.insertMessage(QUEUE_NAME,
+                new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test"))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Unexpected partition bounds for test_message_2026_04_04");
     }
 
     @Test
