@@ -59,6 +59,43 @@ class QueueManagerTest {
     }
 
     @Test
+    void registerProducerAllowsIdempotentRegistrationWithSameConfigInstance() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var transactionService = new CoreTestSupport.DirectTransactionService();
+        var queueManager = new QueueManager(queryService, transactionService);
+        var producerConfig = ProducerConfig.<String>builder()
+                .queueName(QUEUE_NAME)
+                .clazz(String.class)
+                .build();
+
+        var firstProducer = queueManager.registerProducer(producerConfig);
+        var secondProducer = queueManager.registerProducer(producerConfig);
+
+        assertThat(secondProducer).isSameAs(firstProducer);
+    }
+
+    @Test
+    void registerProducerFailsOnConflictingRegistration() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var transactionService = new CoreTestSupport.DirectTransactionService();
+        var queueManager = new QueueManager(queryService, transactionService);
+
+        queueManager.registerProducer(ProducerConfig.<String>builder()
+                .queueName(QUEUE_NAME)
+                .clazz(String.class)
+                .properties(ProducerConfig.Properties.builder().retentionDays(10).build())
+                .build());
+
+        assertThatThrownBy(() -> queueManager.registerProducer(ProducerConfig.<String>builder()
+                .queueName(QUEUE_NAME)
+                .clazz(String.class)
+                .properties(ProducerConfig.Properties.builder().retentionDays(30).build())
+                .build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Producer is already registered");
+    }
+
+    @Test
     void registerConsumerAllowsIdempotentRegistrationWithSameConfigInstance() {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();

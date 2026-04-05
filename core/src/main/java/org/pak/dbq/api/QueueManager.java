@@ -39,13 +39,26 @@ public class QueueManager {
             new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ConsumerConfig<?>> consumerConfigs =
             new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ProducerConfig<?>> producerConfigs =
+            new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Producer<?>> producers =
             new ConcurrentHashMap<>();
 
     public <T> Producer<T> registerProducer(ProducerConfig<T> producerConfig) {
         var producerKey = producerConfig.getQueueName().name() + "|" + producerConfig.getClazz().getName();
-        return (Producer<T>) producers.computeIfAbsent(producerKey,
-                k -> new Producer<>(producerConfig, queryService, messageFactory));
+        var existingConfig = producerConfigs.putIfAbsent(producerKey, producerConfig);
+        if (existingConfig != null) {
+            if (!sameProducerConfig(existingConfig, producerConfig)) {
+                throw new IllegalArgumentException(
+                        "Producer is already registered for queue %s and class %s with a different config"
+                                .formatted(producerConfig.getQueueName(), producerConfig.getClazz().getName()));
+            }
+            return (Producer<T>) producers.get(producerKey);
+        }
+
+        var producer = new Producer<>(producerConfig, queryService, messageFactory);
+        producers.put(producerKey, producer);
+        return producer;
     }
 
     public <T> void registerConsumer(ConsumerConfig<T> consumerConfig) {
@@ -86,6 +99,23 @@ public class QueueManager {
                 && Objects.equals(left.getUnpredictedExceptionPause(), right.getUnpredictedExceptionPause())
                 && left.isHistoryEnabled() == right.isHistoryEnabled()
                 && left.getRetentionDays() == right.getRetentionDays();
+    }
+
+    private boolean sameProducerConfig(ProducerConfig<?> left, ProducerConfig<?> right) {
+        return Objects.equals(left.getQueueName(), right.getQueueName())
+                && Objects.equals(left.getClazz(), right.getClazz())
+                && sameProducerProperties(left.getProperties(), right.getProperties())
+                && sameComponent(left.getMessageContextPropagator(), right.getMessageContextPropagator());
+    }
+
+    private boolean sameProducerProperties(ProducerConfig.Properties left, ProducerConfig.Properties right) {
+        if (left == right) {
+            return true;
+        }
+        if (left == null || right == null) {
+            return false;
+        }
+        return left.getRetentionDays() == right.getRetentionDays();
     }
 
     private boolean sameComponent(Object left, Object right) {
