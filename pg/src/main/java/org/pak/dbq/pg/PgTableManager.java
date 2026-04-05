@@ -66,31 +66,17 @@ public class PgTableManager implements TableManager {
             SubscriptionId subscriptionId,
             boolean historyEnabled
     ) {
-        if (!historyEnabled) {
-            if (!queueAutoDdl.getOrDefault(queueName, false)) {
-                return;
-            }
-        }
-
-        var retentionDays = queueRetentionDays.get(queueName);
-        if (retentionDays == null) {
-            throw new IllegalStateException("Queue %s is not registered. Register queue retention first."
-                    .formatted(queueName));
-        }
-
         if (queueAutoDdl.getOrDefault(queueName, false)) {
-            pgQueryService.createQueueTable(queueName);
             pgQueryService.createSubscriptionTable(queueName, subscriptionId, historyEnabled);
         }
 
-        if (!historyEnabled) {
-            return;
+        if (historyEnabled) {
+            var retentionDays = requireQueueRetention(queueName);
+            var now = Instant.now(clock);
+            pgQueryService.createHistoryPartition(subscriptionId, now);
+            pgQueryService.createHistoryPartition(subscriptionId, now.plus(1, ChronoUnit.DAYS));
+            registerRetention(historyRetentionDays, subscriptionId, retentionDays, "history");
         }
-
-        var now = Instant.now(clock);
-        pgQueryService.createHistoryPartition(subscriptionId, now);
-        pgQueryService.createHistoryPartition(subscriptionId, now.plus(1, ChronoUnit.DAYS));
-        registerRetention(historyRetentionDays, subscriptionId, retentionDays, "history");
     }
 
     public void startCronJobs() {
@@ -180,6 +166,15 @@ public class PgTableManager implements TableManager {
         if (retentionDays <= 0) {
             throw new IllegalArgumentException("retentionDays must be > 0");
         }
+    }
+
+    private int requireQueueRetention(QueueName queueName) {
+        var retentionDays = queueRetentionDays.get(queueName);
+        if (retentionDays == null) {
+            throw new IllegalStateException("Queue %s is not registered. Register queue retention first."
+                    .formatted(queueName));
+        }
+        return retentionDays;
     }
 
     private void registerQueueAutoDdl(QueueName queueName, boolean autoDdl) {
