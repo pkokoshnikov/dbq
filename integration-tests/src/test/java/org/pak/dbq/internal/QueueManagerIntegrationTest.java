@@ -46,8 +46,6 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
         createSubscriptionTable(SUBSCRIPTION_NAME_1);
         createSubscriptionTable(SUBSCRIPTION_NAME_2);
         tableManager.registerQueue(QUEUE_NAME, 30);
-        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_1, 30);
-        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_2, 30);
 
         queueManager = new QueueManager(new PgQueryService(persistenceService, TEST_SCHEMA, jsonbConverter),
                 springTransactionService, new SimpleMessageFactory());

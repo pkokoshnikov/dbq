@@ -9,10 +9,12 @@ import org.junit.jupiter.api.Test;
 import org.pak.dbq.pg.PgTableManager;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.time.ZoneId;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.pak.dbq.internal.TestMessage.QUEUE_NAME;
@@ -92,6 +94,22 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
         partitions = selectPartitions(SUBSCRIPTION_TABLE_1_HISTORY);
         assertThat(partitions).hasSize(2);
         assertPartitions(SUBSCRIPTION_TABLE_1_HISTORY, partitions);
+    }
+
+    @Test
+    void cleanPartitionsUsesUtcDateForRetentionCutoff() {
+        var fixedClock = Clock.fixed(Instant.parse("2026-04-04T21:30:00Z"), ZoneId.of("Europe/Moscow"));
+        var tm = new PgTableManager(pgQueryService, "* * * * * ?", "* * * * * ?", fixedClock);
+
+        pgQueryService.createQueuePartition(QUEUE_NAME, Instant.parse("2026-04-02T12:00:00Z"));
+        pgQueryService.createQueuePartition(QUEUE_NAME, Instant.parse("2026-04-03T12:00:00Z"));
+
+        tm.registerQueue(QUEUE_NAME, 1);
+        tm.cleanPartitions();
+
+        var partitions = selectPartitions(QUEUE_TABLE);
+        assertThat(partitions).doesNotContain("test_message_2026_04_02");
+        assertThat(partitions).contains("test_message_2026_04_03");
     }
 
     @Test
