@@ -102,11 +102,10 @@ public class PgTableManager {
             partitions.stream()
                     .filter(partition -> partition.isBefore(LocalDate.now().minusDays(retentionDays)))
                     .forEach(partition -> {
-                        try {
-                            log.info("Dropping history subscription partition {} for {}", partition,
-                                    subscriptionId.id());
-                            pgQueryService.dropHistoryPartition(subscriptionId, partition);
-                        } catch (PartitionHasReferencesException e) {
+                        log.info("Dropping history subscription partition {} for {}", partition,
+                                subscriptionId.id());
+                        var result = pgQueryService.dropHistoryPartition(subscriptionId, partition);
+                        if (result == PgQueryService.DropPartitionResult.HAS_REFERENCES) {
                             log.warn("Partition {} for history {} still has references, skipping", partition,
                                     subscriptionId.id());
                         }
@@ -118,10 +117,9 @@ public class PgTableManager {
             partitions.stream()
                     .filter(partition -> partition.isBefore(LocalDate.now().minusDays(retentionDays)))
                     .forEach(partition -> {
-                        try {
-                            log.info("Dropping message partition {} for {}", partition, queueName.name());
-                            pgQueryService.dropQueuePartition(queueName, partition);
-                        } catch (PartitionHasReferencesException e) {
+                        log.info("Dropping message partition {} for {}", partition, queueName.name());
+                        var result = pgQueryService.dropQueuePartition(queueName, partition);
+                        if (result == PgQueryService.DropPartitionResult.HAS_REFERENCES) {
                             log.warn("Partition {} for queue {} still has references, skipping", partition,
                                     queueName.name());
                         }

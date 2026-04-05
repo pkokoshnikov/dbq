@@ -36,6 +36,12 @@ import static java.util.Optional.ofNullable;
 
 @Slf4j
 public class PgQueryService implements QueryService {
+    public enum DropPartitionResult {
+        DROPPED,
+        ALREADY_ABSENT,
+        HAS_REFERENCES
+    }
+
     private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy_MM_dd");
     private static final DateTimeFormatter partitionBoundaryFormatter = DateTimeFormatter.ISO_INSTANT;
     private static final String MISSING_PARTITION_CODE = "23514";
@@ -81,16 +87,16 @@ public class PgQueryService implements QueryService {
         persistenceService.execute(query);
     }
 
-    public void dropQueuePartition(QueueName queueName, LocalDate partition) {
+    public DropPartitionResult dropQueuePartition(QueueName queueName, LocalDate partition) {
         var table = queueTable(queueName);
         var partitionName = partitionName(table, partition);
-        dropPartition(table, partitionName, true);
+        return dropPartition(table, partitionName, true);
     }
 
-    public void dropHistoryPartition(SubscriptionId subscriptionId, LocalDate partition) {
+    public DropPartitionResult dropHistoryPartition(SubscriptionId subscriptionId, LocalDate partition) {
         var table = subscriptionHistoryTable(subscriptionId);
         var partitionName = partitionName(table, partition);
-        dropPartition(table, partitionName, false);
+        return dropPartition(table, partitionName, false);
     }
 
     public void createQueuePartition(QueueName queueName, Instant includeDateTime) {
@@ -338,16 +344,18 @@ public class PgQueryService implements QueryService {
         persistenceService.execute("SELECT pg_advisory_xact_lock(hashtext(?))", partition);
     }
 
-    private void dropPartition(String table, String partition, boolean failOnReferences) {
+    private DropPartitionResult dropPartition(String table, String partition, boolean failOnReferences) {
+        var alreadyAbsent = false;
         try {
             persistenceService.execute(detachPartitionSql(table, partition));
         } catch (PersistenceException e) {
             if (failOnReferences && hasPartitionReferences(e)) {
-                throw new PartitionHasReferencesException(e);
+                return DropPartitionResult.HAS_REFERENCES;
             }
             if (!isIgnorableDetachException(e)) {
                 throw e;
             }
+            alreadyAbsent = true;
             log.debug("Partition {} is already absent or detached from {}, continue cleanup", partition, table);
         }
 
@@ -357,10 +365,12 @@ public class PgQueryService implements QueryService {
             if (!isIgnorableMissingPartitionException(e)) {
                 throw e;
             }
+            alreadyAbsent = true;
             log.debug("Partition {} is already removed, skip drop", partition);
         }
 
         ensuredPartitions.invalidate(partition);
+        return alreadyAbsent ? DropPartitionResult.ALREADY_ABSENT : DropPartitionResult.DROPPED;
     }
 
     private String detachPartitionSql(String table, String partition) {

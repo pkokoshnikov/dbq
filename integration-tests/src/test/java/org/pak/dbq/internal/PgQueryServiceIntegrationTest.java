@@ -4,7 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.pak.dbq.pg.PartitionHasReferencesException;
+import org.pak.dbq.pg.PgQueryService;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.api.Message;
 import org.pak.dbq.internal.persistence.Status;
@@ -107,7 +107,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void dropQueuePartitionHasReferencesException() {
+    void dropQueuePartitionReturnsHasReferences() {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
@@ -118,18 +118,19 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
                 new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
 
         var partitions = pgQueryService.getAllQueuePartitions(QUEUE_NAME);
-        Assertions.assertThrows(PartitionHasReferencesException.class,
-                () -> pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0)));
+        assertThat(pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0)))
+                .isEqualTo(PgQueryService.DropPartitionResult.HAS_REFERENCES);
 
         var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1);
         pgQueryService.completeMessage(SUBSCRIPTION_NAME_1, messages.get(0), true);
 
-        Assertions.assertThrows(PartitionHasReferencesException.class,
-                () -> pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0)));
+        assertThat(pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0)))
+                .isEqualTo(PgQueryService.DropPartitionResult.HAS_REFERENCES);
 
         pgQueryService.dropHistoryPartition(SUBSCRIPTION_NAME_1,
                 partitions.get(0)); // history partition should be dropped first of all
-        pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0));
+        assertThat(pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0)))
+                .isEqualTo(PgQueryService.DropPartitionResult.DROPPED);
     }
 
     @Test
