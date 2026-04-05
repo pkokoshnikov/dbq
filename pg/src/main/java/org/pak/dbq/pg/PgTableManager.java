@@ -24,8 +24,8 @@ public class PgTableManager {
     private final PgQueryService pgQueryService;
     private final String cronCreatePartitions;
     private final String cronDropPartitions;
-    private final Map<QueueName, Integer> queueNameStorageDays = new ConcurrentHashMap<>();
-    private final Map<SubscriptionId, Integer> historyStorageDays = new ConcurrentHashMap<>();
+    private final Map<QueueName, Integer> queueRetentionDays = new ConcurrentHashMap<>();
+    private final Map<SubscriptionId, Integer> historyRetentionDays = new ConcurrentHashMap<>();
     private Scheduler scheduler;
 
     public PgTableManager(PgQueryService pgQueryService, String cronCreatePartitions, String cronDropPartitions) {
@@ -34,20 +34,20 @@ public class PgTableManager {
         this.cronDropPartitions = cronDropPartitions;
     }
 
-    public void registerQueue(QueueName queueName, int storageDays) {
+    public void registerQueue(QueueName queueName, int retentionDays) {
         pgQueryService.createQueuePartition(queueName, Instant.now());
         pgQueryService.createQueuePartition(queueName, Instant.now().plus(1, ChronoUnit.DAYS));
-        queueNameStorageDays.putIfAbsent(queueName, storageDays);
+        queueRetentionDays.putIfAbsent(queueName, retentionDays);
     }
 
-    public void registerSubscription(QueueName queueName, SubscriptionId subscriptionId, int storageDays) {
-        registerSubscription(queueName, subscriptionId, storageDays, false);
+    public void registerSubscription(QueueName queueName, SubscriptionId subscriptionId, int retentionDays) {
+        registerSubscription(queueName, subscriptionId, retentionDays, false);
     }
 
     public void registerSubscription(
             QueueName queueName,
             SubscriptionId subscriptionId,
-            int storageDays,
+            int retentionDays,
             boolean historyEnabled
     ) {
         if (!historyEnabled) {
@@ -56,7 +56,7 @@ public class PgTableManager {
 
         pgQueryService.createHistoryPartition(subscriptionId, Instant.now());
         pgQueryService.createHistoryPartition(subscriptionId, Instant.now().plus(1, ChronoUnit.DAYS));
-        historyStorageDays.putIfAbsent(subscriptionId, storageDays);
+        historyRetentionDays.putIfAbsent(subscriptionId, retentionDays);
     }
 
     public void startCronJobs() {
@@ -92,15 +92,15 @@ public class PgTableManager {
     public void createPartitions() {
         var date = Instant.now().plus(Duration.ofDays(1));
 
-        queueNameStorageDays.keySet().forEach(queueName -> pgQueryService.createQueuePartition(queueName, date));
-        historyStorageDays.keySet().forEach(subscriptionId -> pgQueryService.createHistoryPartition(subscriptionId, date));
+        queueRetentionDays.keySet().forEach(queueName -> pgQueryService.createQueuePartition(queueName, date));
+        historyRetentionDays.keySet().forEach(subscriptionId -> pgQueryService.createHistoryPartition(subscriptionId, date));
     }
 
     public void cleanPartitions() {
-        historyStorageDays.forEach((subscriptionId, storageDays) -> {
+        historyRetentionDays.forEach((subscriptionId, retentionDays) -> {
             var partitions = pgQueryService.getAllHistoryPartitions(subscriptionId);
             partitions.stream()
-                    .filter(partition -> partition.isBefore(LocalDate.now().minusDays(storageDays)))
+                    .filter(partition -> partition.isBefore(LocalDate.now().minusDays(retentionDays)))
                     .forEach(partition -> {
                         try {
                             log.info("Dropping history subscription partition {} for {}", partition,
@@ -113,10 +113,10 @@ public class PgTableManager {
                     });
         });
 
-        queueNameStorageDays.forEach((queueName, storageDays) -> {
+        queueRetentionDays.forEach((queueName, retentionDays) -> {
             var partitions = pgQueryService.getAllQueuePartitions(queueName);
             partitions.stream()
-                    .filter(partition -> partition.isBefore(LocalDate.now().minusDays(storageDays)))
+                    .filter(partition -> partition.isBefore(LocalDate.now().minusDays(retentionDays)))
                     .forEach(partition -> {
                         try {
                             log.info("Dropping message partition {} for {}", partition, queueName.name());

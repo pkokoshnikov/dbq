@@ -219,6 +219,13 @@ Each consumer subscription polls its own subscription table, locks rows with `FO
 - if `historyEnabled=true`, moves completed / failed records to the history table with status `PROCESSED` or `FAILED`
 - if `historyEnabled=false`, deletes completed / failed records from the live subscription table
 
+The live subscription table is not partitioned. It stores only in-flight subscription state and rows are removed from it on `complete` / `fail`.
+
+Queue retention is separate:
+
+- queue messages stay in the queue table until old queue partitions are dropped
+- if history is enabled, processed / failed records also stay in history until old history partitions are dropped
+
 The message handler runs inside the consumer transaction. In practice this means your business-side database changes and the queue state transition are committed together.
 
 Because delivery is retry-based, handlers should be idempotent.
@@ -372,7 +379,16 @@ This manager:
 - drops old queue partitions when they are older than the configured retention window
 - drops old history partitions only for subscriptions registered with `historyEnabled=true`
 
-If history is disabled for a subscription, you can skip `registerSubscription(...)` entirely.
+`registerSubscription(...)` is only needed for history partitions. If history is disabled for a subscription, you can skip it entirely.
+
+`retentionDays` in this context controls partition retention:
+
+- `registerQueue(queueName, retentionDays)` controls how long queue partitions are kept
+- `registerSubscription(queueName, subscriptionId, retentionDays, true)` controls how long history partitions are kept
+
+The live subscription table is not cleaned by partition retention because it is not partitioned.
+
+At the moment retention is driven by `PgTableManager`. `QueueManager`, `Producer`, and `Consumer` do not automatically derive cleanup behavior from `ProducerConfig.Properties.retentionDays` or `ConsumerConfig.Properties.retentionDays`.
 
 Parent tables must already exist before you start the manager.
 

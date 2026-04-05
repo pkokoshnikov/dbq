@@ -17,7 +17,7 @@ class QueueManagerTest {
         var producer = queue.registerProducer(ProducerConfig.<String>builder()
                 .queueName(QUEUE_NAME)
                 .clazz(String.class)
-                .properties(ProducerConfig.Properties.builder().storageDays(10).build())
+                .properties(ProducerConfig.Properties.builder().retentionDays(10).build())
                 .build());
 
         producer.send("payload");

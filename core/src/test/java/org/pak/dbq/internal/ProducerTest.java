@@ -18,7 +18,7 @@ class ProducerTest {
                 ProducerConfig.<String>builder()
                         .queueName(QUEUE_NAME)
                         .clazz(String.class)
-                        .properties(ProducerConfig.Properties.builder().storageDays(10).build())
+                        .properties(ProducerConfig.Properties.builder().retentionDays(10).build())
                         .messageContextPropagator(messageContextPropagator)
                         .build(),
                 queryService,

@@ -59,8 +59,8 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
         var producer = queue.registerProducer(ProducerConfig.<TestMessage>builder()
                 .queueName(QUEUE_NAME)
                 .clazz(TestMessage.class)
-                .properties(ProducerConfig.Properties.builder()
-                        .storageDays(10)
+                        .properties(ProducerConfig.Properties.builder()
+                        .retentionDays(10)
                         .build())
                 .build());
 

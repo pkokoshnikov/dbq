@@ -24,6 +24,6 @@ public class ProducerConfig<T> {
     @FieldDefaults(makeFinal = true, level = lombok.AccessLevel.PRIVATE)
     public static class Properties {
         @Builder.Default
-        int storageDays = 30;
+        int retentionDays = 30;
     }
 }

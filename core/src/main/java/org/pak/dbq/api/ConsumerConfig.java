@@ -60,6 +60,6 @@ public class ConsumerConfig<T> {
         @Builder.Default
         boolean historyEnabled = false;
         @Builder.Default
-        int storageDays = 30;
+        int retentionDays = 30;
     }
 }
