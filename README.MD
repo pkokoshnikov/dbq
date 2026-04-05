@@ -250,13 +250,27 @@ Consumer behavior is configurable per subscription through `ConsumerConfig`.
 Defaults:
 
 - `SimpleRetryablePolicy`
-  - exponential backoff
-  - capped at 1 hour
+  - treats every exception as retryable by default
+  - uses exponential backoff
+  - caps the delay at 1 hour
   - returns `Optional.empty()` only when `attempt == Integer.MAX_VALUE`
 - `SimpleNonRetryablePolicy`
-  - nothing is non-retryable by default
+  - marks nothing as non-retryable by default
 - `SimpleBlockingPolicy`
-  - nothing is blocking by default
+  - marks nothing as blocking by default
+
+In practice the default behavior is:
+
+- any exception from `MessageHandler` goes through the retry flow
+- the consumer keeps increasing `attempt` and rescheduling the message according to `SimpleRetryablePolicy`
+- a message stops retrying only when the retry policy returns `Optional.empty()`
+- with the default policy this happens only at `Integer.MAX_VALUE`
+
+If you need a different behavior, you must configure it explicitly:
+
+- use `NonRetryablePolicy` to fail specific exceptions immediately
+- use `BlockingPolicy` to pause the whole consumer loop for infrastructure-style failures
+- override `RetryablePolicy` if you need a different retry schedule or termination rule
 
 Policy contracts:
 
