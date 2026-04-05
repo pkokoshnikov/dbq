@@ -70,7 +70,6 @@ public class ConsumerConfig<T> {
         Duration persistenceExceptionPause;
         Duration unpredictedExceptionPause;
         boolean historyEnabled;
-        int retentionDays;
 
         @Builder
         public Properties(
@@ -78,8 +77,7 @@ public class ConsumerConfig<T> {
                 Integer concurrency,
                 Duration persistenceExceptionPause,
                 Duration unpredictedExceptionPause,
-                boolean historyEnabled,
-                int retentionDays
+                boolean historyEnabled
         ) {
             this.maxPollRecords = maxPollRecords != null ? maxPollRecords : 1;
             this.concurrency = concurrency != null ? concurrency : 1;
@@ -90,7 +88,6 @@ public class ConsumerConfig<T> {
                     ? unpredictedExceptionPause
                     : Duration.of(30, ChronoUnit.SECONDS);
             this.historyEnabled = historyEnabled;
-            this.retentionDays = retentionDays == 0 ? 30 : retentionDays;
 
             validate();
         }

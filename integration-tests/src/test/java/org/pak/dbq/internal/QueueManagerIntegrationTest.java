@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.pak.dbq.api.ConsumerConfig;
 import org.pak.dbq.api.ProducerConfig;
+import org.pak.dbq.api.QueueConfig;
 import org.pak.dbq.api.QueueManager;
 import org.pak.dbq.internal.support.SimpleMessageFactory;
 import org.pak.dbq.pg.PgQueryService;
@@ -43,22 +44,53 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
         consumerFactoryBuilder = setupQueueProcessorFactory(pgQueryService, springTransactionService);
 
         createQueueTable();
-        createSubscriptionTable(SUBSCRIPTION_NAME_1);
+        createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         createSubscriptionTable(SUBSCRIPTION_NAME_2);
-        tableManager.registerQueue(QUEUE_NAME, 30);
 
         queueManager = new QueueManager(new PgQueryService(persistenceService, TEST_SCHEMA, jsonbConverter),
-                springTransactionService, new SimpleMessageFactory());
+                springTransactionService, new SimpleMessageFactory(), tableManager);
+    }
+
+    @Test
+    void registerProducerAndConsumerPropagateRetentionToTableManager() {
+        queueManager.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .properties(QueueConfig.Properties.builder()
+                        .retentionDays(10)
+                        .build())
+                .build());
+
+        queueManager.registerProducer(ProducerConfig.<TestMessage>builder()
+                .queueName(QUEUE_NAME)
+                .clazz(TestMessage.class)
+                .build());
+
+        queueManager.registerConsumer(ConsumerConfig.<TestMessage>builder()
+                .queueName(QUEUE_NAME)
+                .subscriptionId(SUBSCRIPTION_NAME_1)
+                .messageHandler(message -> {
+                })
+                .properties(ConsumerConfig.Properties.builder()
+                        .historyEnabled(true)
+                        .build())
+                .build());
+
+        assertThat(selectPartitions(QUEUE_TABLE)).hasSize(2);
+        assertThat(selectPartitions(SUBSCRIPTION_TABLE_1_HISTORY)).hasSize(2);
     }
 
     @Test
     void publishSubscribeTest() throws InterruptedException {
+        queueManager.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .properties(QueueConfig.Properties.builder()
+                        .retentionDays(10)
+                        .build())
+                .build());
+
         var producer = queueManager.registerProducer(ProducerConfig.<TestMessage>builder()
                 .queueName(QUEUE_NAME)
                 .clazz(TestMessage.class)
-                        .properties(ProducerConfig.Properties.builder()
-                        .retentionDays(10)
-                        .build())
                 .build());
 
         var countDownLatch = new CountDownLatch(2);

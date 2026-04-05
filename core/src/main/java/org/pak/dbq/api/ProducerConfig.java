@@ -4,10 +4,11 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.experimental.FieldDefaults;
-import org.pak.dbq.spi.MessageContextPropagator;
 import org.pak.dbq.internal.support.NoOpMessageContextPropagator;
+import org.pak.dbq.spi.MessageContextPropagator;
 
-@Builder
+import java.util.Objects;
+
 @FieldDefaults(makeFinal = true, level = lombok.AccessLevel.PRIVATE)
 @Getter
 public class ProducerConfig<T> {
@@ -15,15 +16,18 @@ public class ProducerConfig<T> {
     QueueName queueName;
     @NonNull
     Class<T> clazz;
-    Properties properties;
-    @Builder.Default
-    MessageContextPropagator messageContextPropagator = new NoOpMessageContextPropagator();
+    MessageContextPropagator messageContextPropagator;
 
     @Builder
-    @Getter
-    @FieldDefaults(makeFinal = true, level = lombok.AccessLevel.PRIVATE)
-    public static class Properties {
-        @Builder.Default
-        int retentionDays = 30;
+    public ProducerConfig(
+            @NonNull QueueName queueName,
+            @NonNull Class<T> clazz,
+            MessageContextPropagator messageContextPropagator
+    ) {
+        this.queueName = Objects.requireNonNull(queueName, "queueName");
+        this.clazz = Objects.requireNonNull(clazz, "clazz");
+        this.messageContextPropagator = messageContextPropagator != null
+                ? messageContextPropagator
+                : new NoOpMessageContextPropagator();
     }
 }

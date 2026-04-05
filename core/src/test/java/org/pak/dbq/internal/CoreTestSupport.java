@@ -7,6 +7,7 @@ import org.pak.dbq.api.Message;
 import org.pak.dbq.spi.MessageConsumerTelemetry;
 import org.pak.dbq.spi.MessageContextPropagator;
 import org.pak.dbq.spi.QueryService;
+import org.pak.dbq.spi.TableManager;
 import org.pak.dbq.spi.TransactionService;
 
 import java.time.Duration;
@@ -49,6 +50,17 @@ public class CoreTestSupport {
     }
 
     public record BatchInsertCall<T>(QueueName queueName, List<Message<T>> messages) {
+    }
+
+    public record QueueRegistrationCall(QueueName queueName, int retentionDays) {
+    }
+
+    public record SubscriptionRegistrationCall(
+            QueueName queueName,
+            SubscriptionId subscriptionId,
+            int retentionDays,
+            boolean historyEnabled
+    ) {
     }
 
     public static MessageContainer<String> messageContainer(String payload, int attempt, Instant originatedTime) {
@@ -164,6 +176,38 @@ public class CoreTestSupport {
         public <T> T inTransaction(Supplier<T> runnable) {
             calls++;
             return runnable.get();
+        }
+    }
+
+    public static class RecordingTableManager implements TableManager {
+        private final List<QueueRegistrationCall> queueRegistrations = new ArrayList<>();
+        private final List<SubscriptionRegistrationCall> subscriptionRegistrations = new ArrayList<>();
+
+        @Override
+        public void registerQueue(QueueName queueName, int retentionDays) {
+            queueRegistrations.add(new QueueRegistrationCall(queueName, retentionDays));
+        }
+
+        @Override
+        public void registerSubscription(
+                QueueName queueName,
+                SubscriptionId subscriptionId,
+                int retentionDays,
+                boolean historyEnabled
+        ) {
+            subscriptionRegistrations.add(new SubscriptionRegistrationCall(
+                    queueName,
+                    subscriptionId,
+                    retentionDays,
+                    historyEnabled));
+        }
+
+        public List<QueueRegistrationCall> getQueueRegistrations() {
+            return queueRegistrations;
+        }
+
+        public List<SubscriptionRegistrationCall> getSubscriptionRegistrations() {
+            return subscriptionRegistrations;
         }
     }
 

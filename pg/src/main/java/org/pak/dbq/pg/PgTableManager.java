@@ -4,6 +4,7 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
+import org.pak.dbq.spi.TableManager;
 import org.pak.dbq.spi.error.RetryablePersistenceException;
 import org.quartz.*;
 import org.quartz.impl.StdSchedulerFactory;
@@ -19,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 @Slf4j
-public class PgTableManager {
+public class PgTableManager implements TableManager {
     public static final String TABLE_MANAGER = "tableManager";
     public static final String QUEUE_GROUP = "queue";
 
@@ -48,10 +49,11 @@ public class PgTableManager {
     }
 
     public void registerQueue(QueueName queueName, int retentionDays) {
+        validateRetentionDays(retentionDays);
         var now = Instant.now(clock);
         pgQueryService.createQueuePartition(queueName, now);
         pgQueryService.createQueuePartition(queueName, now.plus(1, ChronoUnit.DAYS));
-        queueRetentionDays.putIfAbsent(queueName, retentionDays);
+        registerRetention(queueRetentionDays, queueName, retentionDays, "queue");
     }
 
     public void registerSubscription(
@@ -64,10 +66,11 @@ public class PgTableManager {
             return;
         }
 
+        validateRetentionDays(retentionDays);
         var now = Instant.now(clock);
         pgQueryService.createHistoryPartition(subscriptionId, now);
         pgQueryService.createHistoryPartition(subscriptionId, now.plus(1, ChronoUnit.DAYS));
-        historyRetentionDays.putIfAbsent(subscriptionId, retentionDays);
+        registerRetention(historyRetentionDays, subscriptionId, retentionDays, "history");
     }
 
     public void startCronJobs() {
@@ -151,6 +154,21 @@ public class PgTableManager {
                 .forJob(key)
                 .build();
         scheduler.scheduleJob(job, trigger);
+    }
+
+    private void validateRetentionDays(int retentionDays) {
+        if (retentionDays <= 0) {
+            throw new IllegalArgumentException("retentionDays must be > 0");
+        }
+    }
+
+    private <T> void registerRetention(Map<T, Integer> retentions, T key, int retentionDays, String target) {
+        var existingRetention = retentions.putIfAbsent(key, retentionDays);
+        if (existingRetention != null && existingRetention != retentionDays) {
+            throw new IllegalArgumentException(
+                    "Conflicting retentionDays for %s %s: existing=%s, requested=%s"
+                            .formatted(target, key, existingRetention, retentionDays));
+        }
     }
 
     public static class CreatingPartitionsCronJob implements Job {

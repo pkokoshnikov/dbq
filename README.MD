@@ -137,7 +137,19 @@ java -cp pg/target/pg-0.0.1.jar org.pak.dbq.pg.cli.PgSchemaCli subscription publ
 java -cp pg/target/pg-0.0.1.jar org.pak.dbq.pg.cli.PgSchemaCli all public orders billing true
 ```
 
-### 4. Register a producer
+### 4. Initialize the queue
+
+`QueueManager` requires explicit queue initialization before producer or consumer registration.
+
+```java
+queueManager.initQueue(
+        QueueConfig.builder()
+                .queueName(queueName)
+                .build()
+);
+```
+
+### 5. Register a producer
 
 `registerProducer(...)` returns a `Producer<T>`. Keep that instance and use it directly.
 
@@ -152,7 +164,7 @@ Producer<OrderCreated> producer = queueManager.registerProducer(
 
 If you enable history in runtime, the subscription schema should also be created with history support.
 
-### 5. Register a consumer
+### 6. Register a consumer
 
 ```java
 queueManager.registerConsumer(
@@ -172,7 +184,7 @@ queueManager.registerConsumer(
 );
 ```
 
-### 6. Start and stop consumers
+### 7. Start and stop consumers
 
 ```java
 queueManager.startConsumers();
@@ -181,7 +193,7 @@ queueManager.startConsumers();
 queueManager.stopConsumers();
 ```
 
-### 7. Publish messages
+### 8. Publish messages
 
 The simplest form generates a random message key and current timestamp:
 
@@ -360,6 +372,7 @@ queueManager.registerConsumer(
 
 Behavior:
 
+- call `initQueue(...)` before registering producers and consumers
 - producer injects `traceparent` and related headers into the message
 - consumer extracts context from message headers only
 - if no trace headers are present, consumer processing starts a new root span
@@ -367,9 +380,9 @@ Behavior:
 
 ## PostgreSQL Partition Management
 
-Partition management is optional and separate from `QueueManager`.
+Partition management is optional.
 
-If you want automatic partition creation and cleanup, start `PgTableManager` explicitly:
+If you want `QueueManager` registrations to automatically initialize partition retention, create `PgTableManager` and pass it into `QueueManager`:
 
 ```java
 PgTableManager pgTableManager = new PgTableManager(
@@ -378,31 +391,45 @@ PgTableManager pgTableManager = new PgTableManager(
         "0 0 2 * * ?"
 );
 
-pgTableManager.registerQueue(queueName, 30);
-pgTableManager.registerSubscription(queueName, subscriptionId, 30, true);
+QueueManager queueManager = new QueueManager(queryService, transactionService, pgTableManager);
+
+queueManager.initQueue(
+        QueueConfig.builder()
+                .queueName(queueName)
+                .properties(QueueConfig.Properties.builder()
+                        .retentionDays(30)
+                        .build())
+                .build()
+);
+
+queueManager.registerConsumer(
+        ConsumerConfig.<OrderCreated>builder()
+                .queueName(queueName)
+                .subscriptionId(subscriptionId)
+                .messageHandler(message -> handle(message.payload()))
+                .properties(ConsumerConfig.Properties.builder()
+                        .historyEnabled(true)
+                        .build())
+                .build()
+);
+
 pgTableManager.startCronJobs();
 
 // on shutdown
 pgTableManager.stopCronJobs();
 ```
 
-This manager:
+With this setup:
 
-- creates the current and next day partitions on registration
+- `initQueue(...)` creates the current and next queue partitions
+- consumer registration with `historyEnabled=true` creates the current and next history partitions if the queue was initialized
 - creates future partitions on schedule
 - drops old queue partitions when they are older than the configured retention window
 - drops old history partitions only for subscriptions registered with `historyEnabled=true`
 
-`registerSubscription(...)` is only needed for history partitions. If history is disabled for a subscription, you can skip it entirely.
-
-`retentionDays` in this context controls partition retention:
-
-- `registerQueue(queueName, retentionDays)` controls how long queue partitions are kept
-- `registerSubscription(queueName, subscriptionId, retentionDays, true)` controls how long history partitions are kept
+- `QueueConfig.Properties.retentionDays` controls partition retention for both queue and optional history partitions of that queue
 
 The live subscription table is not cleaned by partition retention because it is not partitioned.
-
-At the moment retention is driven by `PgTableManager`. `QueueManager`, `Producer`, and `Consumer` do not automatically derive cleanup behavior from `ProducerConfig.Properties.retentionDays` or `ConsumerConfig.Properties.retentionDays`.
 
 Parent tables must already exist before you start the manager.
 

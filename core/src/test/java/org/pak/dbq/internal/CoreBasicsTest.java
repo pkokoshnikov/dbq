@@ -2,6 +2,7 @@ package org.pak.dbq.internal;
 
 import org.junit.jupiter.api.Test;
 import org.pak.dbq.api.ConsumerConfig;
+import org.pak.dbq.api.QueueConfig;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.api.policy.SimpleRetryablePolicy;
@@ -64,5 +65,14 @@ class CoreBasicsTest {
                 .build());
 
         assertThat(exception.getMessage()).isEqualTo("persistenceExceptionPause must be >= 0");
+    }
+
+    @Test
+    void queuePropertiesRejectNonPositiveRetentionDays() {
+        var exception = assertThrows(IllegalArgumentException.class, () -> QueueConfig.Properties.builder()
+                .retentionDays(-1)
+                .build());
+
+        assertThat(exception.getMessage()).isEqualTo("retentionDays must be > 0");
     }
 }

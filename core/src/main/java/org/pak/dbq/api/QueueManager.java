@@ -2,8 +2,10 @@ package org.pak.dbq.api;
 
 import lombok.extern.slf4j.Slf4j;
 import org.pak.dbq.internal.consumer.ConsumerStarter;
+import org.pak.dbq.internal.support.NoOpTableManager;
 import org.pak.dbq.spi.MessageFactory;
 import org.pak.dbq.spi.QueryService;
+import org.pak.dbq.spi.TableManager;
 import org.pak.dbq.spi.TransactionService;
 import org.pak.dbq.internal.support.SimpleMessageFactory;
 
@@ -15,36 +17,78 @@ public class QueueManager {
     private final QueryService queryService;
     private final TransactionService transactionService;
     private final MessageFactory messageFactory;
+    private final TableManager tableManager;
+
+    public QueueManager(
+            QueryService queryService,
+            TransactionService transactionService,
+            MessageFactory messageFactory,
+            TableManager tableManager
+    ) {
+        this.queryService = queryService;
+        this.transactionService = transactionService;
+        this.messageFactory = messageFactory;
+        this.tableManager = tableManager;
+    }
 
     public QueueManager(
             QueryService queryService,
             TransactionService transactionService,
             MessageFactory messageFactory
     ) {
-        this.queryService = queryService;
-        this.transactionService = transactionService;
-        this.messageFactory = messageFactory;
+        this(queryService, transactionService, messageFactory, new NoOpTableManager());
+    }
+
+    public QueueManager(
+            QueryService queryService,
+            TransactionService transactionService,
+            TableManager tableManager
+    ) {
+        this(queryService, transactionService, new SimpleMessageFactory(), tableManager);
     }
 
     public QueueManager(
             QueryService queryService,
             TransactionService transactionService
     ) {
-        this.queryService = queryService;
-        this.transactionService = transactionService;
-        this.messageFactory = new SimpleMessageFactory();
+        this(queryService, transactionService, new SimpleMessageFactory(), new NoOpTableManager());
     }
 
     private final ConcurrentHashMap<String, ConsumerStarter<?>> consumerStarters =
             new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ConsumerConfig<?>> consumerConfigs =
             new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<QueueName, QueueConfig> queueConfigs =
+            new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ProducerConfig<?>> producerConfigs =
             new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Producer<?>> producers =
             new ConcurrentHashMap<>();
 
+    public void registerQueue(QueueConfig queueConfig) {
+        var existingConfig = queueConfigs.putIfAbsent(queueConfig.getQueueName(), queueConfig);
+        if (existingConfig != null) {
+            if (!sameQueueConfig(existingConfig, queueConfig)) {
+                throw new IllegalArgumentException(
+                        "Queue is already initialized for %s with a different config"
+                                .formatted(queueConfig.getQueueName()));
+            }
+            return;
+        }
+
+        try {
+            tableManager.registerQueue(
+                    queueConfig.getQueueName(),
+                    queueConfig.getProperties().getRetentionDays());
+        } catch (RuntimeException e) {
+            queueConfigs.remove(queueConfig.getQueueName(), queueConfig);
+            throw e;
+        }
+    }
+
     public <T> Producer<T> registerProducer(ProducerConfig<T> producerConfig) {
+        requireInitializedQueue(producerConfig.getQueueName());
+
         var producerKey = producerConfig.getQueueName().name() + "|" + producerConfig.getClazz().getName();
         var existingConfig = producerConfigs.putIfAbsent(producerKey, producerConfig);
         if (existingConfig != null) {
@@ -62,6 +106,8 @@ public class QueueManager {
     }
 
     public <T> void registerConsumer(ConsumerConfig<T> consumerConfig) {
+        requireInitializedQueue(consumerConfig.getQueueName());
+
         var consumerKey = consumerConfig.getQueueName() + "_" + consumerConfig.getSubscriptionId();
         var existingConfig = consumerConfigs.putIfAbsent(consumerKey, consumerConfig);
         if (existingConfig != null) {
@@ -73,11 +119,18 @@ public class QueueManager {
             return;
         }
 
-        consumerStarters.put(consumerKey, new ConsumerStarter<>(consumerConfig, queryService, transactionService,
-                messageFactory));
-        log.info("Register consumer on queue {} with subscription {}",
-                consumerConfig.getQueueName(),
-                consumerConfig.getSubscriptionId());
+        try {
+            registerHistoryRetention(consumerConfig);
+
+            consumerStarters.put(consumerKey, new ConsumerStarter<>(consumerConfig, queryService, transactionService,
+                    messageFactory));
+            log.info("Register consumer on queue {} with subscription {}",
+                    consumerConfig.getQueueName(),
+                    consumerConfig.getSubscriptionId());
+        } catch (RuntimeException e) {
+            consumerConfigs.remove(consumerKey, consumerConfig);
+            throw e;
+        }
     }
 
     private boolean sameConsumerConfig(ConsumerConfig<?> left, ConsumerConfig<?> right) {
@@ -97,25 +150,38 @@ public class QueueManager {
                 && Objects.equals(left.getConcurrency(), right.getConcurrency())
                 && Objects.equals(left.getPersistenceExceptionPause(), right.getPersistenceExceptionPause())
                 && Objects.equals(left.getUnpredictedExceptionPause(), right.getUnpredictedExceptionPause())
-                && left.isHistoryEnabled() == right.isHistoryEnabled()
-                && left.getRetentionDays() == right.getRetentionDays();
+                && left.isHistoryEnabled() == right.isHistoryEnabled();
     }
 
     private boolean sameProducerConfig(ProducerConfig<?> left, ProducerConfig<?> right) {
         return Objects.equals(left.getQueueName(), right.getQueueName())
                 && Objects.equals(left.getClazz(), right.getClazz())
-                && sameProducerProperties(left.getProperties(), right.getProperties())
                 && sameComponent(left.getMessageContextPropagator(), right.getMessageContextPropagator());
     }
 
-    private boolean sameProducerProperties(ProducerConfig.Properties left, ProducerConfig.Properties right) {
-        if (left == right) {
-            return true;
+    private boolean sameQueueConfig(QueueConfig left, QueueConfig right) {
+        return Objects.equals(left.getQueueName(), right.getQueueName())
+                && left.getProperties().getRetentionDays() == right.getProperties().getRetentionDays();
+    }
+
+    private void registerHistoryRetention(ConsumerConfig<?> consumerConfig) {
+        if (!consumerConfig.getProperties().isHistoryEnabled()) {
+            return;
         }
-        if (left == null || right == null) {
-            return false;
+
+        var queueConfig = queueConfigs.get(consumerConfig.getQueueName());
+        tableManager.registerSubscription(
+                consumerConfig.getQueueName(),
+                consumerConfig.getSubscriptionId(),
+                queueConfig.getProperties().getRetentionDays(),
+                true);
+    }
+
+    private void requireInitializedQueue(QueueName queueName) {
+        if (!queueConfigs.containsKey(queueName)) {
+            throw new IllegalStateException("Queue %s is not initialized. Call initQueue(...) first."
+                    .formatted(queueName));
         }
-        return left.getRetentionDays() == right.getRetentionDays();
     }
 
     private boolean sameComponent(Object left, Object right) {

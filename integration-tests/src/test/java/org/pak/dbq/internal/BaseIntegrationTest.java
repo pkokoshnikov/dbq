@@ -132,9 +132,6 @@ public class BaseIntegrationTest {
     ) {
         return ProducerFactory.<TestMessage>builder()
                 .producerConfig(ProducerConfig.<TestMessage>builder()
-                        .properties(ProducerConfig.Properties.builder()
-                                .retentionDays(30)
-                                .build())
                         .queueName(QUEUE_NAME)
                         .clazz(TestMessage.class)
                         .messageContextPropagator(new NoOpMessageContextPropagator())

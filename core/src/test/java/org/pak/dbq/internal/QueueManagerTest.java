@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.pak.dbq.api.ConsumerConfig;
 import org.pak.dbq.api.MessageHandler;
 import org.pak.dbq.api.ProducerConfig;
+import org.pak.dbq.api.QueueConfig;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.QueueManager;
 import org.pak.dbq.api.SubscriptionId;
@@ -19,12 +20,15 @@ class QueueManagerTest {
     void registerProducerReturnsProducerThatStoresMessage() {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
-        var queue = new QueueManager(queryService, transactionService);
+        var tableManager = new CoreTestSupport.RecordingTableManager();
+        var queue = new QueueManager(queryService, transactionService, tableManager);
+        queue.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .build());
 
         var producer = queue.registerProducer(ProducerConfig.<String>builder()
                 .queueName(QUEUE_NAME)
                 .clazz(String.class)
-                .properties(ProducerConfig.Properties.builder().retentionDays(10).build())
                 .build());
 
         producer.send("payload");
@@ -40,6 +44,13 @@ class QueueManagerTest {
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var queueManager = new QueueManager(queryService, transactionService);
         var anotherQueue = new QueueName("another-queue");
+
+        queueManager.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .build());
+        queueManager.registerQueue(QueueConfig.builder()
+                .queueName(anotherQueue)
+                .build());
 
         var firstProducer = queueManager.registerProducer(ProducerConfig.<String>builder()
                 .queueName(QUEUE_NAME)
@@ -63,6 +74,9 @@ class QueueManagerTest {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var queueManager = new QueueManager(queryService, transactionService);
+        queueManager.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .build());
         var producerConfig = ProducerConfig.<String>builder()
                 .queueName(QUEUE_NAME)
                 .clazz(String.class)
@@ -79,27 +93,65 @@ class QueueManagerTest {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var queueManager = new QueueManager(queryService, transactionService);
+        queueManager.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .build());
 
         queueManager.registerProducer(ProducerConfig.<String>builder()
                 .queueName(QUEUE_NAME)
                 .clazz(String.class)
-                .properties(ProducerConfig.Properties.builder().retentionDays(10).build())
                 .build());
 
         assertThatThrownBy(() -> queueManager.registerProducer(ProducerConfig.<String>builder()
                 .queueName(QUEUE_NAME)
                 .clazz(String.class)
-                .properties(ProducerConfig.Properties.builder().retentionDays(30).build())
+                .messageContextPropagator(new CoreTestSupport.RecordingMessageContextPropagator(java.util.Map.of()))
                 .build()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Producer is already registered");
     }
 
     @Test
-    void registerConsumerAllowsIdempotentRegistrationWithSameConfigInstance() {
+    void registerProducerFailsWhenQueueIsNotInitialized() {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var queueManager = new QueueManager(queryService, transactionService);
+
+        assertThatThrownBy(() -> queueManager.registerProducer(ProducerConfig.<String>builder()
+                .queueName(QUEUE_NAME)
+                .clazz(String.class)
+                .build()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Call initQueue(...) first");
+    }
+
+    @Test
+    void registerQueueRegistersQueueRetention() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var transactionService = new CoreTestSupport.DirectTransactionService();
+        var tableManager = new CoreTestSupport.RecordingTableManager();
+        var queueManager = new QueueManager(queryService, transactionService, tableManager);
+
+        queueManager.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .properties(QueueConfig.Properties.builder()
+                        .retentionDays(10)
+                        .build())
+                .build());
+
+        assertThat(tableManager.getQueueRegistrations())
+                .containsExactly(new CoreTestSupport.QueueRegistrationCall(QUEUE_NAME, 10));
+    }
+
+    @Test
+    void registerConsumerAllowsIdempotentRegistrationWithSameConfigInstance() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var transactionService = new CoreTestSupport.DirectTransactionService();
+        var tableManager = new CoreTestSupport.RecordingTableManager();
+        var queueManager = new QueueManager(queryService, transactionService, tableManager);
+        queueManager.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .build());
         MessageHandler<String> handler = message -> {
         };
         var consumerConfig = ConsumerConfig.<String>builder()
@@ -110,6 +162,84 @@ class QueueManagerTest {
 
         queueManager.registerConsumer(consumerConfig);
         queueManager.registerConsumer(consumerConfig);
+
+        assertThat(tableManager.getSubscriptionRegistrations()).isEmpty();
+    }
+
+    @Test
+    void registerConsumerRegistersHistoryRetentionWhenQueueIsInitialized() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var transactionService = new CoreTestSupport.DirectTransactionService();
+        var tableManager = new CoreTestSupport.RecordingTableManager();
+        var queueManager = new QueueManager(queryService, transactionService, tableManager);
+
+        queueManager.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .properties(QueueConfig.Properties.builder()
+                        .retentionDays(7)
+                        .build())
+                .build());
+
+        queueManager.registerConsumer(ConsumerConfig.<String>builder()
+                .queueName(QUEUE_NAME)
+                .subscriptionId(SUBSCRIPTION_ID)
+                .messageHandler(message -> {
+                })
+                .properties(ConsumerConfig.Properties.builder()
+                        .historyEnabled(true)
+                        .build())
+                .build());
+
+        assertThat(tableManager.getQueueRegistrations())
+                .containsExactly(new CoreTestSupport.QueueRegistrationCall(QUEUE_NAME, 7));
+        assertThat(tableManager.getSubscriptionRegistrations())
+                .containsExactly(new CoreTestSupport.SubscriptionRegistrationCall(
+                        QUEUE_NAME,
+                        SUBSCRIPTION_ID,
+                        7,
+                        true));
+    }
+
+    @Test
+    void registerConsumerFailsWhenQueueIsNotInitialized() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var transactionService = new CoreTestSupport.DirectTransactionService();
+        var queueManager = new QueueManager(queryService, transactionService);
+
+        assertThatThrownBy(() -> queueManager.registerConsumer(ConsumerConfig.<String>builder()
+                .queueName(QUEUE_NAME)
+                .subscriptionId(SUBSCRIPTION_ID)
+                .messageHandler(message -> {
+                })
+                .properties(ConsumerConfig.Properties.builder()
+                        .historyEnabled(true)
+                        .build())
+                .build()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Call initQueue(...) first");
+    }
+
+    @Test
+    void registerQueueFailsOnConflictingRegistration() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var transactionService = new CoreTestSupport.DirectTransactionService();
+        var queueManager = new QueueManager(queryService, transactionService);
+
+        queueManager.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .properties(QueueConfig.Properties.builder()
+                        .retentionDays(10)
+                        .build())
+                .build());
+
+        assertThatThrownBy(() -> queueManager.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .properties(QueueConfig.Properties.builder()
+                        .retentionDays(30)
+                        .build())
+                .build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Queue is already initialized");
     }
 
     @Test
@@ -117,6 +247,9 @@ class QueueManagerTest {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var queueManager = new QueueManager(queryService, transactionService);
+        queueManager.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .build());
 
         queueManager.registerConsumer(ConsumerConfig.<String>builder()
                 .queueName(QUEUE_NAME)

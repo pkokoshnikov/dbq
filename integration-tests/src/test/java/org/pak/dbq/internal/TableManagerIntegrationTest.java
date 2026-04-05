@@ -114,7 +114,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testCreateMessagePartitions() {
-        tableManager.registerQueue(TestMessage.QUEUE_NAME, 1);
+        tableManager.registerQueue(TestMessage.QUEUE_NAME, 30);
 
         List<String> partitions = selectPartitions(QUEUE_TABLE);
 
@@ -124,7 +124,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testCreateSubscriptionPartitions() {
-        tableManager.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true);
+        tableManager.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, 30, true);
 
         List<String> partitions = selectPartitions(SUBSCRIPTION_TABLE_1_HISTORY);
 
@@ -135,10 +135,18 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testStartCronJobSuccessfully() {
-        tableManager.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true);
-        tableManager.registerQueue(TestMessage.QUEUE_NAME, 1);
+        tableManager.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, 30, true);
+        tableManager.registerQueue(TestMessage.QUEUE_NAME, 30);
         tableManager.startCronJobs();
         tableManager.stopCronJobs();
+    }
+
+    @Test
+    void testRejectConflictingRetentionRegistration() {
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> tableManager.registerQueue(TestMessage.QUEUE_NAME, 1));
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> tableManager.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true));
     }
 
     @Test

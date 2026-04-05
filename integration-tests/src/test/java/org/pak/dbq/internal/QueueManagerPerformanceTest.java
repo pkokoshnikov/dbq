@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.pak.dbq.api.ConsumerConfig;
 import org.pak.dbq.api.ProducerConfig;
+import org.pak.dbq.api.QueueConfig;
 import org.pak.dbq.api.QueueManager;
 import org.pak.dbq.internal.support.SimpleMessageFactory;
 import org.pak.dbq.pg.PgQueryService;
@@ -45,14 +46,17 @@ class QueueManagerPerformanceTest extends BaseIntegrationTest {
 
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1);
-        tableManager.registerQueue(QUEUE_NAME, 30);
 
         queueManager = new QueueManager(new PgQueryService(persistenceService, TEST_SCHEMA, jsonbConverter),
-                springTransactionService, new SimpleMessageFactory());
+                springTransactionService, new SimpleMessageFactory(), tableManager);
     }
 
     @Test
     void performanceTest() throws InterruptedException {
+        queueManager.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .build());
+
         var producer = queueManager.registerProducer(ProducerConfig.<TestMessage>builder()
                 .queueName(QUEUE_NAME)
                 .clazz(TestMessage.class)
