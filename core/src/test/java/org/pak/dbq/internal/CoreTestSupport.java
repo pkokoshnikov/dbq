@@ -1,13 +1,13 @@
-package org.pak.qdb.internal;
+package org.pak.dbq.internal;
 
-import org.pak.qdb.api.QueueName;
-import org.pak.qdb.api.SubscriptionId;
-import org.pak.qdb.internal.persistence.MessageContainer;
-import org.pak.qdb.api.Message;
-import org.pak.qdb.spi.MessageConsumerTelemetry;
-import org.pak.qdb.spi.MessageContextPropagator;
-import org.pak.qdb.spi.QueryService;
-import org.pak.qdb.spi.TransactionService;
+import org.pak.dbq.api.QueueName;
+import org.pak.dbq.api.SubscriptionId;
+import org.pak.dbq.internal.persistence.MessageContainer;
+import org.pak.dbq.api.Message;
+import org.pak.dbq.spi.MessageConsumerTelemetry;
+import org.pak.dbq.spi.MessageContextPropagator;
+import org.pak.dbq.spi.QueryService;
+import org.pak.dbq.spi.TransactionService;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -18,17 +18,21 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.function.Supplier;
 
-class CoreTestSupport {
-    static final QueueName QUEUE_NAME = new QueueName("test-message");
-    static final SubscriptionId SUBSCRIPTION_NAME = new SubscriptionId("test-subscription");
+public class CoreTestSupport {
+    public static final QueueName QUEUE_NAME = new QueueName("test-message");
+    public static final SubscriptionId SUBSCRIPTION_NAME = new SubscriptionId("test-subscription");
 
-    record CompletionCall(SubscriptionId subscriptionId, MessageContainer<?> messageContainer) {
+    public record CompletionCall(SubscriptionId subscriptionId, MessageContainer<?> messageContainer) {
     }
 
-    record FailureCall(SubscriptionId subscriptionId, MessageContainer<?> messageContainer, Exception exception) {
+    public record FailureCall(
+            SubscriptionId subscriptionId,
+            MessageContainer<?> messageContainer,
+            Exception exception
+    ) {
     }
 
-    record RetryCall(
+    public record RetryCall(
             SubscriptionId subscriptionId,
             MessageContainer<?> messageContainer,
             Duration retryDuration,
@@ -36,17 +40,17 @@ class CoreTestSupport {
     ) {
     }
 
-    record InsertCall<T>(QueueName queueName, Message<T> message) {
+    public record InsertCall<T>(QueueName queueName, Message<T> message) {
     }
 
-    record BatchInsertCall<T>(QueueName queueName, List<Message<T>> messages) {
+    public record BatchInsertCall<T>(QueueName queueName, List<Message<T>> messages) {
     }
 
-    static MessageContainer<String> messageContainer(String payload, int attempt, Instant originatedTime) {
+    public static MessageContainer<String> messageContainer(String payload, int attempt, Instant originatedTime) {
         return messageContainer(payload, Map.of(), attempt, originatedTime);
     }
 
-    static MessageContainer<String> messageContainer(
+    public static MessageContainer<String> messageContainer(
             String payload,
             Map<String, String> headers,
             int attempt,
@@ -68,12 +72,12 @@ class CoreTestSupport {
         );
     }
 
-    static final class RecordingMessageContextPropagator implements MessageContextPropagator {
+    public static final class RecordingMessageContextPropagator implements MessageContextPropagator {
         private final Map<String, String> injectedHeaders;
         private Map<String, String> extractedHeaders = Map.of();
         private boolean scopeClosed;
 
-        RecordingMessageContextPropagator(Map<String, String> injectedHeaders) {
+        public RecordingMessageContextPropagator(Map<String, String> injectedHeaders) {
             this.injectedHeaders = Map.copyOf(injectedHeaders);
         }
 
@@ -91,16 +95,17 @@ class CoreTestSupport {
             return () -> scopeClosed = true;
         }
 
-        Map<String, String> extractedHeaders() {
+        public Map<String, String> getExtractedHeaders() {
             return extractedHeaders;
         }
 
-        boolean isScopeClosed() {
+        public boolean isScopeClosed() {
             return scopeClosed;
         }
     }
 
-    static final class RecordingMessageConsumerTelemetry implements MessageConsumerTelemetry {
+
+    public static final class RecordingMessageConsumerTelemetry implements MessageConsumerTelemetry {
         private Message<?> startedMessage;
         private QueueName startedQueueName;
         private SubscriptionId startedSubscriptionId;
@@ -126,28 +131,28 @@ class CoreTestSupport {
             };
         }
 
-        Message<?> startedMessage() {
+        public Message<?> startedMessage() {
             return startedMessage;
         }
 
-        QueueName startedQueueName() {
+        public QueueName startedQueueName() {
             return startedQueueName;
         }
 
-        SubscriptionId startedSubscriptionId() {
+        public SubscriptionId startedSubscriptionId() {
             return startedSubscriptionId;
         }
 
-        Exception recordedException() {
+        public Exception recordedException() {
             return recordedException;
         }
 
-        boolean isScopeClosed() {
+        public boolean isScopeClosed() {
             return scopeClosed;
         }
     }
 
-    static class DirectTransactionService implements TransactionService {
+    public static class DirectTransactionService implements TransactionService {
         int calls;
 
         @Override
@@ -157,14 +162,42 @@ class CoreTestSupport {
         }
     }
 
-    static class RecordingQueryService implements QueryService {
-        final List<CompletionCall> completions = new ArrayList<>();
-        final List<FailureCall> failures = new ArrayList<>();
-        final List<RetryCall> retries = new ArrayList<>();
-        final List<InsertCall<?>> inserts = new ArrayList<>();
-        final List<BatchInsertCall<?>> batchInserts = new ArrayList<>();
-        final Queue<Object> insertMessageResults = new ArrayDeque<>();
-        List<? extends MessageContainer<?>> selectedMessages = List.of();
+    public static class RecordingQueryService implements QueryService {
+        private final List<CompletionCall> completions = new ArrayList<>();
+        private final List<FailureCall> failures = new ArrayList<>();
+        private final List<RetryCall> retries = new ArrayList<>();
+        private final List<InsertCall<?>> inserts = new ArrayList<>();
+        private final List<BatchInsertCall<?>> batchInserts = new ArrayList<>();
+        private final Queue<Object> insertMessageResults = new ArrayDeque<>();
+        private List<? extends MessageContainer<?>> selectedMessages = List.of();
+
+        public void setSelectedMessages(List<? extends MessageContainer<?>> selectedMessages) {
+            this.selectedMessages = List.copyOf(selectedMessages);
+        }
+
+        public List<CompletionCall> getCompletions() {
+            return completions;
+        }
+
+        public List<FailureCall> getFailures() {
+            return failures;
+        }
+
+        public List<RetryCall> getRetries() {
+            return retries;
+        }
+
+        public List<InsertCall<?>> getInserts() {
+            return inserts;
+        }
+
+        public List<BatchInsertCall<?>> getBatchInserts() {
+            return batchInserts;
+        }
+
+        public void enqueueInsertMessageResult(Object result) {
+            insertMessageResults.add(result);
+        }
 
         @SuppressWarnings("unchecked")
         @Override

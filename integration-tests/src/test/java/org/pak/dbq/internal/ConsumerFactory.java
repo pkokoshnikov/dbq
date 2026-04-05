@@ -1,21 +1,21 @@
-package org.pak.qdb.internal;
+package org.pak.dbq.internal;
 
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.experimental.FieldDefaults;
-import org.pak.qdb.api.ConsumerConfig;
-import org.pak.qdb.api.MessageHandler;
-import org.pak.qdb.api.QueueName;
-import org.pak.qdb.api.SubscriptionId;
-import org.pak.qdb.api.policy.BlockingPolicy;
-import org.pak.qdb.api.policy.NonRetryablePolicy;
-import org.pak.qdb.api.policy.RetryablePolicy;
-import org.pak.qdb.internal.consumer.Consumer;
-import org.pak.qdb.spi.*;
+import org.pak.dbq.api.ConsumerConfig;
+import org.pak.dbq.api.MessageHandler;
+import org.pak.dbq.api.QueueName;
+import org.pak.dbq.api.SubscriptionId;
+import org.pak.dbq.api.policy.BlockingPolicy;
+import org.pak.dbq.api.policy.NonRetryablePolicy;
+import org.pak.dbq.api.policy.RetryablePolicy;
+import org.pak.dbq.internal.consumer.Consumer;
+import org.pak.dbq.spi.*;
 
 @Builder(toBuilder = true)
 @FieldDefaults(level = AccessLevel.PRIVATE)
-class QueueProcessorFactory<T> {
+public class ConsumerFactory<T> {
     MessageHandler<T> messageHandler;
     MessageFactory messageFactory;
     QueueName queueName;
@@ -29,7 +29,7 @@ class QueueProcessorFactory<T> {
     MessageConsumerTelemetry messageConsumerTelemetry;
     ConsumerConfig.Properties properties;
 
-    Consumer<T> create() {
+    public Consumer<T> create() {
         return new Consumer<>(messageHandler, queueName, subscriptionId, retryablePolicy,
                 nonRetryablePolicy, blockingPolicy, queryService, transactionService, messageContextPropagator,
                 messageConsumerTelemetry, messageFactory, properties);

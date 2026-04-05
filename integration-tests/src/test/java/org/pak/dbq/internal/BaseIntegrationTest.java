@@ -1,28 +1,28 @@
-package org.pak.qdb.internal;
+package org.pak.dbq.internal;
 
 import eu.rekawek.toxiproxy.Proxy;
 import eu.rekawek.toxiproxy.ToxiproxyClient;
-import org.pak.qdb.api.ConsumerConfig;
-import org.pak.qdb.api.ProducerConfig;
-import org.pak.qdb.pg.SchemaName;
-import org.pak.qdb.api.SubscriptionId;
+import org.pak.dbq.api.ConsumerConfig;
+import org.pak.dbq.api.ProducerConfig;
+import org.pak.dbq.pg.SchemaName;
+import org.pak.dbq.api.SubscriptionId;
 import org.junit.jupiter.api.BeforeAll;
-import org.pak.qdb.internal.persistence.MessageContainer;
-import org.pak.qdb.internal.persistence.MessageHistoryContainer;
-import org.pak.qdb.internal.persistence.Status;
-import org.pak.qdb.api.policy.SimpleBlockingPolicy;
-import org.pak.qdb.api.policy.SimpleNonRetryablePolicy;
-import org.pak.qdb.api.policy.SimpleRetryablePolicy;
-import org.pak.qdb.support.NoOpMessageConsumerTelemetry;
-import org.pak.qdb.support.NoOpMessageContextPropagator;
-import org.pak.qdb.support.StdMessageFactory;
-import org.pak.qdb.support.StringFormatter;
-import org.pak.qdb.pg.PgQueryService;
-import org.pak.qdb.pg.PgSchemaSqlGenerator;
-import org.pak.qdb.pg.PgTableManager;
-import org.pak.qdb.pg.jsonb.JsonbConverter;
-import org.pak.qdb.spring.SpringPersistenceService;
-import org.pak.qdb.spring.SpringTransactionService;
+import org.pak.dbq.internal.persistence.MessageContainer;
+import org.pak.dbq.internal.persistence.MessageHistoryContainer;
+import org.pak.dbq.internal.persistence.Status;
+import org.pak.dbq.api.policy.SimpleBlockingPolicy;
+import org.pak.dbq.api.policy.SimpleNonRetryablePolicy;
+import org.pak.dbq.api.policy.SimpleRetryablePolicy;
+import org.pak.dbq.internal.support.NoOpMessageConsumerTelemetry;
+import org.pak.dbq.internal.support.NoOpMessageContextPropagator;
+import org.pak.dbq.internal.support.SimpleMessageFactory;
+import org.pak.dbq.internal.support.StringFormatter;
+import org.pak.dbq.pg.PgQueryService;
+import org.pak.dbq.pg.PgSchemaSqlGenerator;
+import org.pak.dbq.pg.PgTableManager;
+import org.pak.dbq.pg.jsonb.JsonbConverter;
+import org.pak.dbq.spring.SpringPersistenceService;
+import org.pak.dbq.spring.SpringTransactionService;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.postgresql.util.PGobject;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -44,41 +44,41 @@ import java.util.regex.Pattern;
 
 import static java.util.Optional.ofNullable;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.qdb.internal.TestMessage.QUEUE_NAME;
+import static org.pak.dbq.internal.TestMessage.QUEUE_NAME;
 
 public class BaseIntegrationTest {
-    static final String QUEUE_TABLE = QUEUE_NAME.name().replace("-", "_");
-    static SubscriptionId SUBSCRIPTION_NAME_1 = new SubscriptionId("test-subscription-one");
-    static String SUBSCRIPTION_TABLE_1 = SUBSCRIPTION_NAME_1.id().replace("-", "_");
-    static String SUBSCRIPTION_TABLE_1_HISTORY = SUBSCRIPTION_NAME_1.id().replace("-", "_") + "_history";
-    static SubscriptionId SUBSCRIPTION_NAME_2 = new SubscriptionId("test-subscription-two");
-    static String SUBSCRIPTION_TABLE_2 = SUBSCRIPTION_NAME_2.id().replace("-", "_");
-    static String SUBSCRIPTION_TABLE_2_HISTORY = SUBSCRIPTION_NAME_2.id().replace("-", "_") + "_history";
-    static SchemaName TEST_SCHEMA = new SchemaName("public");
-    static String TEST_VALUE = "test-value";
-    static String TEST_EXCEPTION_MESSAGE = "test-exception-payload";
-    PgQueryService pgQueryService;
-    PgTableManager tableManager;
-    PgSchemaSqlGenerator schemaSqlGenerator;
-    static StringFormatter formatter = new StringFormatter();
-    static Network network = Network.newNetwork();
-    static String jdbcUrl;
+    protected static final String QUEUE_TABLE = QUEUE_NAME.name().replace("-", "_");
+    protected static final SubscriptionId SUBSCRIPTION_NAME_1 = new SubscriptionId("test-subscription-one");
+    protected static final String SUBSCRIPTION_TABLE_1 = SUBSCRIPTION_NAME_1.id().replace("-", "_");
+    protected static final String SUBSCRIPTION_TABLE_1_HISTORY = SUBSCRIPTION_NAME_1.id().replace("-", "_") + "_history";
+    protected static final SubscriptionId SUBSCRIPTION_NAME_2 = new SubscriptionId("test-subscription-two");
+    protected static final String SUBSCRIPTION_TABLE_2 = SUBSCRIPTION_NAME_2.id().replace("-", "_");
+    protected static final String SUBSCRIPTION_TABLE_2_HISTORY = SUBSCRIPTION_NAME_2.id().replace("-", "_") + "_history";
+    protected static final SchemaName TEST_SCHEMA = new SchemaName("public");
+    protected static final String TEST_VALUE = "test-value";
+    protected static final String TEST_EXCEPTION_MESSAGE = "test-exception-payload";
+    protected PgQueryService pgQueryService;
+    protected PgTableManager tableManager;
+    protected PgSchemaSqlGenerator schemaSqlGenerator;
+    protected static final StringFormatter formatter = new StringFormatter();
+    protected static final Network network = Network.newNetwork();
+    protected static String jdbcUrl;
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(DockerImageName.parse("postgres:18-alpine"))
+    protected static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(DockerImageName.parse("postgres:18-alpine"))
             .withNetwork(network)
             .withNetworkAliases("postgres");
     @Container
-    static ToxiproxyContainer toxiproxy = new ToxiproxyContainer("ghcr.io/shopify/toxiproxy:2.5.0")
+    protected static ToxiproxyContainer toxiproxy = new ToxiproxyContainer("ghcr.io/shopify/toxiproxy:2.5.0")
             .withNetwork(network);
-    static Proxy postgresqlProxy;
-    JdbcTemplate jdbcTemplate;
-    JsonbConverter jsonbConverter;
-    SpringTransactionService springTransactionService;
-    QueueProcessorFactory.QueueProcessorFactoryBuilder<TestMessage> queueProcessorFactory;
-    ProducerFactory.ProducerFactoryBuilder<TestMessage> producerFactory;
-    DataSource dataSource;
-    SpringPersistenceService persistenceService;
+    protected static Proxy postgresqlProxy;
+    protected JdbcTemplate jdbcTemplate;
+    protected JsonbConverter jsonbConverter;
+    protected SpringTransactionService springTransactionService;
+    protected ConsumerFactory.ConsumerFactoryBuilder<TestMessage> consumerFactoryBuilder;
+    protected ProducerFactory.ProducerFactoryBuilder<TestMessage> producerFactory;
+    protected DataSource dataSource;
+    protected SpringPersistenceService persistenceService;
 
     @BeforeAll
     static void beforeAll() throws IOException {
@@ -88,11 +88,11 @@ public class BaseIntegrationTest {
                 postgres.getDatabaseName());
     }
 
-    static JdbcTemplate setupJdbcTemplate(DataSource dataSource) {
+    protected static JdbcTemplate setupJdbcTemplate(DataSource dataSource) {
         return new JdbcTemplate(dataSource);
     }
 
-    static DataSource setupDatasource() {
+    protected static DataSource setupDatasource() {
         var dataSource = new PGSimpleDataSource();
         dataSource.setUrl(jdbcUrl);
         dataSource.setDatabaseName(postgres.getDatabaseName());
@@ -101,30 +101,33 @@ public class BaseIntegrationTest {
         return dataSource;
     }
 
-    static SpringTransactionService setupSpringTransactionService(DataSource dataSource) {
+    protected static SpringTransactionService setupSpringTransactionService(DataSource dataSource) {
         return new SpringTransactionService(new TransactionTemplate(
                 new JdbcTransactionManager(dataSource) {}));
     }
 
-    static SpringPersistenceService setupPersistenceService(JdbcTemplate jdbcTemplate) {
+    protected static SpringPersistenceService setupPersistenceService(JdbcTemplate jdbcTemplate) {
         return new SpringPersistenceService(jdbcTemplate);
     }
 
-    static PgQueryService setupQueryService(SpringPersistenceService persistenceService, JsonbConverter jsonbConverter) {
+    protected static PgQueryService setupQueryService(
+            SpringPersistenceService persistenceService,
+            JsonbConverter jsonbConverter
+    ) {
         return new PgQueryService(persistenceService, TEST_SCHEMA, jsonbConverter);
     }
 
-    static JsonbConverter setupJsonbConverter() {
+    protected static JsonbConverter setupJsonbConverter() {
         var jsonbConverter = new JsonbConverter();
         jsonbConverter.registerType(QUEUE_NAME.name(), TestMessage.class);
         return jsonbConverter;
     }
 
-    static PgSchemaSqlGenerator setupSchemaSqlGenerator() {
+    protected static PgSchemaSqlGenerator setupSchemaSqlGenerator() {
         return new PgSchemaSqlGenerator(TEST_SCHEMA);
     }
 
-    static ProducerFactory.ProducerFactoryBuilder<TestMessage> setupProducerFactory(
+    protected static ProducerFactory.ProducerFactoryBuilder<TestMessage> setupProducerFactory(
             PgQueryService pgQueryService
     ) {
         return ProducerFactory.<TestMessage>builder()
@@ -136,16 +139,16 @@ public class BaseIntegrationTest {
                         .clazz(TestMessage.class)
                         .messageContextPropagator(new NoOpMessageContextPropagator())
                         .build())
-                .messageFactory(new StdMessageFactory())
+                .messageFactory(new SimpleMessageFactory())
                 .queryService(pgQueryService);
     }
 
-    static QueueProcessorFactory.QueueProcessorFactoryBuilder<TestMessage> setupQueueProcessorFactory(
+    protected static ConsumerFactory.ConsumerFactoryBuilder<TestMessage> setupQueueProcessorFactory(
             PgQueryService pgQueryService,
             SpringTransactionService springTransactionService
     ) {
-        return QueueProcessorFactory.<TestMessage>builder()
-                .messageFactory(new StdMessageFactory())
+        return ConsumerFactory.<TestMessage>builder()
+                .messageFactory(new SimpleMessageFactory())
                 .messageHandler(testMessage -> {})
                 .queryService(pgQueryService)
                 .transactionService(springTransactionService)
@@ -159,19 +162,19 @@ public class BaseIntegrationTest {
                 .properties(ConsumerConfig.Properties.builder().build());
     }
 
-    static PgTableManager setupTableManager(PgQueryService pgQueryService) {
+    protected static PgTableManager setupTableManager(PgQueryService pgQueryService) {
         return new PgTableManager(pgQueryService, "* * * * * ?", "* * * * * ?");
     }
 
-    void createQueueTable() {
+    protected void createQueueTable() {
         jdbcTemplate.execute(schemaSqlGenerator.createQueueTable(QUEUE_NAME));
     }
 
-    void createSubscriptionTable(SubscriptionId subscriptionId) {
+    protected void createSubscriptionTable(SubscriptionId subscriptionId) {
         jdbcTemplate.execute(schemaSqlGenerator.createSubscriptionTable(QUEUE_NAME, subscriptionId));
     }
 
-    void clearTables() {
+    protected void clearTables() {
         jdbcTemplate.update(formatter.execute("DROP TABLE IF EXISTS ${schema}.${subscriptionTable}",
                 Map.of("schema", TEST_SCHEMA.value(),
                         "subscriptionTable", SUBSCRIPTION_TABLE_1)));
@@ -193,17 +196,21 @@ public class BaseIntegrationTest {
                         "queueTable", QUEUE_TABLE)));
     }
 
-    static MessageContainer<TestMessage> hasSize1AndGetFirst(List<MessageContainer<TestMessage>> testMessageContainers) {
+    protected static MessageContainer<TestMessage> hasSize1AndGetFirst(
+            List<MessageContainer<TestMessage>> testMessageContainers
+    ) {
         assertThat(testMessageContainers).hasSize(1);
         return testMessageContainers.get(0);
     }
 
-    static MessageHistoryContainer<TestMessage> hasSize1AndGetFirstHistory(List<MessageHistoryContainer<TestMessage>> testMessageContainers) {
+    protected static MessageHistoryContainer<TestMessage> hasSize1AndGetFirstHistory(
+            List<MessageHistoryContainer<TestMessage>> testMessageContainers
+    ) {
         assertThat(testMessageContainers).hasSize(1);
         return testMessageContainers.get(0);
     }
 
-    List<MessageContainer<TestMessage>> selectTestMessages(SubscriptionId subscriptionId) {
+    protected List<MessageContainer<TestMessage>> selectTestMessages(SubscriptionId subscriptionId) {
         var query = formatter.execute("""
                         SELECT s.id, s.message_id, s.attempt, s.error_message, s.stack_trace, s.created_at, s.updated_at,
                             s.execute_after, m.payload, m.headers, m.originated_at, m.key
@@ -232,7 +239,9 @@ public class BaseIntegrationTest {
                         rs.getString("stack_trace")));
     }
 
-    List<MessageHistoryContainer<TestMessage>> selectTestMessagesFromHistory(SubscriptionId subscriptionId) {
+    protected List<MessageHistoryContainer<TestMessage>> selectTestMessagesFromHistory(
+            SubscriptionId subscriptionId
+    ) {
         var query = formatter.execute("""
                         SELECT s.id, s.message_id, s.attempt, s.status, s.error_message, s.stack_trace, s.created_at, m.payload
                         FROM ${schema}.${subscriptionTableHistory} s JOIN ${schema}.${queueTable} m ON s.message_id = m.id""",
@@ -252,7 +261,7 @@ public class BaseIntegrationTest {
                         rs.getString("stack_trace")));
     }
 
-    void assertPartitions(String tableName, List<String> partitions) {
+    protected void assertPartitions(String tableName, List<String> partitions) {
         var params = Map.of("table", tableName);
         partitions.forEach(partition -> {
             var matches = Pattern.compile(formatter.execute("${table}_\\d{4}_\\d{2}_\\d{2}", params))
@@ -262,7 +271,7 @@ public class BaseIntegrationTest {
         });
     }
 
-    List<String> selectPartitions(String tableName) {
+    protected List<String> selectPartitions(String tableName) {
         Map<String, String> formatParams = Map.of("schema", TEST_SCHEMA.value(),
                 "table", tableName);
         var query = formatter.execute("""
@@ -274,19 +283,19 @@ public class BaseIntegrationTest {
     }
 
 
-    static class BlockingApplicationException extends RuntimeException {
+    protected static class BlockingApplicationException extends RuntimeException {
         public BlockingApplicationException(String message) {
             super(message);
         }
     }
 
-    static class RetryableApplicationException extends RuntimeException {
+    protected static class RetryableApplicationException extends RuntimeException {
         public RetryableApplicationException(String message) {
             super(message);
         }
     }
 
-    static class NonRetryableApplicationException extends RuntimeException {
+    protected static class NonRetryableApplicationException extends RuntimeException {
         public NonRetryableApplicationException(String message) {
             super(message);
         }

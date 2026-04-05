@@ -1,4 +1,4 @@
-package org.pak.qdb.internal;
+package org.pak.dbq.internal.consumer;
 
 
 import eu.rekawek.toxiproxy.model.ToxicDirection;
@@ -8,9 +8,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.pak.qdb.api.error.RetrayablePersistenceException;
-import org.pak.qdb.api.Message;
-import org.pak.qdb.api.policy.BlockingPolicy;
+import org.pak.dbq.internal.BaseIntegrationTest;
+import org.pak.dbq.internal.TestMessage;
+import org.pak.dbq.spi.error.RetryablePersistenceException;
+import org.pak.dbq.api.Message;
+import org.pak.dbq.api.policy.BlockingPolicy;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.IOException;
@@ -21,9 +23,9 @@ import java.util.UUID;
 
 import static java.util.Optional.of;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.qdb.internal.persistence.Status.FAILED;
-import static org.pak.qdb.internal.persistence.Status.PROCESSED;
-import static org.pak.qdb.internal.TestMessage.QUEUE_NAME;
+import static org.pak.dbq.internal.persistence.Status.FAILED;
+import static org.pak.dbq.internal.persistence.Status.PROCESSED;
+import static org.pak.dbq.internal.TestMessage.QUEUE_NAME;
 
 @Testcontainers
 @Slf4j
@@ -39,7 +41,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         pgQueryService = setupQueryService(persistenceService, jsonbConverter);
         tableManager = setupTableManager(pgQueryService);
         producerFactory = setupProducerFactory(pgQueryService);
-        queueProcessorFactory = setupQueueProcessorFactory(pgQueryService, springTransactionService);
+        consumerFactoryBuilder = setupQueueProcessorFactory(pgQueryService, springTransactionService);
 
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1);
@@ -72,8 +74,8 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testSuccessHandle() throws RetrayablePersistenceException {
-        var messageProcessor = queueProcessorFactory.build().create();
+    void testSuccessHandle() throws RetryablePersistenceException {
+        var consumer = consumerFactoryBuilder.build().create();
 
         var producer = producerFactory.build().create();
 
@@ -82,9 +84,9 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         producer.send(testMessage1);
         producer.send(testMessage2);
 
-        assertThat(messageProcessor.poolAndProcess()).isTrue();
-        assertThat(messageProcessor.poolAndProcess()).isTrue();
-        assertThat(messageProcessor.poolAndProcess()).isFalse();
+        assertThat(consumer.poolAndProcess()).isTrue();
+        assertThat(consumer.poolAndProcess()).isTrue();
+        assertThat(consumer.poolAndProcess()).isFalse();
 
         var testMessages = selectTestMessagesFromHistory(SUBSCRIPTION_NAME_1);
 
@@ -98,7 +100,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testHandleNonRetryableException() {
-        var messageProcessor = queueProcessorFactory.messageHandler(testMessage -> {
+        var consumer = consumerFactoryBuilder.messageHandler(testMessage -> {
                     throw new NonRetryableApplicationException(TEST_EXCEPTION_MESSAGE);
                 })
                 .nonRetryablePolicy(
@@ -109,7 +111,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
 
         TestMessage testMessage = new TestMessage(TEST_VALUE);
         producer.send(testMessage);
-        messageProcessor.poolAndProcess();
+        consumer.poolAndProcess();
 
         var testMessageContainer = hasSize1AndGetFirstHistory(selectTestMessagesFromHistory(SUBSCRIPTION_NAME_1));
 
@@ -121,7 +123,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testHandleRetryableException() {
-        var messageProcessor = queueProcessorFactory.messageHandler(testMessage -> {
+        var consumer = consumerFactoryBuilder.messageHandler(testMessage -> {
                     throw new RetryableApplicationException(TEST_EXCEPTION_MESSAGE);
                 })
                 .retryablePolicy((e, attempt) -> of(Duration.ofSeconds(600)))
@@ -134,7 +136,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
 
         var testMessageBeforeHandleContainer = hasSize1AndGetFirst(selectTestMessages(SUBSCRIPTION_NAME_1));
 
-        messageProcessor.poolAndProcess();
+        consumer.poolAndProcess();
 
         var testMessageContainer = hasSize1AndGetFirst(selectTestMessages(SUBSCRIPTION_NAME_1));
 
@@ -145,7 +147,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         assertThat(testMessageContainer.getExecuteAfter()).isAfterOrEqualTo(
                 testMessageBeforeHandleContainer.getExecuteAfter().plus(Duration.ofSeconds(600)));
 
-        messageProcessor.poolAndProcess();
+        consumer.poolAndProcess();
 
         testMessageContainer = hasSize1AndGetFirst(selectTestMessages(SUBSCRIPTION_NAME_1));
 
@@ -160,7 +162,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testHandleRetryableException2() {
-        var messageProcessor = queueProcessorFactory.messageHandler(testMessage -> {
+        var consumer = consumerFactoryBuilder.messageHandler(testMessage -> {
                     throw new RetryableApplicationException(TEST_EXCEPTION_MESSAGE);
                 })
                 .retryablePolicy((e, attempt) -> of(Duration.ofSeconds(0)))
@@ -174,7 +176,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         var testMessages = selectTestMessages(SUBSCRIPTION_NAME_1);
         assertThat(testMessages).hasSize(1);
 
-        messageProcessor.poolAndProcess();
+        consumer.poolAndProcess();
 
         var testMessageContainer = hasSize1AndGetFirst(selectTestMessages(SUBSCRIPTION_NAME_1));
 
@@ -183,7 +185,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         assertThat(testMessageContainer.getStackTrace()).isNotNull();
         assertThat(testMessageContainer.getUpdated()).isNotNull();
 
-        messageProcessor.poolAndProcess();
+        consumer.poolAndProcess();
 
         testMessageContainer = hasSize1AndGetFirst(selectTestMessages(SUBSCRIPTION_NAME_1));
 
@@ -195,7 +197,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void testHandleRetryableExceptionFail() {
-        var messageProcessor = queueProcessorFactory.messageHandler(testMessage -> {
+        var consumer = consumerFactoryBuilder.messageHandler(testMessage -> {
                     throw new RetryableApplicationException(TEST_EXCEPTION_MESSAGE);
                 })
                 .retryablePolicy((e, attempt) -> {
@@ -215,7 +217,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         var testMessages = selectTestMessages(SUBSCRIPTION_NAME_1);
         assertThat(testMessages).hasSize(1);
 
-        messageProcessor.poolAndProcess();
+        consumer.poolAndProcess();
 
         var testMessageContainer = hasSize1AndGetFirst(selectTestMessages(SUBSCRIPTION_NAME_1));
 
@@ -224,7 +226,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         assertThat(testMessageContainer.getStackTrace()).isNotNull();
         assertThat(testMessageContainer.getUpdated()).isNotNull();
 
-        messageProcessor.poolAndProcess();
+        consumer.poolAndProcess();
 
         var testMessageHistoryContainer = hasSize1AndGetFirstHistory(selectTestMessagesFromHistory(SUBSCRIPTION_NAME_1));
 
@@ -262,7 +264,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         TestMessage testMessage = new TestMessage(TEST_VALUE);
         var timeout = postgresqlProxy.toxics().timeout("pg-timeout", ToxicDirection.DOWNSTREAM, 1000);
 
-        Assertions.assertThrows(RetrayablePersistenceException.class, () -> producer.send(testMessage));
+        Assertions.assertThrows(RetryablePersistenceException.class, () -> producer.send(testMessage));
 
         timeout.remove();
     }
@@ -271,14 +273,14 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     void testProcessTimeoutException() throws IOException {
         var producer = producerFactory.build().create();
 
-        var messageProcessor = queueProcessorFactory.build().create();
+        var messageProcessor = consumerFactoryBuilder.build().create();
 
         TestMessage testMessage = new TestMessage(TEST_VALUE);
         producer.send(testMessage);
 
         var timeout = postgresqlProxy.toxics().timeout("pg-timeout", ToxicDirection.DOWNSTREAM, 1000);
 
-        Assertions.assertThrows(RetrayablePersistenceException.class, messageProcessor::poolAndProcess);
+        Assertions.assertThrows(RetryablePersistenceException.class, messageProcessor::poolAndProcess);
 
         timeout.remove();
     }
@@ -287,7 +289,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     void testBlockingException() {
         var producer = producerFactory.build().create();
 
-        var messageProcessor = queueProcessorFactory.messageHandler(testMessage -> {
+        var consumer = consumerFactoryBuilder.messageHandler(testMessage -> {
                     throw new BlockingApplicationException(TEST_EXCEPTION_MESSAGE);
                 })
                 .blockingPolicy(new BlockingPolicy() {
@@ -306,7 +308,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         TestMessage testMessage = new TestMessage(TEST_VALUE);
         producer.send(testMessage);
 
-        messageProcessor.poolAndProcess();
+        consumer.poolAndProcess();
 
         var testMessageContainer = hasSize1AndGetFirst(selectTestMessages(SUBSCRIPTION_NAME_1));
 

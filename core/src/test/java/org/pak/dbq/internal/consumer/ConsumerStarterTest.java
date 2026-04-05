@@ -1,9 +1,9 @@
-package org.pak.qdb.internal;
+package org.pak.dbq.internal.consumer;
 
 import org.junit.jupiter.api.Test;
-import org.pak.qdb.api.ConsumerConfig;
-import org.pak.qdb.internal.consumer.ConsumerStarter;
-import org.pak.qdb.support.StdMessageFactory;
+import org.pak.dbq.api.ConsumerConfig;
+import org.pak.dbq.internal.CoreTestSupport;
+import org.pak.dbq.internal.support.SimpleMessageFactory;
 
 class ConsumerStarterTest {
     @Test
@@ -17,7 +17,7 @@ class ConsumerStarterTest {
                         .build(),
                 new CoreTestSupport.RecordingQueryService(),
                 new CoreTestSupport.DirectTransactionService(),
-                new StdMessageFactory()
+                new SimpleMessageFactory()
         );
 
         starter.start();

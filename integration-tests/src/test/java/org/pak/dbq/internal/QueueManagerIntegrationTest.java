@@ -1,14 +1,14 @@
-package org.pak.qdb.internal;
+package org.pak.dbq.internal;
 
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.pak.qdb.api.ConsumerConfig;
-import org.pak.qdb.api.ProducerConfig;
-import org.pak.qdb.api.QueueManager;
-import org.pak.qdb.support.StdMessageFactory;
-import org.pak.qdb.pg.PgQueryService;
+import org.pak.dbq.api.ConsumerConfig;
+import org.pak.dbq.api.ProducerConfig;
+import org.pak.dbq.api.QueueManager;
+import org.pak.dbq.internal.support.SimpleMessageFactory;
+import org.pak.dbq.pg.PgQueryService;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.vibur.dbcp.ViburDBCPDataSource;
 
@@ -16,7 +16,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.qdb.internal.TestMessage.QUEUE_NAME;
+import static org.pak.dbq.internal.TestMessage.QUEUE_NAME;
 
 @Testcontainers
 @Slf4j
@@ -41,7 +41,7 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
         pgQueryService = setupQueryService(persistenceService, jsonbConverter);
         tableManager = setupTableManager(pgQueryService);
         producerFactory = setupProducerFactory(pgQueryService);
-        queueProcessorFactory = setupQueueProcessorFactory(pgQueryService, springTransactionService);
+        consumerFactoryBuilder = setupQueueProcessorFactory(pgQueryService, springTransactionService);
 
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1);
@@ -51,7 +51,7 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
         tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_2, 30);
 
         queue = new QueueManager(new PgQueryService(persistenceService, TEST_SCHEMA, jsonbConverter),
-                springTransactionService, new StdMessageFactory());
+                springTransactionService, new SimpleMessageFactory());
     }
 
     @Test

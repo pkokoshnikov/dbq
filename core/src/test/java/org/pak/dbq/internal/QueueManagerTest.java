@@ -1,11 +1,11 @@
-package org.pak.qdb.internal;
+package org.pak.dbq.internal;
 
 import org.junit.jupiter.api.Test;
-import org.pak.qdb.api.ProducerConfig;
-import org.pak.qdb.api.QueueManager;
+import org.pak.dbq.api.ProducerConfig;
+import org.pak.dbq.api.QueueManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.qdb.internal.CoreTestSupport.QUEUE_NAME;
+import static org.pak.dbq.internal.CoreTestSupport.QUEUE_NAME;
 
 class QueueManagerTest {
     @Test
@@ -22,8 +22,8 @@ class QueueManagerTest {
 
         producer.send("payload");
 
-        assertThat(queryService.inserts).hasSize(1);
-        assertThat(queryService.inserts.getFirst().queueName()).isEqualTo(QUEUE_NAME);
-        assertThat(queryService.inserts.getFirst().message().payload()).isEqualTo("payload");
+        assertThat(queryService.getInserts()).hasSize(1);
+        assertThat(queryService.getInserts().getFirst().queueName()).isEqualTo(QUEUE_NAME);
+        assertThat(queryService.getInserts().getFirst().message().payload()).isEqualTo("payload");
     }
 }

@@ -1,4 +1,4 @@
-package org.pak.qdb.otel;
+package org.pak.dbq.otel;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanContext;

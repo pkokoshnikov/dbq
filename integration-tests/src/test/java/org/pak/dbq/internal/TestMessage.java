@@ -1,9 +1,9 @@
-package org.pak.qdb.internal;
+package org.pak.dbq.internal;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.pak.qdb.api.QueueName;
+import org.pak.dbq.api.QueueName;
 
 @AllArgsConstructor
 @NoArgsConstructor

@@ -1,7 +1,7 @@
-package org.pak.qdb.internal;
+package org.pak.dbq.internal;
 
 import org.junit.jupiter.api.Test;
-import org.pak.qdb.support.StringFormatter;
+import org.pak.dbq.internal.support.StringFormatter;
 
 import java.util.Map;
 

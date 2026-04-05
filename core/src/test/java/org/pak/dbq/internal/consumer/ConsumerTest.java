@@ -1,18 +1,18 @@
-package org.pak.qdb.internal;
+package org.pak.dbq.internal.consumer;
 
 import org.junit.jupiter.api.Test;
-import org.pak.qdb.api.ConsumerConfig;
-import org.pak.qdb.api.MessageHandler;
-import org.pak.qdb.api.Message;
-import org.pak.qdb.api.policy.BlockingPolicy;
-import org.pak.qdb.api.policy.NonRetryablePolicy;
-import org.pak.qdb.api.policy.RetryablePolicy;
-import org.pak.qdb.internal.consumer.Consumer;
-import org.pak.qdb.spi.MessageConsumerTelemetry;
-import org.pak.qdb.spi.MessageContextPropagator;
-import org.pak.qdb.support.NoOpMessageConsumerTelemetry;
-import org.pak.qdb.support.NoOpMessageContextPropagator;
-import org.pak.qdb.support.StdMessageFactory;
+import org.pak.dbq.api.ConsumerConfig;
+import org.pak.dbq.api.MessageHandler;
+import org.pak.dbq.api.Message;
+import org.pak.dbq.api.policy.BlockingPolicy;
+import org.pak.dbq.api.policy.NonRetryablePolicy;
+import org.pak.dbq.api.policy.RetryablePolicy;
+import org.pak.dbq.internal.CoreTestSupport;
+import org.pak.dbq.spi.MessageConsumerTelemetry;
+import org.pak.dbq.spi.MessageContextPropagator;
+import org.pak.dbq.internal.support.NoOpMessageConsumerTelemetry;
+import org.pak.dbq.internal.support.NoOpMessageContextPropagator;
+import org.pak.dbq.internal.support.SimpleMessageFactory;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -21,9 +21,9 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.qdb.internal.CoreTestSupport.QUEUE_NAME;
-import static org.pak.qdb.internal.CoreTestSupport.SUBSCRIPTION_NAME;
-import static org.pak.qdb.internal.CoreTestSupport.messageContainer;
+import static org.pak.dbq.internal.CoreTestSupport.QUEUE_NAME;
+import static org.pak.dbq.internal.CoreTestSupport.SUBSCRIPTION_NAME;
+import static org.pak.dbq.internal.CoreTestSupport.messageContainer;
 
 class ConsumerTest {
     @Test
@@ -32,12 +32,12 @@ class ConsumerTest {
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var originatedTime = Instant.parse("2026-04-02T10:15:30Z");
         var headers = Map.of("traceparent", "00-test-parent");
-        var container = messageContainer("payload", headers, 0, originatedTime);
-        queryService.selectedMessages = List.of(container);
+        var container = CoreTestSupport.messageContainer("payload", headers, 0, originatedTime);
+        queryService.setSelectedMessages(List.of(container));
         var handledMessage = new AtomicReference<Message<String>>();
         var messageContextPropagator = new CoreTestSupport.RecordingMessageContextPropagator(Map.of());
         var messageConsumerTelemetry = new CoreTestSupport.RecordingMessageConsumerTelemetry();
-        var processor = processor(
+        var consumer = processor(
                 queryService,
                 transactionService,
                 message -> handledMessage.set(message),
@@ -48,14 +48,14 @@ class ConsumerTest {
                 messageConsumerTelemetry
         );
 
-        var pooled = processor.poolAndProcess();
+        var pooled = consumer.poolAndProcess();
 
         assertThat(pooled).isTrue();
-        assertThat(queryService.completions).hasSize(1);
-        assertThat(queryService.failures).isEmpty();
-        assertThat(queryService.retries).isEmpty();
+        assertThat(queryService.getCompletions()).hasSize(1);
+        assertThat(queryService.getFailures()).isEmpty();
+        assertThat(queryService.getRetries()).isEmpty();
         assertThat(handledMessage.get()).isEqualTo(new Message<>("key-1", originatedTime, "payload", headers));
-        assertThat(messageContextPropagator.extractedHeaders()).isEqualTo(headers);
+        assertThat(messageContextPropagator.getExtractedHeaders()).isEqualTo(headers);
         assertThat(messageContextPropagator.isScopeClosed()).isTrue();
         assertThat(messageConsumerTelemetry.startedMessage()).isEqualTo(handledMessage.get());
         assertThat(messageConsumerTelemetry.startedQueueName()).isEqualTo(QUEUE_NAME);
@@ -68,10 +68,10 @@ class ConsumerTest {
     void poolAndProcessRetriesMessageWhenRetryPolicyReturnsDelay() {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
-        var container = messageContainer("payload", 2, Instant.parse("2026-04-02T10:15:30Z"));
-        queryService.selectedMessages = List.of(container);
+        var container = CoreTestSupport.messageContainer("payload", 2, Instant.parse("2026-04-02T10:15:30Z"));
+        queryService.setSelectedMessages(List.of(container));
         var expectedException = new IllegalStateException("retry");
-        var processor = processor(
+        var consumer = processor(
                 queryService,
                 transactionService,
                 message -> {
@@ -84,21 +84,21 @@ class ConsumerTest {
                 new NoOpMessageConsumerTelemetry()
         );
 
-        processor.poolAndProcess();
+        consumer.poolAndProcess();
 
-        assertThat(queryService.retries).hasSize(1);
-        assertThat(queryService.retries.getFirst().retryDuration()).isEqualTo(Duration.ofSeconds(15));
-        assertThat(queryService.retries.getFirst().exception()).isSameAs(expectedException);
-        assertThat(queryService.failures).isEmpty();
-        assertThat(queryService.completions).isEmpty();
+        assertThat(queryService.getRetries()).hasSize(1);
+        assertThat(queryService.getRetries().getFirst().retryDuration()).isEqualTo(Duration.ofSeconds(15));
+        assertThat(queryService.getRetries().getFirst().exception()).isSameAs(expectedException);
+        assertThat(queryService.getFailures()).isEmpty();
+        assertThat(queryService.getCompletions()).isEmpty();
     }
 
     @Test
     void poolAndProcessFailsMessageWhenRetryPolicyStopsRetrying() {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
-        var container = messageContainer("payload", 3, Instant.parse("2026-04-02T10:15:30Z"));
-        queryService.selectedMessages = List.of(container);
+        var container = CoreTestSupport.messageContainer("payload", 3, Instant.parse("2026-04-02T10:15:30Z"));
+        queryService.setSelectedMessages(List.of(container));
         var expectedException = new IllegalStateException("fail");
         var messageConsumerTelemetry = new CoreTestSupport.RecordingMessageConsumerTelemetry();
         var processor = processor(
@@ -116,10 +116,10 @@ class ConsumerTest {
 
         processor.poolAndProcess();
 
-        assertThat(queryService.failures).hasSize(1);
-        assertThat(queryService.failures.getFirst().exception()).isSameAs(expectedException);
-        assertThat(queryService.retries).isEmpty();
-        assertThat(queryService.completions).isEmpty();
+        assertThat(queryService.getFailures()).hasSize(1);
+        assertThat(queryService.getFailures().getFirst().exception()).isSameAs(expectedException);
+        assertThat(queryService.getRetries()).isEmpty();
+        assertThat(queryService.getCompletions()).isEmpty();
         assertThat(messageConsumerTelemetry.recordedException()).isSameAs(expectedException);
         assertThat(messageConsumerTelemetry.isScopeClosed()).isTrue();
     }
@@ -128,10 +128,10 @@ class ConsumerTest {
     void poolAndProcessFailsMessageWhenExceptionIsNonRetryable() {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
-        var container = messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
-        queryService.selectedMessages = List.of(container);
+        var container = CoreTestSupport.messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
+        queryService.setSelectedMessages(List.of(container));
         var expectedException = new IllegalArgumentException("non-retryable");
-        var processor = processor(
+        var consumer = processor(
                 queryService,
                 transactionService,
                 message -> {
@@ -144,20 +144,20 @@ class ConsumerTest {
                 new NoOpMessageConsumerTelemetry()
         );
 
-        processor.poolAndProcess();
+        consumer.poolAndProcess();
 
-        assertThat(queryService.failures).hasSize(1);
-        assertThat(queryService.failures.getFirst().exception()).isSameAs(expectedException);
-        assertThat(queryService.retries).isEmpty();
-        assertThat(queryService.completions).isEmpty();
+        assertThat(queryService.getFailures()).hasSize(1);
+        assertThat(queryService.getFailures().getFirst().exception()).isSameAs(expectedException);
+        assertThat(queryService.getRetries()).isEmpty();
+        assertThat(queryService.getCompletions()).isEmpty();
     }
 
     @Test
     void poolAndProcessLeavesMessagePendingWhenExceptionIsBlocking() {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
-        var container = messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
-        queryService.selectedMessages = List.of(container);
+        var container = CoreTestSupport.messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
+        queryService.setSelectedMessages(List.of(container));
         var processor = processor(
                 queryService,
                 transactionService,
@@ -173,9 +173,9 @@ class ConsumerTest {
 
         processor.poolAndProcess();
 
-        assertThat(queryService.failures).isEmpty();
-        assertThat(queryService.retries).isEmpty();
-        assertThat(queryService.completions).isEmpty();
+        assertThat(queryService.getFailures()).isEmpty();
+        assertThat(queryService.getRetries()).isEmpty();
+        assertThat(queryService.getCompletions()).isEmpty();
     }
 
     private Consumer<String> processor(
@@ -199,7 +199,7 @@ class ConsumerTest {
                 transactionService,
                 messageContextPropagator,
                 messageConsumerTelemetry,
-                new StdMessageFactory(),
+                new SimpleMessageFactory(),
                 ConsumerConfig.Properties.builder().build()
         );
     }

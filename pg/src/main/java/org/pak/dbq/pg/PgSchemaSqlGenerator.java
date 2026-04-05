@@ -2,7 +2,7 @@ package org.pak.dbq.pg;
 
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
-import org.pak.dbq.support.StringFormatter;
+import org.pak.dbq.internal.support.StringFormatter;
 
 import java.util.Map;
 

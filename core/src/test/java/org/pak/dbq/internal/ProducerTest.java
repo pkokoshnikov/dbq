@@ -1,12 +1,12 @@
-package org.pak.qdb.internal;
+package org.pak.dbq.internal;
 
 import org.junit.jupiter.api.Test;
-import org.pak.qdb.api.Producer;
-import org.pak.qdb.api.ProducerConfig;
-import org.pak.qdb.support.StdMessageFactory;
+import org.pak.dbq.api.Producer;
+import org.pak.dbq.api.ProducerConfig;
+import org.pak.dbq.internal.support.SimpleMessageFactory;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.qdb.internal.CoreTestSupport.QUEUE_NAME;
+import static org.pak.dbq.internal.CoreTestSupport.QUEUE_NAME;
 
 class ProducerTest {
     @Test
@@ -22,13 +22,13 @@ class ProducerTest {
                         .messageContextPropagator(messageContextPropagator)
                         .build(),
                 queryService,
-                new StdMessageFactory()
+                new SimpleMessageFactory()
         );
 
         producer.send("payload");
 
-        assertThat(queryService.inserts).hasSize(1);
-        var insert = queryService.inserts.getFirst();
+        assertThat(queryService.getInserts()).hasSize(1);
+        var insert = queryService.getInserts().getFirst();
         assertThat(insert.queueName()).isEqualTo(QUEUE_NAME);
         assertThat(insert.message().payload()).isEqualTo("payload");
         assertThat(insert.message().key()).isNotBlank();

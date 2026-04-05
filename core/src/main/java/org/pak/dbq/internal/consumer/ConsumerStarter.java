@@ -44,7 +44,7 @@ public class ConsumerStarter<T> {
             fixedThreadPoolExecutor = createExecutor();
             consumers = IntStream.range(0, concurrency).boxed()
                     .map(i -> {
-                        var taskExecutor = new Consumer<>(
+                        var consumer = new Consumer<>(
                                 consumerConfig.getMessageHandler(),
                                 consumerConfig.getQueueName(),
                                 consumerConfig.getSubscriptionId(),
@@ -57,8 +57,8 @@ public class ConsumerStarter<T> {
                                 consumerConfig.getMessageConsumerTelemetry(),
                                 messageFactory,
                                 consumerConfig.getProperties());
-                        fixedThreadPoolExecutor.submit(taskExecutor::poolLoop);
-                        return taskExecutor;
+                        fixedThreadPoolExecutor.submit(consumer::poolLoop);
+                        return consumer;
                     }).toList();
         } else {
             log.warn("Consumer starter should be started only once");

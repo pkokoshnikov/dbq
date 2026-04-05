@@ -5,7 +5,7 @@
         </encoder>
     </appender>
 
-    <logger name="org.pak.qdb" level="DEBUG" />
+    <logger name="org.pak.dbq" level="DEBUG" />
 
     <root level="INFO">
         <appender-ref ref="stdout" />

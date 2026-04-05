@@ -1,9 +1,9 @@
-package org.pak.qdb.internal;
+package org.pak.dbq.internal;
 
 import org.junit.jupiter.api.Test;
-import org.pak.qdb.api.QueueName;
-import org.pak.qdb.api.SubscriptionId;
-import org.pak.qdb.api.policy.SimpleRetryablePolicy;
+import org.pak.dbq.api.QueueName;
+import org.pak.dbq.api.SubscriptionId;
+import org.pak.dbq.api.policy.SimpleRetryablePolicy;
 
 import java.time.Duration;
 

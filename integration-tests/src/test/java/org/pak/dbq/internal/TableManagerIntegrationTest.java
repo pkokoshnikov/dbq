@@ -1,4 +1,4 @@
-package org.pak.qdb.internal;
+package org.pak.dbq.internal;
 
 
 import lombok.extern.slf4j.Slf4j;
@@ -6,7 +6,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.pak.qdb.pg.PgTableManager;
+import org.pak.dbq.pg.PgTableManager;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;
@@ -15,7 +15,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.pak.qdb.internal.TestMessage.QUEUE_NAME;
+import static org.pak.dbq.internal.TestMessage.QUEUE_NAME;
 
 @Testcontainers
 @Slf4j

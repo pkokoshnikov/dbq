@@ -1,8 +1,8 @@
-package org.pak.qdb.pg;
+package org.pak.dbq.pg;
 
 import org.junit.jupiter.api.Test;
-import org.pak.qdb.spi.PersistenceService;
-import org.pak.qdb.pg.jsonb.JsonbConverter;
+import org.pak.dbq.spi.PersistenceService;
+import org.pak.dbq.pg.jsonb.JsonbConverter;
 
 import java.sql.ResultSet;
 import java.time.Instant;
