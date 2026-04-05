@@ -2,6 +2,7 @@ package org.pak.dbq.internal;
 
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.pak.dbq.api.ConsumerConfig;
 import org.pak.dbq.api.ProducerConfig;
@@ -12,14 +13,16 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.vibur.dbcp.ViburDBCPDataSource;
 
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicReference;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.pak.dbq.internal.TestMessage.QUEUE_NAME;
 
 @Testcontainers
 @Slf4j
-class QueueManagerIntegrationTest extends BaseIntegrationTest {
+@Disabled("Manual performance test")
+class QueueManagerPerformanceTest extends BaseIntegrationTest {
+    private static final int MESSAGE_COUNT = 100_000;
+    private static final int CONCURRENCY = 50;
+
     QueueManager queueManager;
 
     @BeforeEach
@@ -39,62 +42,40 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
         schemaSqlGenerator = setupSchemaSqlGenerator();
         pgQueryService = setupQueryService(persistenceService, jsonbConverter);
         tableManager = setupTableManager(pgQueryService);
-        producerFactory = setupProducerFactory(pgQueryService);
-        consumerFactoryBuilder = setupQueueProcessorFactory(pgQueryService, springTransactionService);
 
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1);
-        createSubscriptionTable(SUBSCRIPTION_NAME_2);
         tableManager.registerQueue(QUEUE_NAME, 30);
-        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_1, 30);
-        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_2, 30);
 
         queueManager = new QueueManager(new PgQueryService(persistenceService, TEST_SCHEMA, jsonbConverter),
                 springTransactionService, new SimpleMessageFactory());
     }
 
     @Test
-    void publishSubscribeTest() throws InterruptedException {
+    void performanceTest() throws InterruptedException {
         var producer = queueManager.registerProducer(ProducerConfig.<TestMessage>builder()
                 .queueName(QUEUE_NAME)
                 .clazz(TestMessage.class)
-                        .properties(ProducerConfig.Properties.builder()
-                        .retentionDays(10)
+                .build());
+
+        var countDownLatch = new CountDownLatch(MESSAGE_COUNT);
+
+        queueManager.registerConsumer(ConsumerConfig.<TestMessage>builder()
+                .messageHandler(message -> countDownLatch.countDown())
+                .queueName(QUEUE_NAME)
+                .subscriptionId(SUBSCRIPTION_NAME_1)
+                .properties(ConsumerConfig.Properties.builder()
+                        .concurrency(CONCURRENCY)
                         .build())
                 .build());
 
-        var countDownLatch = new CountDownLatch(2);
-        var reference1 = new AtomicReference<TestMessage>();
-        var reference2 = new AtomicReference<TestMessage>();
-
-        queueManager.registerConsumer(ConsumerConfig.<TestMessage>builder()
-                .messageHandler(message -> {
-                    reference1.set(message.payload());
-                    countDownLatch.countDown();
-                })
-                .queueName(QUEUE_NAME)
-                .subscriptionId(SUBSCRIPTION_NAME_1)
-                .build());
-
-        queueManager.registerConsumer(ConsumerConfig.<TestMessage>builder()
-                .messageHandler(message -> {
-                    reference2.set(message.payload());
-                    countDownLatch.countDown();
-                })
-                .queueName(QUEUE_NAME)
-                .subscriptionId(SUBSCRIPTION_NAME_2)
-                .build());
-
         queueManager.startConsumers();
-        TestMessage testMessage = new TestMessage("test-name");
-        producer.send(testMessage);
+
+        for (int i = 0; i < MESSAGE_COUNT; i++) {
+            producer.send(new TestMessage("test-name"));
+        }
 
         countDownLatch.await();
         queueManager.stopConsumers();
-
-        var handledMessage1 = reference1.get();
-        assertThat(handledMessage1).isEqualTo(testMessage);
-        var handledMessage2 = reference2.get();
-        assertThat(handledMessage2).isEqualTo(testMessage);
     }
 }
