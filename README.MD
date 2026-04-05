@@ -121,15 +121,20 @@ Programmatic generation:
 PgSchemaSqlGenerator sqlGenerator = new PgSchemaSqlGenerator(new SchemaName("public"));
 
 String queueSql = sqlGenerator.createQueueTable(queueName);
-String subscriptionSql = sqlGenerator.createSubscriptionTable(queueName, subscriptionId);
+String subscriptionSql = sqlGenerator.createSubscriptionTable(queueName, subscriptionId, true);
 ```
+
+The third argument controls history support for that subscription:
+
+- `true` - create the history table and keep processed / failed records
+- `false` - create only the live subscription table; completed and failed messages are deleted from it
 
 CLI generation:
 
 ```bash
-java -cp pg/target/pg-0.0.1.jar org.pak.messagebus.pg.cli.PgSchemaCli queue public orders
-java -cp pg/target/pg-0.0.1.jar org.pak.messagebus.pg.cli.PgSchemaCli subscription public orders billing
-java -cp pg/target/pg-0.0.1.jar org.pak.messagebus.pg.cli.PgSchemaCli all public orders billing
+java -cp pg/target/pg-0.0.1.jar org.pak.dbq.pg.cli.PgSchemaCli queue public orders
+java -cp pg/target/pg-0.0.1.jar org.pak.dbq.pg.cli.PgSchemaCli subscription public orders billing true
+java -cp pg/target/pg-0.0.1.jar org.pak.dbq.pg.cli.PgSchemaCli all public orders billing true
 ```
 
 ### 4. Register a producer
@@ -145,6 +150,8 @@ Producer<OrderCreated> producer = queueManager.registerProducer(
 );
 ```
 
+If you enable history in runtime, the subscription schema should also be created with history support.
+
 ### 5. Register a consumer
 
 ```java
@@ -159,6 +166,7 @@ queueManager.registerConsumer(
                 .properties(ConsumerConfig.Properties.builder()
                         .concurrency(4)
                         .maxPollRecords(1)
+                        .historyEnabled(true)
                         .build())
                 .build()
 );
@@ -184,7 +192,7 @@ producer.send(new OrderCreated("order-123"));
 If you need your own deduplication key, timestamp, or headers, send a `Message<T>` explicitly:
 
 ```java
-producer.send(new SimpleMessage<>(
+producer.send(new Message<>(
         "order-123",
         Instant.now(),
         new OrderCreated("order-123"),
@@ -199,19 +207,19 @@ Messages are inserted into the queue table. Duplicate suppression is based on th
 That means:
 
 - `producer.send(payload)` always creates a fresh message identity
-- `producer.send(new SimpleMessage<>(...))` lets you control deduplication
+- `producer.send(new Message<>(...))` lets you control deduplication
 
 For outbox usage, call `producer.send(...)` inside the same database transaction as your business state change.
 
 ## Consumption Model
 
-Each consumer subscription polls its own subscription table, locks rows with `FOR UPDATE SKIP LOCKED`, processes messages, and then marks them as:
+Each consumer subscription polls its own subscription table, locks rows with `FOR UPDATE SKIP LOCKED`, processes messages, and then:
 
-- `PROCESSED`
-- retried with a later `execute_after`
-- `FAILED`
+- retries with a later `execute_after`
+- if `historyEnabled=true`, moves completed / failed records to the history table with status `PROCESSED` or `FAILED`
+- if `historyEnabled=false`, deletes completed / failed records from the live subscription table
 
-The message handler runs inside the consumer transaction. In practice this means your business-side database changes and the subscription status update are committed together.
+The message handler runs inside the consumer transaction. In practice this means your business-side database changes and the queue state transition are committed together.
 
 Because delivery is retry-based, handlers should be idempotent.
 
@@ -236,8 +244,8 @@ Defaults:
 
 - `SimpleRetryablePolicy`
   - exponential backoff
-  - capped at 10 minutes
-  - stops retrying after attempt `10000`
+  - capped at 1 hour
+  - returns `Optional.empty()` only when `attempt == Integer.MAX_VALUE`
 - `SimpleNonRetryablePolicy`
   - nothing is non-retryable by default
 - `SimpleBlockingPolicy`
@@ -286,6 +294,7 @@ queueManager.registerConsumer(
 - `concurrency` - how many consumer threads are started for the subscription
 - `persistenceExceptionPause` - delay after retryable persistence failures
 - `unpredictedExceptionPause` - delay after unexpected consumer loop failures
+- `historyEnabled` - whether completed / failed messages are written to subscription history
 
 Guidance:
 
@@ -349,7 +358,7 @@ PgTableManager pgTableManager = new PgTableManager(
 );
 
 pgTableManager.registerQueue(queueName, 30);
-pgTableManager.registerSubscription(queueName, subscriptionId, 30);
+pgTableManager.registerSubscription(queueName, subscriptionId, 30, true);
 pgTableManager.startCronJobs();
 
 // on shutdown
@@ -360,7 +369,10 @@ This manager:
 
 - creates the current and next day partitions on registration
 - creates future partitions on schedule
-- drops old queue and history partitions when they are older than the configured retention window
+- drops old queue partitions when they are older than the configured retention window
+- drops old history partitions only for subscriptions registered with `historyEnabled=true`
+
+If history is disabled for a subscription, you can skip `registerSubscription(...)` entirely.
 
 Parent tables must already exist before you start the manager.
 
