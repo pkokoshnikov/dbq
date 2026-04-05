@@ -9,7 +9,6 @@ public interface TableManager {
     void registerSubscription(
             QueueName queueName,
             SubscriptionId subscriptionId,
-            int retentionDays,
             boolean historyEnabled
     );
 }

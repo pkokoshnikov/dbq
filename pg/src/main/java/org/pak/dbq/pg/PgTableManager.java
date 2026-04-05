@@ -59,14 +59,18 @@ public class PgTableManager implements TableManager {
     public void registerSubscription(
             QueueName queueName,
             SubscriptionId subscriptionId,
-            int retentionDays,
             boolean historyEnabled
     ) {
         if (!historyEnabled) {
             return;
         }
 
-        validateRetentionDays(retentionDays);
+        var retentionDays = queueRetentionDays.get(queueName);
+        if (retentionDays == null) {
+            throw new IllegalStateException("Queue %s is not registered. Register queue retention first."
+                    .formatted(queueName));
+        }
+
         var now = Instant.now(clock);
         pgQueryService.createHistoryPartition(subscriptionId, now);
         pgQueryService.createHistoryPartition(subscriptionId, now.plus(1, ChronoUnit.DAYS));

@@ -196,7 +196,6 @@ class QueueManagerTest {
                 .containsExactly(new CoreTestSupport.SubscriptionRegistrationCall(
                         QUEUE_NAME,
                         SUBSCRIPTION_ID,
-                        7,
                         true));
     }
 

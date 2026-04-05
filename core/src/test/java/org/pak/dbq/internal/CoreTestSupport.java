@@ -58,7 +58,6 @@ public class CoreTestSupport {
     public record SubscriptionRegistrationCall(
             QueueName queueName,
             SubscriptionId subscriptionId,
-            int retentionDays,
             boolean historyEnabled
     ) {
     }
@@ -192,13 +191,11 @@ public class CoreTestSupport {
         public void registerSubscription(
                 QueueName queueName,
                 SubscriptionId subscriptionId,
-                int retentionDays,
                 boolean historyEnabled
         ) {
             subscriptionRegistrations.add(new SubscriptionRegistrationCall(
                     queueName,
                     subscriptionId,
-                    retentionDays,
                     historyEnabled));
         }
 

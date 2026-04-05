@@ -169,11 +169,9 @@ public class QueueManager {
             return;
         }
 
-        var queueConfig = queueConfigs.get(consumerConfig.getQueueName());
         tableManager.registerSubscription(
                 consumerConfig.getQueueName(),
                 consumerConfig.getSubscriptionId(),
-                queueConfig.getProperties().getRetentionDays(),
                 true);
     }
 

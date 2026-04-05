@@ -13,7 +13,6 @@ public class NoOpTableManager implements TableManager {
     public void registerSubscription(
             QueueName queueName,
             SubscriptionId subscriptionId,
-            int retentionDays,
             boolean historyEnabled
     ) {
     }

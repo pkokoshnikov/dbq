@@ -47,7 +47,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         tableManager.registerQueue(QUEUE_NAME, 30);
-        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_1, 30, true);
+        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_1, true);
     }
 
     @AfterEach
