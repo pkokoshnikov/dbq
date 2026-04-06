@@ -8,7 +8,7 @@ This repository is a multi-module Maven project for DBQ, a database-backed queue
 - `pg/`: PostgreSQL query implementation and JSONB conversion.
 - `spring/`: Spring JDBC and transaction adapters.
 - `integration-tests/`: end-to-end tests with Testcontainers and PostgreSQL.
-- Root files: `pom.xml` (parent build), `README.MD` (usage), `issues.md` (tracked problems).
+- Root files: `pom.xml` (parent build), `README.MD` (usage), `documentation.md` (architecture, schemas, diagrams), `issues.md` (tracked problems).
 
 Java sources live under `src/main/java/org/pak/messagebus/...`. Test resources use `src/test/resources`.
 

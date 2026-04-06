@@ -6,6 +6,9 @@ outbox-style publishing and subscription processing.
 The project is built around a simple idea: store messages in DB, let independent subscriptions process them in their own 
 transactions, and keep the API small enough to embed into an application without bringing a full broker.
 
+Detailed architecture, table model, ER diagram, and producer/consumer interaction diagrams are documented in
+[`documentation.md`](DOCUMENTATION.MD).
+
 ## What It Provides
 
 - transactional message publishing against your application database
