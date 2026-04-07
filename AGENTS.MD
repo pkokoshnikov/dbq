@@ -6,6 +6,7 @@ This repository is a multi-module Maven project for DBQ, a database-backed queue
 
 - `core/`: domain model, DBQ API, retry/blocking policies, Quartz scheduling, and unit tests in `core/src/test/java`.
 - `pg/`: PostgreSQL query implementation and JSONB conversion.
+- `pg-cli/`: standalone CLI for PostgreSQL DDL generation.
 - `spring/`: Spring JDBC and transaction adapters.
 - `integration-tests/`: end-to-end tests with Testcontainers and PostgreSQL.
 - Root files: `pom.xml` (parent build), `README.MD` (usage), `documentation.md` (architecture, schemas, diagrams), `issues.md` (tracked problems).

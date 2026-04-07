@@ -23,6 +23,7 @@ Detailed architecture, table model, ER diagram, and producer/consumer interactio
 - `core` - queue API, producer/consumer runtime, policies, message model
 - `pg` - PostgreSQL `QueryService`, JSONB conversion, DDL generator, partition manager
 - `spring` - Spring JDBC persistence adapter and Spring transaction adapter
+- `pg-cli` - standalone CLI for generating PostgreSQL DDL
 - `otel` - OpenTelemetry propagation and consumer tracing integration
 - `integration-tests` - end-to-end tests with PostgreSQL and Testcontainers
 
@@ -135,9 +136,40 @@ The third argument controls history support for that subscription:
 CLI generation:
 
 ```bash
-java -cp pg/target/pg-0.0.1.jar org.pak.dbq.pg.cli.PgSchemaCli queue public orders
-java -cp pg/target/pg-0.0.1.jar org.pak.dbq.pg.cli.PgSchemaCli subscription public orders billing true
-java -cp pg/target/pg-0.0.1.jar org.pak.dbq.pg.cli.PgSchemaCli all public orders billing true
+mvn -q -pl pg-cli -am -DskipTests package
+
+java -jar pg-cli/target/pg-cli-1.0.0.jar queue --schema public --queue orders
+java -jar pg-cli/target/pg-cli-1.0.0.jar subscription --schema public --queue orders --subscription billing --history-enabled
+java -jar pg-cli/target/pg-cli-1.0.0.jar all --schema public --queue orders --subscription billing --history-enabled
+```
+
+Examples:
+
+```bash
+# queue only
+java -jar pg-cli/target/pg-cli-1.0.0.jar queue \
+  --schema public \
+  --queue orders
+
+# subscription without history
+java -jar pg-cli/target/pg-cli-1.0.0.jar subscription \
+  --schema public \
+  --queue orders \
+  --subscription billing
+
+# subscription with history
+java -jar pg-cli/target/pg-cli-1.0.0.jar subscription \
+  --schema public \
+  --queue orders \
+  --subscription billing \
+  --history-enabled
+
+# queue + subscription SQL into a file
+java -jar pg-cli/target/pg-cli-1.0.0.jar all \
+  --schema public \
+  --queue orders \
+  --subscription billing \
+  --history-enabled > dbq-orders.sql
 ```
 
 ### 4. Initialize the queue

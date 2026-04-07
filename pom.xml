@@ -15,6 +15,7 @@
         <module>otel</module>
         <module>spring</module>
         <module>pg</module>
+        <module>pg-cli</module>
         <module>integration-tests</module>
     </modules>
 
@@ -35,6 +36,7 @@
         <slf4j.version>2.0.17</slf4j.version>
         <quartz.version>2.5.2</quartz.version>
         <opentelemetry.version>1.54.1</opentelemetry.version>
+        <picocli.version>4.7.7</picocli.version>
         <junit.version>6.0.3</junit.version>
         <assertj.version>3.27.7</assertj.version>
         <logback.version>1.5.32</logback.version>
