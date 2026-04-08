@@ -122,7 +122,7 @@ class QueueManagerTest {
                 .clazz(String.class)
                 .build()))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Call initQueue(...) first");
+                .hasMessageContaining("Call registerQueue(...) first");
     }
 
     @Test
@@ -240,7 +240,7 @@ class QueueManagerTest {
                         .build())
                 .build()))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Call initQueue(...) first");
+                .hasMessageContaining("Call registerQueue(...) first");
     }
 
     @Test
