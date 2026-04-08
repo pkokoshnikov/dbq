@@ -208,7 +208,7 @@ public class QueueManager {
 
     private void requireInitializedQueue(QueueName queueName) {
         if (!queueConfigs.containsKey(queueName)) {
-            throw new IllegalStateException("Queue %s is not initialized. Call initQueue(...) first."
+            throw new IllegalStateException("Queue %s is not registered. Call registerQueue(...) first."
                     .formatted(queueName));
         }
     }

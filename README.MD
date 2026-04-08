@@ -172,12 +172,12 @@ java -jar pg-cli/target/pg-cli-1.0.0.jar all \
   --history-enabled > dbq-orders.sql
 ```
 
-### 4. Initialize the queue
+### 4. Register the queue
 
-`QueueManager` requires explicit queue initialization before producer or consumer registration.
+`QueueManager` requires explicit queue registration before producer or consumer registration.
 
 ```java
-queueManager.initQueue(
+queueManager.registerQueue(
         QueueConfig.builder()
                 .queueName(queueName)
                 .build()
@@ -407,7 +407,7 @@ queueManager.registerConsumer(
 
 Behavior:
 
-- call `initQueue(...)` before registering producers and consumers
+- call `registerQueue(...)` before registering producers and consumers
 - producer injects `traceparent` and related headers into the message
 - consumer extracts context from message headers only
 - if no trace headers are present, consumer processing starts a new root span
@@ -428,7 +428,7 @@ PgTableManager pgTableManager = new PgTableManager(
 
 QueueManager queueManager = new QueueManager(queryService, transactionService, pgTableManager);
 
-queueManager.initQueue(
+queueManager.registerQueue(
         QueueConfig.builder()
                 .queueName(queueName)
                 .properties(QueueConfig.Properties.builder()
@@ -456,8 +456,8 @@ pgTableManager.stopCronJobs();
 
 With this setup:
 
-- `initQueue(...)` creates the current and next queue partitions
-- consumer registration with `historyEnabled=true` creates the current and next history partitions if the queue was initialized
+- `registerQueue(...)` creates the current and next queue partitions
+- consumer registration with `historyEnabled=true` creates the current and next history partitions if the queue was registered
 - creates future partitions on schedule
 - drops old queue partitions when they are older than the configured retention window
 - drops old history partitions only for subscriptions registered with `historyEnabled=true`

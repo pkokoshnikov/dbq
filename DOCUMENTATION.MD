@@ -100,6 +100,19 @@ Relevant settings:
 
 `autoDdl` is an infrastructure/runtime property of `QueueManager`. It controls whether `QueueManager` asks `TableManager` to auto-create queue and subscription tables.
 
+Registration:
+
+```java
+queueManager.registerQueue(
+        QueueConfig.builder()
+                .queueName(new QueueName("orders"))
+                .properties(QueueConfig.Properties.builder()
+                        .retentionDays(30)
+                        .build())
+                .build()
+);
+```
+
 ### Producer API
 
 Producer registration:
@@ -633,4 +646,3 @@ Need:
 - `historyEnabled` is a subscription-level runtime feature and must match the created schema.
 - If history is disabled, terminal results are not stored anywhere after deletion from the live subscription table.
 - If auto DDL is disabled, parent tables must exist before registration and work must still rely on `PgQueryService` self-healing partition creation for daily partitions.
-
