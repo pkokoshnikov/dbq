@@ -57,16 +57,21 @@
 - не хранит scheduler state
 - не участвует в выборе readiness
 - используется только как носитель row-level lock для `key`
+- имеет минимальную схему: один `primary key (key)` без дополнительных колонок
+
+`key` при этом хранится прямо в `subscription`, чтобы polling и cleanup не зависели от join в `queue` только ради получения ключа.
 
 Readiness по-прежнему определяется по `subscription.execute_after`.
 
 ### Базовая идея
 
-1. Для каждого `key`, который есть в pending сообщениях subscription, существует row в `key_lock` table.
-2. При вставке нового сообщения делается `upsert` в `key_lock`.
-3. Во время polling запрос делает `join` с `key_lock` и использует `FOR UPDATE SKIP LOCKED`.
-4. Если другой consumer уже держит lock на этом `key`, сообщения этого `key` просто пропускаются.
-5. После `complete/fail` row из `key_lock` удаляется, если в subscription больше не осталось сообщений с таким `key`.
+1. `subscription` хранит собственную колонку `key`.
+2. Для каждого `key`, который есть в pending сообщениях subscription, существует row в `key_lock` table.
+3. При вставке нового сообщения делается `upsert` в `key_lock`.
+4. При вставке в `subscription` туда же записывается `key`.
+5. Во время polling запрос делает `join` с `key_lock` и использует `FOR UPDATE SKIP LOCKED`.
+6. Если другой consumer уже держит lock на этом `key`, сообщения этого `key` просто пропускаются.
+7. После `complete/fail` row из `key_lock` удаляется, если в subscription больше не осталось сообщений с таким `key`.
 
 ### Пример polling flow
 
@@ -75,7 +80,7 @@ SELECT ...
 FROM subscription s
 JOIN queue q ON q.id = s.message_id
     AND q.originated_at = s.originated_at
-JOIN subscription_key_lock k ON k.key = q.key
+JOIN subscription_key_lock k ON k.key = s.key
 WHERE s.execute_after < CURRENT_TIMESTAMP
 ORDER BY s.execute_after, s.id
 LIMIT :maxPollRecords
@@ -85,7 +90,8 @@ FOR UPDATE OF k, s SKIP LOCKED
 Смысл этого запроса:
 
 - `subscription` определяет, какие сообщения ready
-- `queue` даёт payload и `key`
+- `queue` даёт payload
+- `subscription` даёт `key`
 - `key_lock` не даёт двум consumer-ам одновременно взять один и тот же `key`
 
 ### Что важно в этом варианте
@@ -122,17 +128,24 @@ FOR UPDATE OF k, s SKIP LOCKED
 
 Идея cleanup:
 
+- cleanup на `complete/fail` пока считается базовым вариантом
 - `delete from key_lock where key = ? and not exists (...)`
-- проверка делается по live subscription rows
+- проверка делается только по live subscription rows и не требует join в `queue`
 - retention cleanup должен быть совместим с этой логикой и не оставлять orphan lock rows
+
+### Индексы
+
+Базовые предположения по индексам сейчас такие:
+
+- отдельный индекс на `key_lock.key` не нужен, если `key` уже является `primary key`
+- дополнительные индексы нужно подбирать на `subscription` / `queue` join path уже с учётом `subscription.key`
 
 ### Открытые вопросы
 
-- какую именно схему дать `key_lock` table кроме самого `key`
-- нужен ли `updated_at` или достаточно только primary key
-- как лучше реализовать cleanup при `complete/fail`, чтобы не делать лишние expensive checks
-- как должен вести себя `Consumer`, если в одном batch уже выбраны несколько сообщений одного `key`
-- нужны ли отдельные индексы, чтобы join с `key_lock` не ухудшил polling path
+- нужен ли cleanup на каждом `complete/fail` всегда, или позже захочется добавить более ленивую стратегию
+- для batch handling, скорее всего, понадобится отдельный grouping layer над текущим `Consumer`, который будет группировать выбранные
+  сообщения по `key` и применять специальные правила обработки внутри группы
+- какие именно дополнительные индексы нужны на `subscription` / `queue` join path, теперь уже с учётом `subscription.key`
  
 
 ## Priority queue
