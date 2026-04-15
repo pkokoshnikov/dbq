@@ -2,11 +2,11 @@
 
 ## Logical Partitions
 
-Нужно добавить в DBQ механизм логических партиций, похожий по смыслу на Kafka partitions, но встроенный в текущую модель DBQ.
+Нужно добавить в DBQ механизм последовательной обработки сообщений по `key`, встроенный в текущую модель DBQ.
 
 Фича должна дать:
 
-- обработку одной партиции не более чем в одном потоке во всём кластере
+- обработку одного `key` не более чем в одном потоке во всём кластере
 - синхронизацию между несколькими pod-ами через PostgreSQL
 
 При этом фича должна как можно меньше ломать текущую архитектуру:
@@ -17,122 +17,122 @@
 
 ### Альтернативные решения
 
-#### `lock by key`
+#### `lock by key` через advisory lock
 
-Идея: использовать `pg_try_advisory_xact_lock(subscription, hash(key))` и синхронизировать обработку только на уровне `key`.
+Идея: использовать `pg_try_advisory_xact_lock(subscription, hash(key))`.
 
-Простой `pg_try_advisory_xact_lock(subscription, hash(key))` хорошо решает только кейс "одно сообщение с данным key не должно
-обрабатываться параллельно".
+Почему не выбрали:
 
-Но этого недостаточно для более сильной семантики:
+- lock берётся на этапе обработки, а не на этапе упорядоченного `select`
+- неудобно вычитывать batch сообщений одного `key`
+- модель плохо описывает ordered stream processing, где `key` должен быть единицей scheduling
 
-- для одного `key` нужно обрабатывать не одно сообщение, а поток сообщений
-- сообщения одного `key` должны идти строго по порядку
-- желательно забирать несколько сообщений одного потока за один poll
+#### `logical partitions`
 
-Проблема в том, что порядок нужно обеспечивать уже на этапе `select`, а не только на этапе `handle`.
-Если просто брать lock от `key` на отдельном сообщении, то мы не получаем удобной модели ordered batch processing.
+Идея: у queue фиксированное число partitions, сообщение маршрутизируется по `hash(key) % maxPartitions`, polling идёт по partition.
 
-Итог: `lock by key` недостаточен как основная модель для DBQ, если нужна именно ordered processing semantics внутри потока сообщений.
+Плюсы:
 
-#### Линейный polling по всем partitions
+- bounded concurrency
+- простая кластерная координация через advisory lock
+- хорошая аналогия с Kafka partitions
 
-Идея: после введения `logical_partition` consumer на каждом poll просто обходит `partition = 0..N-1` и пытается найти первую
-partition с ready messages.
+Почему не выбрали:
 
-Если реализовать polling как "consumer идёт по `partition = 0..N-1` и проверяет, есть ли там ready messages", появляется
-ещё одна серьёзная проблема, помимо самого lock mechanism.
-
-Проблемы такого подхода:
-
-- polling становится `O(number_of_partitions)` даже если ready messages мало
-- при большом `maxPartitions` consumer тратит время на пустые partitions
-- возникает bias в пользу "ранних" partition numbers, если всегда начинать обход с нуля
-- hot partition может слишком часто выбираться первой
-- при cluster concurrency несколько consumer-ов будут зря биться в один и тот же prefix partition numbers
-
-То есть logical partitions нельзя эффективно poll-ить как фиксированный массив, который consumer каждый раз линейно сканирует.
-
-Итог: линейный перебор partition ids слишком дорогой и создаёт проблемы fairness/latency.
+- порядок гарантируется только внутри partition, а не точно по `key`
+- нужен отдельный routing layer с `maxPartitions`
+- polling получается сложнее: нужно искать candidate partitions, а не просто ready messages
+- это более тяжёлое изменение модели DBQ, чем требуется для задачи per-key serialization
 
 ### Вывод
 
-Для DBQ нужен не `lock by key`, а routing сообщений в фиксированное число логических партиций.
+Сейчас предпочтительный вариант для DBQ: не `logical partitions`, а `key_lock` table для сериализации обработки по `key`.
 
-То есть:
+### Предпочтительный дизайн
 
-- у queue есть `maxPartitions`
-- для каждого сообщения вычисляется `logicalPartition = hash(key) % maxPartitions`
-- polling работает не "по key", а "по partition"
+Нужна дополнительная таблица блокировок на уровне subscription, например `<subscription>_key_lock`.
 
-Это даёт:
+Эта таблица:
 
-- гарантированную последовательную обработку сообщений внутри одной partition
-- возможность вычитывать batch сообщений одной partition в порядке
-- контролируемую cluster-wide concurrency
+- не хранит scheduler state
+- не участвует в выборе readiness
+- используется только как носитель row-level lock для `key`
 
-### Упрощённая идея реализации
+Readiness по-прежнему определяется по `subscription.execute_after`.
 
-Полный coordinator с membership table, heartbeat, rebalance и отдельной таблицей ownership выглядит слишком тяжёлым для DBQ.
+### Базовая идея
 
-Более практичный вариант:
+1. Для каждого `key`, который есть в pending сообщениях subscription, существует row в `key_lock` table.
+2. При вставке нового сообщения делается `upsert` в `key_lock`.
+3. Во время polling запрос делает `join` с `key_lock` и использует `FOR UPDATE SKIP LOCKED`.
+4. Если другой consumer уже держит lock на этом `key`, сообщения этого `key` просто пропускаются.
+5. После `complete/fail` row из `key_lock` удаляется, если в subscription больше не осталось сообщений с таким `key`.
 
-1. У queue задаётся фиксированное число logical partitions.
-2. При вставке сообщения partition вычисляется из `key` и сохраняется в row.
-3. Consumer при polling выбирает candidate partition, в которой есть ready messages.
-4. Consumer пытается взять `pg_try_advisory_xact_lock(...)` на номер partition внутри текущей транзакции.
-5. Если lock взят, consumer выбирает batch сообщений только из этой partition в нужном порядке.
-6. Consumer обрабатывает batch последовательно в рамках одной poll iteration.
-7. После commit/rollback advisory lock освобождается автоматически, и эту же partition может взять другой consumer.
+### Пример polling flow
+
+```sql
+SELECT ...
+FROM subscription s
+JOIN queue q ON q.id = s.message_id
+    AND q.originated_at = s.originated_at
+JOIN subscription_key_lock k ON k.key = q.key
+WHERE s.execute_after < CURRENT_TIMESTAMP
+ORDER BY s.execute_after, s.id
+LIMIT :maxPollRecords
+FOR UPDATE OF k, s SKIP LOCKED
+```
+
+Смысл этого запроса:
+
+- `subscription` определяет, какие сообщения ready
+- `queue` даёт payload и `key`
+- `key_lock` не даёт двум consumer-ам одновременно взять один и тот же `key`
 
 ### Что важно в этом варианте
 
-- не нужна membership table
-- не нужен heartbeat между consumer-ами
-- не нужен долгоживущий ownership partition
-- coordination живёт ровно столько, сколько живёт транзакция polling/processing
-- архитектура DBQ почти не меняется: queue table остаётся source table, subscription table остаётся polling source
+- не нужен fixed `maxPartitions`
+- сериализация идёт по реальному `key`, а не по coarse-grained partition
+- не нужен отдельный partition scheduler
+- `key_lock` table остаётся простой и используется только для coordination
+- клиент может контролировать длительность удержания lock через `maxPollRecords`
 
-### Следствие для дизайна
+### Ограничения и последствия
 
-Нужен polling не "по всем возможным partition ids", а "по partitions, в которых уже есть ready messages".
+- `key_lock` table сама по себе не ускоряет polling, а только даёт per-key mutual exclusion
+- readiness остаётся на `subscription.execute_after`
+- для длинных обработок безопасный baseline режим это `maxPollRecords = 1`
+- при `maxPollRecords > 1` клиент осознанно обменивает более долгие lock-и на throughput
 
-Из этого следует важное практическое решение:
+### Batch handling
 
-- `logical_partition` лучше хранить не только в queue table, но и в subscription live table
-- polling должен сначала находить небольшой набор candidate partitions из subscription table
-- только после этого consumer должен пытаться брать advisory lock на candidate partition
+Идея неполная без отдельного batch handling rules.
 
-Иначе каждый poll будет требовать либо перебор всех partitions, либо join в queue table уже на этапе поиска candidate partitions.
+Нужно явно зафиксировать:
 
-### Более практичный polling flow
+- допустимо, что один poll возвращает несколько сообщений одного `key`
+- сообщения внутри poll обрабатываются в порядке `execute_after`, затем `id`
+- если первое сообщение этого `key` уходит в `retry` или блокирует обработку, оставшиеся уже выбранные сообщения того же `key`
+  нельзя продолжать обрабатывать как независимые
 
-1. В `subscription` хранится `logical_partition`.
-2. Consumer выбирает не сообщения сразу, а несколько candidate partitions, где есть ready rows.
-3. Candidate partitions упорядочиваются по "самому раннему ready message" в partition.
-4. Consumer пытается взять advisory lock на одну из candidate partitions.
-5. Если lock взят, consumer читает batch только из этой partition в порядке `execute_after`, затем `id`.
+То есть для этого варианта понадобится доработка `Consumer`, а не только SQL/DDL изменения.
 
-Это важно потому, что ordered processing делает partition единицей scheduling. Значит, сначала мы выбираем partition,
-и только потом сообщения внутри неё.
+### Cleanup
 
-### Практический вывод
+`key_lock` row нужно удалять на `complete/fail`, если в subscription больше не осталось сообщений с тем же `key`.
 
-Для `Logical Partitions` polling почти наверняка должен быть двухфазным:
+Идея cleanup:
 
-1. `find candidate ready partitions`
-2. `lock one partition and read ordered batch`
-
-А не однофазным `select messages with lock`, как сейчас.
+- `delete from key_lock where key = ? and not exists (...)`
+- проверка делается по live subscription rows
+- retention cleanup должен быть совместим с этой логикой и не оставлять orphan lock rows
 
 ### Открытые вопросы
 
-- где именно хранить `logical_partition`: по текущему анализу, почти наверняка и в queue table, и в subscription table
-- каким должен быть порядок внутри partition: `execute_after`, затем `id`
-- какой размер batch допустим, чтобы hot partition не монополизировала consumer thread
-- как лучше подобрать количество partitions для конкретной queue
-- сколько candidate partitions нужно брать за один poll, чтобы не упираться в already locked partition
-- нужен ли локальный round-robin / randomization между candidate partitions, чтобы уменьшить contention
+- какую именно схему дать `key_lock` table кроме самого `key`
+- нужен ли `updated_at` или достаточно только primary key
+- как лучше реализовать cleanup при `complete/fail`, чтобы не делать лишние expensive checks
+- как должен вести себя `Consumer`, если в одном batch уже выбраны несколько сообщений одного `key`
+- нужны ли отдельные индексы, чтобы join с `key_lock` не ухудшил polling path
  
 
 ## Priority queue
