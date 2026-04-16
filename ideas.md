@@ -111,16 +111,56 @@ FOR UPDATE OF k, s SKIP LOCKED
 
 ### Batch handling
 
-Идея неполная без отдельного batch handling rules.
+Для удобства пользователя batch handling лучше сделать не как внутренний grouping layer, а как отдельный режим API рядом с обычным
+single-message handler.
 
-Нужно явно зафиксировать:
+Предполагаемый подход:
 
-- допустимо, что один poll возвращает несколько сообщений одного `key`
-- сообщения внутри poll обрабатываются в порядке `execute_after`, затем `id`
-- если первое сообщение этого `key` уходит в `retry` или блокирует обработку, оставшиеся уже выбранные сообщения того же `key`
-  нельзя продолжать обрабатывать как независимые
+- сохранить текущий `MessageHandler<T>` для простого случая
+- добавить отдельный `BatchMessageHandler<T>` для batch processing
+- в batch handler передавать список `MessageRecord<T>` и отдельный acknowledger interface
 
-То есть для этого варианта понадобится доработка `Consumer`, а не только SQL/DDL изменения.
+Идея API:
+
+```java
+public interface BatchMessageHandler<T> {
+    void handle(List<MessageRecord<T>> messages, BatchAcknowledger<T> acknowledger) throws Exception;
+}
+```
+
+Где `BatchAcknowledger<T>` умеет:
+
+- `complete(record)`
+- `retry(record, duration, exception)`
+- `fail(record, exception)`
+
+На текущем этапе batch acknowledger лучше оставить минимальным:
+
+- без `retry(record, exception)`
+- без встроенного вызова `RetryablePolicy`
+- если нужен policy-driven retry, внешний код сначала вызывает `RetryablePolicy.apply(...)`, а потом выбирает между `retry(...)` и `fail(...)`
+
+### Batch contract
+
+Сейчас базовый контракт для batch mode выглядит так:
+
+- пользователь получает всю пачку и сам решает, как её группировать и обрабатывать
+- framework не навязывает grouping policy и не валидирует ordering внутри одной группы
+- framework требует strict mode: каждое сообщение из batch должно получить ровно один outcome
+- если handler завершился, а часть batch осталась без `complete/retry/fail`, это считается ошибкой
+- bulk convenience methods можно добавить позже поверх базового per-message API
+
+### `MessageRecord`
+
+Для batch mode лучше использовать не голый `Message<T>`, а отдельный envelope `MessageRecord<T>`.
+
+Это нужно чтобы:
+
+- у handler был user-facing объект с payload, key, headers и metadata
+- acknowledger работал по стабильной identity конкретного сообщения
+- одинаковые payload/messages не путались между собой
+
+Иными словами, `MessageRecord<T>` нужен как carrier между polling layer и batch acknowledger.
 
 ### Cleanup
 
@@ -143,9 +183,8 @@ FOR UPDATE OF k, s SKIP LOCKED
 ### Открытые вопросы
 
 - нужен ли cleanup на каждом `complete/fail` всегда, или позже захочется добавить более ленивую стратегию
-- для batch handling, скорее всего, понадобится отдельный grouping layer над текущим `Consumer`, который будет группировать выбранные
-  сообщения по `key` и применять специальные правила обработки внутри группы
 - какие именно дополнительные индексы нужны на `subscription` / `queue` join path, теперь уже с учётом `subscription.key`
+- какой именно набор полей должен входить в `MessageRecord<T>`
  
 
 ## Priority queue
