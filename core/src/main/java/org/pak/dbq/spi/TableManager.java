@@ -9,6 +9,7 @@ public interface TableManager {
     void registerSubscription(
             QueueName queueName,
             SubscriptionId subscriptionId,
-            boolean historyEnabled
+            boolean historyEnabled,
+            boolean serializedByKey
     );
 }

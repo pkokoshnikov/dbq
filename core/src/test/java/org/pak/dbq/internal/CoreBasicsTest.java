@@ -1,6 +1,7 @@
 package org.pak.dbq.internal;
 
 import org.junit.jupiter.api.Test;
+import org.pak.dbq.api.BatchMessageHandler;
 import org.pak.dbq.api.ConsumerConfig;
 import org.pak.dbq.api.QueueConfig;
 import org.pak.dbq.api.QueueName;
@@ -65,6 +66,34 @@ class CoreBasicsTest {
                 .build());
 
         assertThat(exception.getMessage()).isEqualTo("persistenceExceptionPause must be >= 0");
+    }
+
+    @Test
+    void consumerConfigRejectsMissingHandlers() {
+        var exception = assertThrows(IllegalArgumentException.class, () -> ConsumerConfig.<String>builder()
+                .queueName(new QueueName("queue"))
+                .subscriptionId(new org.pak.dbq.api.SubscriptionId("subscription"))
+                .build());
+
+        assertThat(exception.getMessage())
+                .isEqualTo("Exactly one of messageHandler or batchMessageHandler must be configured");
+    }
+
+    @Test
+    void consumerConfigRejectsMixedSingleAndBatchHandlers() {
+        BatchMessageHandler<String> batchMessageHandler = (messages, acknowledger) -> {
+        };
+
+        var exception = assertThrows(IllegalArgumentException.class, () -> ConsumerConfig.<String>builder()
+                .queueName(new QueueName("queue"))
+                .subscriptionId(new org.pak.dbq.api.SubscriptionId("subscription"))
+                .messageHandler(message -> {
+                })
+                .batchMessageHandler(batchMessageHandler)
+                .build());
+
+        assertThat(exception.getMessage())
+                .isEqualTo("Exactly one of messageHandler or batchMessageHandler must be configured");
     }
 
     @Test

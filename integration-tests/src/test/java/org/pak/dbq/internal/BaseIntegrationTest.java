@@ -50,9 +50,11 @@ public class BaseIntegrationTest {
     protected static final SubscriptionId SUBSCRIPTION_NAME_1 = new SubscriptionId("test-subscription-one");
     protected static final String SUBSCRIPTION_TABLE_1 = SUBSCRIPTION_NAME_1.id().replace("-", "_");
     protected static final String SUBSCRIPTION_TABLE_1_HISTORY = SUBSCRIPTION_NAME_1.id().replace("-", "_") + "_history";
+    protected static final String SUBSCRIPTION_TABLE_1_KEY_LOCK = SUBSCRIPTION_NAME_1.id().replace("-", "_") + "_key_lock";
     protected static final SubscriptionId SUBSCRIPTION_NAME_2 = new SubscriptionId("test-subscription-two");
     protected static final String SUBSCRIPTION_TABLE_2 = SUBSCRIPTION_NAME_2.id().replace("-", "_");
     protected static final String SUBSCRIPTION_TABLE_2_HISTORY = SUBSCRIPTION_NAME_2.id().replace("-", "_") + "_history";
+    protected static final String SUBSCRIPTION_TABLE_2_KEY_LOCK = SUBSCRIPTION_NAME_2.id().replace("-", "_") + "_key_lock";
     protected static final SchemaName TEST_SCHEMA = new SchemaName("public");
     protected static final String TEST_VALUE = "test-value";
     protected static final String TEST_EXCEPTION_MESSAGE = "test-exception-payload";
@@ -164,11 +166,19 @@ public class BaseIntegrationTest {
     }
 
     protected void createSubscriptionTable(SubscriptionId subscriptionId) {
-        createSubscriptionTable(subscriptionId, false);
+        createSubscriptionTable(subscriptionId, false, false);
     }
 
     protected void createSubscriptionTable(SubscriptionId subscriptionId, boolean historyEnabled) {
-        pgQueryService.createSubscriptionTable(QUEUE_NAME, subscriptionId, historyEnabled);
+        createSubscriptionTable(subscriptionId, historyEnabled, false);
+    }
+
+    protected void createSubscriptionTable(
+            SubscriptionId subscriptionId,
+            boolean historyEnabled,
+            boolean serializedByKey
+    ) {
+        pgQueryService.createSubscriptionTable(QUEUE_NAME, subscriptionId, historyEnabled, serializedByKey);
     }
 
     protected void clearTables() {
@@ -180,6 +190,10 @@ public class BaseIntegrationTest {
                 Map.of("schema", TEST_SCHEMA.value(),
                         "subscriptionTable", SUBSCRIPTION_TABLE_1)));
 
+        jdbcTemplate.update(formatter.execute("DROP TABLE IF EXISTS ${schema}.${keyLockTable}",
+                Map.of("schema", TEST_SCHEMA.value(),
+                        "keyLockTable", SUBSCRIPTION_TABLE_1_KEY_LOCK)));
+
         jdbcTemplate.update(formatter.execute("DROP TABLE IF EXISTS ${schema}.${subscriptionTable}",
                 Map.of("schema", TEST_SCHEMA.value(),
                         "subscriptionTable", SUBSCRIPTION_TABLE_2)));
@@ -187,6 +201,10 @@ public class BaseIntegrationTest {
         jdbcTemplate.update(formatter.execute("DROP TABLE IF EXISTS ${schema}.${subscriptionTable}_history",
                 Map.of("schema", TEST_SCHEMA.value(),
                         "subscriptionTable", SUBSCRIPTION_TABLE_2)));
+
+        jdbcTemplate.update(formatter.execute("DROP TABLE IF EXISTS ${schema}.${keyLockTable}",
+                Map.of("schema", TEST_SCHEMA.value(),
+                        "keyLockTable", SUBSCRIPTION_TABLE_2_KEY_LOCK)));
 
         jdbcTemplate.update(formatter.execute("DROP TABLE IF EXISTS ${schema}.${queueTable}",
                 Map.of("schema", TEST_SCHEMA.value(),

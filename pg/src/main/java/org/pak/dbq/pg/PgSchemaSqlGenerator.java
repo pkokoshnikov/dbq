@@ -18,6 +18,21 @@ public class PgSchemaSqlGenerator {
     }
 
     public String createSubscriptionTable(QueueName queueName, SubscriptionId subscriptionId, boolean historyEnabled) {
-        return PgQueryService.createSubscriptionTableSql(schemaName, queueName, subscriptionId, historyEnabled);
+        return createSubscriptionTable(queueName, subscriptionId, historyEnabled, false);
+    }
+
+    public String createSubscriptionTable(
+            QueueName queueName,
+            SubscriptionId subscriptionId,
+            boolean historyEnabled,
+            boolean serializedByKey
+    ) {
+        return PgQueryService.createSubscriptionTableSql(
+                schemaName,
+                queueName,
+                subscriptionId,
+                historyEnabled,
+                serializedByKey
+        );
     }
 }

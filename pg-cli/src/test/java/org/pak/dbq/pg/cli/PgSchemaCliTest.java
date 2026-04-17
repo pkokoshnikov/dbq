@@ -46,6 +46,69 @@ class PgSchemaCliTest {
     }
 
     @Test
+    void subscriptionCommandDoesNotRenderKeyLockByDefault() {
+        var out = new StringWriter();
+        var err = new StringWriter();
+        var commandLine = new CommandLine(new PgSchemaCli())
+                .setOut(new PrintWriter(out))
+                .setErr(new PrintWriter(err));
+
+        var exitCode = commandLine.execute(
+                "subscription",
+                "--schema", "public",
+                "--queue", "orders",
+                "--subscription", "billing"
+        );
+
+        assertThat(exitCode).isZero();
+        assertThat(out.toString()).doesNotContain("billing_key_lock");
+        assertThat(err.toString()).isEmpty();
+    }
+
+    @Test
+    void subscriptionCommandSupportsSerializedByKeyFlag() {
+        var out = new StringWriter();
+        var err = new StringWriter();
+        var commandLine = new CommandLine(new PgSchemaCli())
+                .setOut(new PrintWriter(out))
+                .setErr(new PrintWriter(err));
+
+        var exitCode = commandLine.execute(
+                "subscription",
+                "--schema", "public",
+                "--queue", "orders",
+                "--subscription", "billing",
+                "--serialized-by-key"
+        );
+
+        assertThat(exitCode).isZero();
+        assertThat(out.toString()).contains("billing_key_lock");
+        assertThat(err.toString()).isEmpty();
+    }
+
+    @Test
+    void allCommandSupportsSerializedByKeyFlag() {
+        var out = new StringWriter();
+        var err = new StringWriter();
+        var commandLine = new CommandLine(new PgSchemaCli())
+                .setOut(new PrintWriter(out))
+                .setErr(new PrintWriter(err));
+
+        var exitCode = commandLine.execute(
+                "all",
+                "--schema", "public",
+                "--queue", "orders",
+                "--subscription", "billing",
+                "--serialized-by-key"
+        );
+
+        assertThat(exitCode).isZero();
+        assertThat(out.toString()).contains("CREATE TABLE IF NOT EXISTS public.orders");
+        assertThat(out.toString()).contains("billing_key_lock");
+        assertThat(err.toString()).isEmpty();
+    }
+
+    @Test
     void showsUsageForMissingRequiredOptions() {
         var out = new StringWriter();
         var err = new StringWriter();

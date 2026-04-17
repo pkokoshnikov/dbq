@@ -23,7 +23,7 @@ public class ConsumerStarter<T> {
     private final int concurrency;
     private final MessageFactory messageFactory;
     private ExecutorService fixedThreadPoolExecutor;
-    private List<Consumer<T>> consumers = List.of();
+    private List<AbstractConsumer<T>> consumers = List.of();
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
     public ConsumerStarter(
@@ -44,7 +44,18 @@ public class ConsumerStarter<T> {
             fixedThreadPoolExecutor = createExecutor();
             consumers = IntStream.range(0, concurrency).boxed()
                     .map(i -> {
-                        var consumer = new Consumer<>(
+                        AbstractConsumer<T> consumer = consumerConfig.getBatchMessageHandler() != null
+                                ? new BatchConsumer<>(
+                                consumerConfig.getBatchMessageHandler(),
+                                consumerConfig.getQueueName(),
+                                consumerConfig.getSubscriptionId(),
+                                queryService,
+                                transactionService,
+                                consumerConfig.getMessageContextPropagator(),
+                                consumerConfig.getMessageConsumerTelemetry(),
+                                messageFactory,
+                                consumerConfig.getProperties())
+                                : new Consumer<>(
                                 consumerConfig.getMessageHandler(),
                                 consumerConfig.getQueueName(),
                                 consumerConfig.getSubscriptionId(),
@@ -67,7 +78,7 @@ public class ConsumerStarter<T> {
 
     public void stop() {
         if (isRunning.compareAndSet(true, false)) {
-            consumers.forEach(Consumer::stop);
+            consumers.forEach(AbstractConsumer::stop);
 
             fixedThreadPoolExecutor.shutdown();
             try {

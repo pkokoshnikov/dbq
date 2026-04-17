@@ -7,9 +7,12 @@ import org.pak.dbq.api.Message;
 import org.pak.dbq.api.policy.BlockingPolicy;
 import org.pak.dbq.api.policy.NonRetryablePolicy;
 import org.pak.dbq.api.policy.RetryablePolicy;
+import org.pak.dbq.error.MessageSerializationException;
 import org.pak.dbq.internal.CoreTestSupport;
 import org.pak.dbq.spi.MessageConsumerTelemetry;
 import org.pak.dbq.spi.MessageContextPropagator;
+import org.pak.dbq.spi.error.NonRetrayablePersistenceException;
+import org.pak.dbq.spi.error.RetryablePersistenceException;
 import org.pak.dbq.internal.support.NoOpMessageConsumerTelemetry;
 import org.pak.dbq.internal.support.NoOpMessageContextPropagator;
 import org.pak.dbq.internal.support.SimpleMessageFactory;
@@ -21,6 +24,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.pak.dbq.internal.CoreTestSupport.QUEUE_NAME;
 import static org.pak.dbq.internal.CoreTestSupport.SUBSCRIPTION_NAME;
 import static org.pak.dbq.internal.CoreTestSupport.messageContainer;
@@ -206,6 +210,140 @@ class ConsumerTest {
         assertThat(queryService.getCompletions().getFirst().historyEnabled()).isTrue();
     }
 
+    @Test
+    void poolAndProcessPassesSerializedByKeyFlagToQueryService() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var transactionService = new CoreTestSupport.DirectTransactionService();
+        var consumer = processor(
+                queryService,
+                transactionService,
+                message -> {
+                },
+                blockingPolicy(false, Duration.ZERO),
+                (exception, attempt) -> java.util.Optional.of(Duration.ofSeconds(5)),
+                exception -> false,
+                new NoOpMessageContextPropagator(),
+                new NoOpMessageConsumerTelemetry(),
+                false,
+                true
+        );
+
+        var pooled = consumer.poolAndProcess();
+
+        assertThat(pooled).isFalse();
+        assertThat(queryService.isLastSerializedByKey()).isTrue();
+    }
+
+    @Test
+    void poolAndProcessRethrowsMessageSerializationExceptionFromHandler() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var transactionService = new CoreTestSupport.DirectTransactionService();
+        var container = messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
+        queryService.setSelectedMessages(List.of(container));
+        var exception = new MessageSerializationException(new IllegalStateException("boom"));
+        var messageConsumerTelemetry = new CoreTestSupport.RecordingMessageConsumerTelemetry();
+        var consumer = processor(
+                queryService,
+                transactionService,
+                message -> {
+                    throw exception;
+                },
+                blockingPolicy(false, Duration.ZERO),
+                (handlerException, attempt) -> java.util.Optional.of(Duration.ofSeconds(5)),
+                handlerException -> false,
+                new NoOpMessageContextPropagator(),
+                messageConsumerTelemetry
+        );
+
+        assertThatThrownBy(consumer::poolAndProcess).isSameAs(exception);
+        assertThat(messageConsumerTelemetry.recordedException()).isNull();
+        assertThat(queryService.getFailures()).isEmpty();
+        assertThat(queryService.getRetries()).isEmpty();
+        assertThat(queryService.getCompletions()).isEmpty();
+    }
+
+    @Test
+    void poolAndProcessRethrowsNonRetryablePersistenceExceptionFromHandler() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var transactionService = new CoreTestSupport.DirectTransactionService();
+        var container = messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
+        queryService.setSelectedMessages(List.of(container));
+        var exception = new NonRetrayablePersistenceException(new RuntimeException("boom"), null);
+        var messageConsumerTelemetry = new CoreTestSupport.RecordingMessageConsumerTelemetry();
+        var consumer = processor(
+                queryService,
+                transactionService,
+                message -> {
+                    throw exception;
+                },
+                blockingPolicy(false, Duration.ZERO),
+                (handlerException, attempt) -> java.util.Optional.of(Duration.ofSeconds(5)),
+                handlerException -> false,
+                new NoOpMessageContextPropagator(),
+                messageConsumerTelemetry
+        );
+
+        assertThatThrownBy(consumer::poolAndProcess).isSameAs(exception);
+        assertThat(messageConsumerTelemetry.recordedException()).isNull();
+        assertThat(queryService.getFailures()).isEmpty();
+        assertThat(queryService.getRetries()).isEmpty();
+        assertThat(queryService.getCompletions()).isEmpty();
+    }
+
+    @Test
+    void poolAndProcessRethrowsRetryablePersistenceExceptionFromHandler() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var transactionService = new CoreTestSupport.DirectTransactionService();
+        var container = messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
+        queryService.setSelectedMessages(List.of(container));
+        var exception = new RetryablePersistenceException(new RuntimeException("boom"), null);
+        var messageConsumerTelemetry = new CoreTestSupport.RecordingMessageConsumerTelemetry();
+        var consumer = processor(
+                queryService,
+                transactionService,
+                message -> {
+                    throw exception;
+                },
+                blockingPolicy(false, Duration.ZERO),
+                (handlerException, attempt) -> java.util.Optional.of(Duration.ofSeconds(5)),
+                handlerException -> false,
+                new NoOpMessageContextPropagator(),
+                messageConsumerTelemetry
+        );
+
+        assertThatThrownBy(consumer::poolAndProcess).isSameAs(exception);
+        assertThat(messageConsumerTelemetry.recordedException()).isNull();
+        assertThat(queryService.getFailures()).isEmpty();
+        assertThat(queryService.getRetries()).isEmpty();
+        assertThat(queryService.getCompletions()).isEmpty();
+    }
+
+    @Test
+    void poolAndProcessRethrowsInterruptedExceptionFromHandler() {
+        var queryService = new CoreTestSupport.RecordingQueryService();
+        var transactionService = new CoreTestSupport.DirectTransactionService();
+        var container = messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
+        queryService.setSelectedMessages(List.of(container));
+        var exception = new InterruptedException("interrupted");
+        var messageConsumerTelemetry = new CoreTestSupport.RecordingMessageConsumerTelemetry();
+        var consumer = processor(
+                queryService,
+                transactionService,
+                message -> sneakyThrow(exception),
+                blockingPolicy(false, Duration.ZERO),
+                (handlerException, attempt) -> java.util.Optional.of(Duration.ofSeconds(5)),
+                handlerException -> false,
+                new NoOpMessageContextPropagator(),
+                messageConsumerTelemetry
+        );
+
+        assertThatThrownBy(consumer::poolAndProcess).isSameAs(exception);
+        assertThat(messageConsumerTelemetry.recordedException()).isNull();
+        assertThat(queryService.getFailures()).isEmpty();
+        assertThat(queryService.getRetries()).isEmpty();
+        assertThat(queryService.getCompletions()).isEmpty();
+    }
+
     private Consumer<String> processor(
             CoreTestSupport.RecordingQueryService queryService,
             CoreTestSupport.DirectTransactionService transactionService,
@@ -231,6 +369,22 @@ class ConsumerTest {
             MessageConsumerTelemetry messageConsumerTelemetry,
             boolean historyEnabled
     ) {
+        return processor(queryService, transactionService, messageHandler, blockingPolicy, retryablePolicy,
+                nonRetryablePolicy, messageContextPropagator, messageConsumerTelemetry, historyEnabled, false);
+    }
+
+    private Consumer<String> processor(
+            CoreTestSupport.RecordingQueryService queryService,
+            CoreTestSupport.DirectTransactionService transactionService,
+            MessageHandler<String> messageHandler,
+            BlockingPolicy blockingPolicy,
+            RetryablePolicy retryablePolicy,
+            NonRetryablePolicy nonRetryablePolicy,
+            MessageContextPropagator messageContextPropagator,
+            MessageConsumerTelemetry messageConsumerTelemetry,
+            boolean historyEnabled,
+            boolean serializedByKey
+    ) {
         return new Consumer<>(
                 messageHandler,
                 QUEUE_NAME,
@@ -245,6 +399,7 @@ class ConsumerTest {
                 new SimpleMessageFactory(),
                 ConsumerConfig.Properties.builder()
                         .historyEnabled(historyEnabled)
+                        .serializedByKey(serializedByKey)
                         .build()
         );
     }
@@ -261,5 +416,10 @@ class ConsumerTest {
                 return pause;
             }
         };
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <E extends Throwable> void sneakyThrow(Throwable throwable) throws E {
+        throw (E) throwable;
     }
 }

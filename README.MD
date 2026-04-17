@@ -214,6 +214,7 @@ queueManager.registerConsumer(
                         .concurrency(4)
                         .maxPollRecords(1)
                         .historyEnabled(true)
+                        .serializedByKey(false)
                         .build())
                 .build()
 );
@@ -228,7 +229,54 @@ queueManager.startConsumers();
 queueManager.stopConsumers();
 ```
 
-### 8. Publish messages
+### 8. Register a batch consumer
+
+Configure exactly one of `messageHandler(...)` or `batchMessageHandler(...)`.
+
+```java
+queueManager.registerConsumer(
+        ConsumerConfig.<OrderCreated>builder()
+                .queueName(queueName)
+                .subscriptionId(subscriptionId)
+                .batchMessageHandler((records, acknowledger) -> {
+                    for (var record : records) {
+                        OrderCreated payload = record.message().payload();
+                        handle(payload);
+                        acknowledger.complete(record);
+                    }
+                })
+                .properties(ConsumerConfig.Properties.builder()
+                        .maxPollRecords(50)
+                        .historyEnabled(true)
+                        .build())
+                .build()
+);
+```
+
+`MessageRecord<T>` contains:
+
+- subscription record `id`
+- original `Message<T>`
+- current `attempt`
+- current `executeAfter`
+
+The batch contract is strict: every record returned to the batch handler must be acknowledged exactly once with
+`complete(...)`, `retry(...)`, or `fail(...)`.
+
+If you need per-key serialization inside one subscription, enable:
+
+```java
+ConsumerConfig.Properties.builder()
+        .serializedByKey(true)
+        .build()
+```
+
+With `serializedByKey=true`, DBQ uses a subscription-level key lock table so messages with the same `key` are not
+polled concurrently by different consumer workers. The default is `false`, so ordinary mode keeps the previous polling
+behavior and does not create key-lock DDL. If you switch an existing subscription to serialized mode, recreate that
+subscription schema first.
+
+### 9. Publish messages
 
 The simplest form generates a random message key and current timestamp:
 

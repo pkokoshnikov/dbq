@@ -58,12 +58,14 @@ public class CoreTestSupport {
     public record SubscriptionRegistrationCall(
             QueueName queueName,
             SubscriptionId subscriptionId,
-            boolean historyEnabled
+            boolean historyEnabled,
+            boolean serializedByKey
     ) {
     }
 
     public static MessageContainer<String> messageContainer(String payload, int attempt, Instant originatedTime) {
-        return messageContainer(payload, Map.of(), attempt, originatedTime);
+        return messageContainer(java.math.BigInteger.ONE, java.math.BigInteger.TWO, "key-1",
+                payload, Map.of(), attempt, originatedTime);
     }
 
     public static MessageContainer<String> messageContainer(
@@ -72,10 +74,23 @@ public class CoreTestSupport {
             int attempt,
             Instant originatedTime
     ) {
+        return messageContainer(java.math.BigInteger.ONE, java.math.BigInteger.TWO, "key-1",
+                payload, headers, attempt, originatedTime);
+    }
+
+    public static MessageContainer<String> messageContainer(
+            java.math.BigInteger id,
+            java.math.BigInteger messageId,
+            String key,
+            String payload,
+            Map<String, String> headers,
+            int attempt,
+            Instant originatedTime
+    ) {
         return new MessageContainer<>(
-                java.math.BigInteger.ONE,
-                java.math.BigInteger.TWO,
-                "key-1",
+                id,
+                messageId,
+                key,
                 attempt,
                 originatedTime,
                 originatedTime,
@@ -191,12 +206,14 @@ public class CoreTestSupport {
         public void registerSubscription(
                 QueueName queueName,
                 SubscriptionId subscriptionId,
-                boolean historyEnabled
+                boolean historyEnabled,
+                boolean serializedByKey
         ) {
             subscriptionRegistrations.add(new SubscriptionRegistrationCall(
                     queueName,
                     subscriptionId,
-                    historyEnabled));
+                    historyEnabled,
+                    serializedByKey));
         }
 
         public List<QueueRegistrationCall> getQueueRegistrations() {
@@ -215,7 +232,11 @@ public class CoreTestSupport {
         private final List<InsertCall<?>> inserts = new ArrayList<>();
         private final List<BatchInsertCall<?>> batchInserts = new ArrayList<>();
         private final Queue<Object> insertMessageResults = new ArrayDeque<>();
+        private final Queue<Object> completeMessageResults = new ArrayDeque<>();
+        private final Queue<Object> retryMessageResults = new ArrayDeque<>();
+        private final Queue<Object> failMessageResults = new ArrayDeque<>();
         private List<? extends MessageContainer<?>> selectedMessages = List.of();
+        private boolean lastSerializedByKey;
 
         public void setSelectedMessages(List<? extends MessageContainer<?>> selectedMessages) {
             this.selectedMessages = List.copyOf(selectedMessages);
@@ -241,8 +262,24 @@ public class CoreTestSupport {
             return batchInserts;
         }
 
+        public boolean isLastSerializedByKey() {
+            return lastSerializedByKey;
+        }
+
         public void enqueueInsertMessageResult(Object result) {
             insertMessageResults.add(result);
+        }
+
+        public void enqueueCompleteMessageResult(Object result) {
+            completeMessageResults.add(result);
+        }
+
+        public void enqueueRetryMessageResult(Object result) {
+            retryMessageResults.add(result);
+        }
+
+        public void enqueueFailMessageResult(Object result) {
+            failMessageResults.add(result);
         }
 
         @SuppressWarnings("unchecked")
@@ -250,8 +287,10 @@ public class CoreTestSupport {
         public <T> List<MessageContainer<T>> selectMessages(
                 QueueName queueName,
                 SubscriptionId subscriptionId,
-                Integer maxPollRecords
+                Integer maxPollRecords,
+                boolean serializedByKey
         ) {
+            lastSerializedByKey = serializedByKey;
             return (List<MessageContainer<T>>) selectedMessages;
         }
 
@@ -262,6 +301,10 @@ public class CoreTestSupport {
                 Duration retryDuration,
                 Exception e
         ) {
+            Object result = retryMessageResults.poll();
+            if (result instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
             retries.add(new RetryCall(subscriptionId, messageContainer, retryDuration, e));
         }
 
@@ -272,6 +315,10 @@ public class CoreTestSupport {
                 Exception e,
                 boolean historyEnabled
         ) {
+            Object result = failMessageResults.poll();
+            if (result instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
             failures.add(new FailureCall(subscriptionId, messageContainer, e, historyEnabled));
         }
 
@@ -281,6 +328,10 @@ public class CoreTestSupport {
                 MessageContainer<T> messageContainer,
                 boolean historyEnabled
         ) {
+            Object result = completeMessageResults.poll();
+            if (result instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
             completions.add(new CompletionCall(subscriptionId, messageContainer, historyEnabled));
         }
 

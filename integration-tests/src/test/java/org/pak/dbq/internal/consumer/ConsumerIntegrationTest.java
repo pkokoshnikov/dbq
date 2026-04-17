@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.pak.dbq.api.ConsumerConfig;
+import org.pak.dbq.api.MessageRecord;
 import org.pak.dbq.internal.BaseIntegrationTest;
 import org.pak.dbq.internal.TestMessage;
 import org.pak.dbq.spi.error.RetryablePersistenceException;
@@ -17,8 +18,10 @@ import org.pak.dbq.api.policy.BlockingPolicy;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -46,7 +49,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         tableManager.registerQueue(QUEUE_NAME, 30, false);
-        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_1, true);
+        tableManager.registerSubscription(QUEUE_NAME, SUBSCRIPTION_NAME_1, true, false);
     }
 
     @AfterEach
@@ -96,6 +99,82 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
 
         assertThat(testMessages.get(1).getStatus()).isEqualTo(PROCESSED);
         assertThat(testMessages.get(1).getMessage()).isEqualTo(testMessage2);
+    }
+
+    @Test
+    void testBatchSuccessHandle() {
+        var handledRecords = new ArrayList<MessageRecord<TestMessage>>();
+        var consumer = consumerFactoryBuilder
+                .messageHandler(null)
+                .batchMessageHandler((records, acknowledger) -> {
+                    handledRecords.addAll(records);
+                    records.forEach(acknowledger::complete);
+                })
+                .properties(ConsumerConfig.Properties.builder()
+                        .historyEnabled(true)
+                        .maxPollRecords(10)
+                        .build())
+                .build()
+                .create();
+
+        var producer = producerFactory.build().create();
+        TestMessage testMessage1 = new TestMessage(TEST_VALUE);
+        TestMessage testMessage2 = new TestMessage(TEST_VALUE + "-2");
+        producer.send(testMessage1);
+        producer.send(testMessage2);
+
+        assertThat(consumer.poolAndProcess()).isTrue();
+        assertThat(consumer.poolAndProcess()).isFalse();
+
+        assertThat(handledRecords).hasSize(2);
+        assertThat(handledRecords).allSatisfy(record -> assertThat(record.id()).isNotNull());
+        assertThat(handledRecords).extracting(record -> record.message().payload())
+                .containsExactly(testMessage1, testMessage2);
+
+        var testMessages = selectTestMessagesFromHistory(SUBSCRIPTION_NAME_1);
+        assertThat(testMessages).hasSize(2);
+        assertThat(testMessages.get(0).getStatus()).isEqualTo(PROCESSED);
+        assertThat(testMessages.get(0).getMessage()).isEqualTo(testMessage1);
+        assertThat(testMessages.get(1).getStatus()).isEqualTo(PROCESSED);
+        assertThat(testMessages.get(1).getMessage()).isEqualTo(testMessage2);
+    }
+
+    @Test
+    void testBatchRetryAndFail() {
+        var retryException = new RetryableApplicationException(TEST_EXCEPTION_MESSAGE);
+        var failException = new NonRetryableApplicationException("batch-fail");
+        var consumer = consumerFactoryBuilder
+                .messageHandler(null)
+                .batchMessageHandler((records, acknowledger) -> {
+                    acknowledger.retry(records.get(0), Duration.ofSeconds(0), retryException);
+                    acknowledger.fail(records.get(1), failException);
+                })
+                .properties(ConsumerConfig.Properties.builder()
+                        .historyEnabled(true)
+                        .maxPollRecords(10)
+                        .build())
+                .build()
+                .create();
+
+        var producer = producerFactory.build().create();
+        TestMessage retryMessage = new TestMessage(TEST_VALUE);
+        TestMessage failMessage = new TestMessage(TEST_VALUE + "-2");
+        producer.send(retryMessage);
+        producer.send(failMessage);
+
+        assertThat(consumer.poolAndProcess()).isTrue();
+
+        var pendingMessages = selectTestMessages(SUBSCRIPTION_NAME_1);
+        assertThat(pendingMessages).hasSize(1);
+        assertThat(pendingMessages.getFirst().getPayload()).isEqualTo(retryMessage);
+        assertThat(pendingMessages.getFirst().getAttempt()).isEqualTo(1);
+        assertThat(pendingMessages.getFirst().getErrorMessage()).isEqualTo(TEST_EXCEPTION_MESSAGE);
+
+        var historyMessages = selectTestMessagesFromHistory(SUBSCRIPTION_NAME_1);
+        assertThat(historyMessages).hasSize(1);
+        assertThat(historyMessages.getFirst().getStatus()).isEqualTo(FAILED);
+        assertThat(historyMessages.getFirst().getMessage()).isEqualTo(failMessage);
+        assertThat(historyMessages.getFirst().getErrorMessage()).isEqualTo("batch-fail");
     }
 
     @Test

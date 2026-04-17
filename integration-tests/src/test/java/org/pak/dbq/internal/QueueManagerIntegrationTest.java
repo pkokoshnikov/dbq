@@ -13,6 +13,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.vibur.dbcp.ViburDBCPDataSource;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -125,5 +126,49 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
         assertThat(handledMessage1).isEqualTo(testMessage);
         var handledMessage2 = reference2.get();
         assertThat(handledMessage2).isEqualTo(testMessage);
+    }
+
+    @Test
+    void publishBatchSubscribeTest() throws InterruptedException {
+        queueManager.registerQueue(QueueConfig.builder()
+                .queueName(QUEUE_NAME)
+                .properties(QueueConfig.Properties.builder()
+                        .retentionDays(10)
+                        .build())
+                .build());
+
+        var producer = queueManager.registerProducer(ProducerConfig.<TestMessage>builder()
+                .queueName(QUEUE_NAME)
+                .clazz(TestMessage.class)
+                .build());
+
+        var countDownLatch = new CountDownLatch(2);
+        var handledMessages = new CopyOnWriteArrayList<TestMessage>();
+
+        queueManager.registerConsumer(ConsumerConfig.<TestMessage>builder()
+                .batchMessageHandler((records, acknowledger) -> {
+                    records.forEach(record -> {
+                        handledMessages.add(record.message().payload());
+                        acknowledger.complete(record);
+                        countDownLatch.countDown();
+                    });
+                })
+                .queueName(QUEUE_NAME)
+                .subscriptionId(SUBSCRIPTION_NAME_1)
+                .properties(ConsumerConfig.Properties.builder()
+                        .maxPollRecords(10)
+                        .build())
+                .build());
+
+        TestMessage firstMessage = new TestMessage("test-name-1");
+        TestMessage secondMessage = new TestMessage("test-name-2");
+        producer.send(firstMessage);
+        producer.send(secondMessage);
+
+        queueManager.startConsumers();
+        countDownLatch.await();
+        queueManager.stopConsumers();
+
+        assertThat(handledMessages).containsExactly(firstMessage, secondMessage);
     }
 }

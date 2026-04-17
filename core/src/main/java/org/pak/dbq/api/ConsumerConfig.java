@@ -24,10 +24,9 @@ import java.util.Objects;
 public class ConsumerConfig<T> {
     @NonNull
     QueueName queueName;
-    @NonNull
     SubscriptionId subscriptionId;
-    @NonNull
     MessageHandler<T> messageHandler;
+    BatchMessageHandler<T> batchMessageHandler;
     BlockingPolicy blockingPolicy;
     RetryablePolicy retryablePolicy;
     NonRetryablePolicy nonRetryablePolicy;
@@ -39,7 +38,8 @@ public class ConsumerConfig<T> {
     public ConsumerConfig(
             @NonNull QueueName queueName,
             @NonNull SubscriptionId subscriptionId,
-            @NonNull MessageHandler<T> messageHandler,
+            MessageHandler<T> messageHandler,
+            BatchMessageHandler<T> batchMessageHandler,
             BlockingPolicy blockingPolicy,
             RetryablePolicy retryablePolicy,
             NonRetryablePolicy nonRetryablePolicy,
@@ -49,7 +49,9 @@ public class ConsumerConfig<T> {
     ) {
         this.queueName = Objects.requireNonNull(queueName, "queueName");
         this.subscriptionId = Objects.requireNonNull(subscriptionId, "subscriptionId");
-        this.messageHandler = Objects.requireNonNull(messageHandler, "messageHandler");
+        validateHandlers(messageHandler, batchMessageHandler);
+        this.messageHandler = messageHandler;
+        this.batchMessageHandler = batchMessageHandler;
         this.blockingPolicy = blockingPolicy != null ? blockingPolicy : new SimpleBlockingPolicy();
         this.retryablePolicy = retryablePolicy != null ? retryablePolicy : new SimpleRetryablePolicy();
         this.nonRetryablePolicy = nonRetryablePolicy != null ? nonRetryablePolicy : new SimpleNonRetryablePolicy();
@@ -62,6 +64,13 @@ public class ConsumerConfig<T> {
                 : new NoOpMessageConsumerTelemetry();
     }
 
+    private void validateHandlers(MessageHandler<T> messageHandler, BatchMessageHandler<T> batchMessageHandler) {
+        if ((messageHandler == null) == (batchMessageHandler == null)) {
+            throw new IllegalArgumentException(
+                    "Exactly one of messageHandler or batchMessageHandler must be configured");
+        }
+    }
+
     @Getter
     @FieldDefaults(makeFinal = true, level = lombok.AccessLevel.PRIVATE)
     public static class Properties {
@@ -70,6 +79,7 @@ public class ConsumerConfig<T> {
         Duration persistenceExceptionPause;
         Duration unpredictedExceptionPause;
         boolean historyEnabled;
+        boolean serializedByKey;
 
         @Builder
         public Properties(
@@ -77,7 +87,8 @@ public class ConsumerConfig<T> {
                 Integer concurrency,
                 Duration persistenceExceptionPause,
                 Duration unpredictedExceptionPause,
-                boolean historyEnabled
+                boolean historyEnabled,
+                boolean serializedByKey
         ) {
             this.maxPollRecords = maxPollRecords != null ? maxPollRecords : 1;
             this.concurrency = concurrency != null ? concurrency : 1;
@@ -88,6 +99,7 @@ public class ConsumerConfig<T> {
                     ? unpredictedExceptionPause
                     : Duration.of(30, ChronoUnit.SECONDS);
             this.historyEnabled = historyEnabled;
+            this.serializedByKey = serializedByKey;
 
             validate();
         }

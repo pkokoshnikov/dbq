@@ -3,6 +3,7 @@ package org.pak.dbq.internal;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.experimental.FieldDefaults;
+import org.pak.dbq.api.BatchMessageHandler;
 import org.pak.dbq.api.ConsumerConfig;
 import org.pak.dbq.api.MessageHandler;
 import org.pak.dbq.api.QueueName;
@@ -10,6 +11,8 @@ import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.api.policy.BlockingPolicy;
 import org.pak.dbq.api.policy.NonRetryablePolicy;
 import org.pak.dbq.api.policy.RetryablePolicy;
+import org.pak.dbq.internal.consumer.AbstractConsumer;
+import org.pak.dbq.internal.consumer.BatchConsumer;
 import org.pak.dbq.internal.consumer.Consumer;
 import org.pak.dbq.spi.*;
 
@@ -17,6 +20,7 @@ import org.pak.dbq.spi.*;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ConsumerFactory<T> {
     MessageHandler<T> messageHandler;
+    BatchMessageHandler<T> batchMessageHandler;
     MessageFactory messageFactory;
     QueueName queueName;
     SubscriptionId subscriptionId;
@@ -29,7 +33,12 @@ public class ConsumerFactory<T> {
     MessageConsumerTelemetry messageConsumerTelemetry;
     ConsumerConfig.Properties properties;
 
-    public Consumer<T> create() {
+    public AbstractConsumer<T> create() {
+        if (batchMessageHandler != null) {
+            return new BatchConsumer<>(batchMessageHandler, queueName, subscriptionId, queryService,
+                    transactionService, messageContextPropagator, messageConsumerTelemetry, messageFactory, properties);
+        }
+
         return new Consumer<>(messageHandler, queueName, subscriptionId, retryablePolicy,
                 nonRetryablePolicy, blockingPolicy, queryService, transactionService, messageContextPropagator,
                 messageConsumerTelemetry, messageFactory, properties);

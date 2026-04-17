@@ -172,6 +172,7 @@ public class QueueManager {
         return Objects.equals(left.getQueueName(), right.getQueueName())
                 && Objects.equals(left.getSubscriptionId(), right.getSubscriptionId())
                 && Objects.equals(left.getMessageHandler(), right.getMessageHandler())
+                && Objects.equals(left.getBatchMessageHandler(), right.getBatchMessageHandler())
                 && sameComponent(left.getBlockingPolicy(), right.getBlockingPolicy())
                 && sameComponent(left.getRetryablePolicy(), right.getRetryablePolicy())
                 && sameComponent(left.getNonRetryablePolicy(), right.getNonRetryablePolicy())
@@ -185,7 +186,8 @@ public class QueueManager {
                 && Objects.equals(left.getConcurrency(), right.getConcurrency())
                 && Objects.equals(left.getPersistenceExceptionPause(), right.getPersistenceExceptionPause())
                 && Objects.equals(left.getUnpredictedExceptionPause(), right.getUnpredictedExceptionPause())
-                && left.isHistoryEnabled() == right.isHistoryEnabled();
+                && left.isHistoryEnabled() == right.isHistoryEnabled()
+                && left.isSerializedByKey() == right.isSerializedByKey();
     }
 
     private boolean sameProducerConfig(ProducerConfig<?> left, ProducerConfig<?> right) {
@@ -203,7 +205,8 @@ public class QueueManager {
         tableManager.registerSubscription(
                 consumerConfig.getQueueName(),
                 consumerConfig.getSubscriptionId(),
-                consumerConfig.getProperties().isHistoryEnabled());
+                consumerConfig.getProperties().isHistoryEnabled(),
+                consumerConfig.getProperties().isSerializedByKey());
     }
 
     private void requireInitializedQueue(QueueName queueName) {

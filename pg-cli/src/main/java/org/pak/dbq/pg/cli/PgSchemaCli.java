@@ -81,6 +81,15 @@ public final class PgSchemaCli implements Runnable {
         )
         boolean historyEnabled;
 
+        @Option(
+                names = "--serialized-by-key",
+                description = "Create DDL for per-key serialized consumption. Default: ${DEFAULT-VALUE}",
+                defaultValue = "false",
+                fallbackValue = "true",
+                arity = "0..1"
+        )
+        boolean serializedByKey;
+
         final SubscriptionId subscriptionId() {
             return PgSchemaCli.subscriptionId(subscription);
         }
@@ -98,7 +107,12 @@ public final class PgSchemaCli implements Runnable {
     static final class SubscriptionCommand extends BaseSubscriptionCommand {
         @Override
         public void run() {
-            print(schemaSqlGenerator().createSubscriptionTable(queueName(), subscriptionId(), historyEnabled));
+            print(schemaSqlGenerator().createSubscriptionTable(
+                    queueName(),
+                    subscriptionId(),
+                    historyEnabled,
+                    serializedByKey
+            ));
         }
     }
 
@@ -109,7 +123,12 @@ public final class PgSchemaCli implements Runnable {
             var sqlGenerator = schemaSqlGenerator();
             print(sqlGenerator.createQueueTable(queueName()));
             spec.commandLine().getOut().println();
-            print(sqlGenerator.createSubscriptionTable(queueName(), subscriptionId(), historyEnabled));
+            print(sqlGenerator.createSubscriptionTable(
+                    queueName(),
+                    subscriptionId(),
+                    historyEnabled,
+                    serializedByKey
+            ));
         }
     }
 }

@@ -9,7 +9,12 @@ import java.time.Duration;
 import java.util.List;
 
 public interface QueryService {
-    <T> List<MessageContainer<T>> selectMessages(QueueName queueName, SubscriptionId subscriptionId, Integer maxPollRecords);
+    <T> List<MessageContainer<T>> selectMessages(
+            QueueName queueName,
+            SubscriptionId subscriptionId,
+            Integer maxPollRecords,
+            boolean serializedByKey
+    );
     <T> void retryMessage(SubscriptionId subscriptionId, MessageContainer<T> messageContainer, Duration retryDuration, Exception e);
     <T> void failMessage(SubscriptionId subscriptionId, MessageContainer<T> messageContainer, Exception e, boolean historyEnabled);
     <T> void completeMessage(SubscriptionId subscriptionId, MessageContainer<T> messageContainer, boolean historyEnabled);

@@ -17,6 +17,9 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -60,6 +63,37 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
         assertThat(partitions).hasSize(1);
         assertPartitions(SUBSCRIPTION_TABLE_1_HISTORY, partitions);
+    }
+
+    @Test
+    void createSubscriptionTableDoesNotCreateKeyLockTableByDefault() {
+        createQueueTable();
+
+        createSubscriptionTable(SUBSCRIPTION_NAME_1, false, false);
+
+        assertThat(jdbcTemplate.queryForObject("SELECT to_regclass(?)", String.class,
+                TEST_SCHEMA.value() + "." + SUBSCRIPTION_TABLE_1_KEY_LOCK)).isNull();
+    }
+
+    @Test
+    void createSubscriptionTableCreatesKeyLockTableWhenSerializedByKeyEnabled() {
+        createQueueTable();
+
+        createSubscriptionTable(SUBSCRIPTION_NAME_1, false, true);
+
+        assertThat(jdbcTemplate.queryForObject("SELECT to_regclass(?)", String.class,
+                TEST_SCHEMA.value() + "." + SUBSCRIPTION_TABLE_1_KEY_LOCK))
+                .isEqualTo(SUBSCRIPTION_TABLE_1_KEY_LOCK);
+    }
+
+    @Test
+    void selectMessagesWithKeySerializationRequiresKeyLockTable() {
+        createQueueTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1, false, false);
+
+        assertThatThrownBy(() -> pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("without serializedByKey support");
     }
 
     @Test
@@ -502,5 +536,142 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         assertThat(secondRetryMessage.getAttempt()).isEqualTo(2);
         assertThat(secondRetryMessage.getExecuteAfter())
                 .isAfter(firstRetryMessage.getExecuteAfter().plus(Duration.of(90, ChronoUnit.SECONDS)));
+    }
+
+    @Test
+    void testSelectMessagesWithoutKeySerializationAllowsConcurrentPollingForSameKey() throws Exception {
+        createQueueTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
+        Instant originatedTime = Instant.now();
+        String key = UUID.randomUUID().toString();
+
+        pgQueryService.insertBatchMessage(QUEUE_NAME,
+                List.of(
+                        new Message<>(key, originatedTime, new TestMessage("first")),
+                        new Message<>(key, originatedTime.plusMillis(1), new TestMessage("second"))));
+
+        var executor = Executors.newFixedThreadPool(2);
+        var firstLocked = new CountDownLatch(1);
+        var releaseFirst = new CountDownLatch(1);
+
+        try {
+            var firstFuture = executor.submit(() -> springTransactionService.inTransaction(() -> {
+                var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, false);
+                firstLocked.countDown();
+                awaitLatch(releaseFirst);
+                return messages;
+            }));
+
+            assertThat(firstLocked.await(5, TimeUnit.SECONDS)).isTrue();
+
+            var secondFuture = executor.submit(() ->
+                    springTransactionService.inTransaction(() ->
+                            pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, false)));
+
+            var secondMessages = secondFuture.get(5, TimeUnit.SECONDS);
+            assertThat(secondMessages).hasSize(1);
+
+            releaseFirst.countDown();
+            var firstMessages = firstFuture.get(5, TimeUnit.SECONDS);
+            assertThat(firstMessages).hasSize(1);
+        } finally {
+            releaseFirst.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void testSelectMessagesWithKeySerializationSkipsConcurrentPollingForSameKey() throws Exception {
+        createQueueTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1, true, true);
+        Instant originatedTime = Instant.now();
+        String key = UUID.randomUUID().toString();
+
+        pgQueryService.insertBatchMessage(QUEUE_NAME,
+                List.of(
+                        new Message<>(key, originatedTime, new TestMessage("first")),
+                        new Message<>(key, originatedTime.plusMillis(1), new TestMessage("second"))));
+
+        var executor = Executors.newFixedThreadPool(2);
+        var firstLocked = new CountDownLatch(1);
+        var releaseFirst = new CountDownLatch(1);
+
+        try {
+            var firstFuture = executor.submit(() -> springTransactionService.inTransaction(() -> {
+                var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true);
+                firstLocked.countDown();
+                awaitLatch(releaseFirst);
+                return messages;
+            }));
+
+            assertThat(firstLocked.await(5, TimeUnit.SECONDS)).isTrue();
+
+            var secondFuture = executor.submit(() ->
+                    springTransactionService.inTransaction(() ->
+                            pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true)));
+
+            var secondMessages = secondFuture.get(5, TimeUnit.SECONDS);
+            assertThat(secondMessages).isEmpty();
+
+            releaseFirst.countDown();
+            var firstMessages = firstFuture.get(5, TimeUnit.SECONDS);
+            assertThat(firstMessages).hasSize(1);
+        } finally {
+            releaseFirst.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void testSelectMessagesWithKeySerializationStillAllowsConcurrentPollingForDifferentKeys() throws Exception {
+        createQueueTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1, true, true);
+        Instant originatedTime = Instant.now();
+
+        pgQueryService.insertBatchMessage(QUEUE_NAME,
+                List.of(
+                        new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("first")),
+                        new Message<>(UUID.randomUUID().toString(), originatedTime.plusMillis(1), new TestMessage("second"))));
+
+        var executor = Executors.newFixedThreadPool(2);
+        var firstLocked = new CountDownLatch(1);
+        var releaseFirst = new CountDownLatch(1);
+
+        try {
+            var firstFuture = executor.submit(() -> springTransactionService.inTransaction(() -> {
+                var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true);
+                firstLocked.countDown();
+                awaitLatch(releaseFirst);
+                return messages;
+            }));
+
+            assertThat(firstLocked.await(5, TimeUnit.SECONDS)).isTrue();
+
+            var secondFuture = executor.submit(() ->
+                    springTransactionService.inTransaction(() ->
+                            pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true)));
+
+            var secondMessages = secondFuture.get(5, TimeUnit.SECONDS);
+            assertThat(secondMessages).hasSize(1);
+
+            releaseFirst.countDown();
+            var firstMessages = firstFuture.get(5, TimeUnit.SECONDS);
+            assertThat(firstMessages).hasSize(1);
+            assertThat(firstMessages.getFirst().getKey()).isNotEqualTo(secondMessages.getFirst().getKey());
+        } finally {
+            releaseFirst.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    private static void awaitLatch(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for latch");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
     }
 }

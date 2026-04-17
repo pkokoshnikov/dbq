@@ -64,10 +64,11 @@ public class PgTableManager implements TableManager {
     public void registerSubscription(
             QueueName queueName,
             SubscriptionId subscriptionId,
-            boolean historyEnabled
+            boolean historyEnabled,
+            boolean serializedByKey
     ) {
         if (queueAutoDdl.getOrDefault(queueName, false)) {
-            pgQueryService.createSubscriptionTable(queueName, subscriptionId, historyEnabled);
+            pgQueryService.createSubscriptionTable(queueName, subscriptionId, historyEnabled, serializedByKey);
         }
 
         if (historyEnabled) {
