@@ -37,7 +37,7 @@ public interface QueryService {
             boolean historyEnabled
     ) throws PersistenceException;
 
-    <T> boolean insertMessage(QueueName queueName, Message<T> message) throws PersistenceException;
+    <T> boolean insertMessage(QueueName queueName, Message<T> message) throws PersistenceException; //todo: тут не хватает MessageSerializationException
 
     <T> List<Boolean> insertBatchMessage(QueueName queueName, List<Message<T>> messages) throws PersistenceException;
 }

@@ -112,8 +112,8 @@ public class JsonbConverter {
             return (T) jsonObject;
         } catch (SQLException e) {
             throw new NonRetrayablePersistenceException(e, e.getCause());
-        } catch (JsonProcessingException e) {
-            throw new MessageSerializationException(e);
+        } catch (JsonProcessingException e) { //todo:что тут вообще может пойти не так?
+            throw new MessageSerializationException(e); //todo: если это может произойти то получается нужно клиенту его показать и объявить в сигнатуре
         }
     }
 }

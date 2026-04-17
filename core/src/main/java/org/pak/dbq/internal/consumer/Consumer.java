@@ -49,7 +49,7 @@ public class Consumer<T> extends AbstractConsumer<T> {
 
     @Override
     protected void processMessages(List<MessageContainer<T>> messageContainerList)
-            throws PersistenceException, InterruptedException {
+            throws PersistenceException, InterruptedException { //TODO: почему то InterruptedException подсвечен как ненужный
         for (var messageContainer : messageContainerList) {
             try (var ignoredMessageContext = getMessageContextPropagator()
                     .extractToCurrentContext(messageContainer.getHeaders());
@@ -62,8 +62,10 @@ public class Consumer<T> extends AbstractConsumer<T> {
                     try {
                         messageHandler.handle(message);
                     } catch (MessageSerializationException e) {
+                        //todo: почему тут нет вызова телеметрии
                         throw e;
                     } catch (PersistenceException | InterruptedException e) {
+                        //todo: почему тут нет вызова телеметрии
                         sneakyThrow(e);
                     } catch (Exception e) {
                         telemetry.recordError(e);

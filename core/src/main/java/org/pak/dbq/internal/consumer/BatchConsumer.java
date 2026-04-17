@@ -36,7 +36,7 @@ public class BatchConsumer<T> extends AbstractConsumer<T> {
         var messageContainersById = new LinkedHashMap<BigInteger, MessageContainer<T>>();
         var records = messageContainerList.stream()
                 .map(messageContainer -> {
-                    messageContainersById.put(messageContainer.getId(), messageContainer);
+                    messageContainersById.put(messageContainer.getId(), messageContainer); // todo: я бы вынес это просто в отдельную операцию на стримах
                     return new MessageRecord<>(
                             messageContainer.getId(),
                             toMessage(messageContainer),

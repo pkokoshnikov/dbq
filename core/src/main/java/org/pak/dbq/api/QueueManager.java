@@ -47,6 +47,7 @@ public class QueueManager {
         this(queryService, transactionService, messageFactory, tableManager, Properties.builder().build());
     }
 
+    //todo: нежен ли ?
     public QueueManager(
             QueryService queryService,
             TransactionService transactionService,
@@ -55,6 +56,7 @@ public class QueueManager {
         this(queryService, transactionService, messageFactory, new NoOpTableManager(), Properties.builder().build());
     }
 
+    //todo: нежен ли ?
     public QueueManager(
             QueryService queryService,
             TransactionService transactionService,
@@ -169,6 +171,7 @@ public class QueueManager {
         }
     }
 
+    //todo: зачем так сложно почему бы не использовать equals объекта?
     private boolean sameConsumerConfig(ConsumerConfig<?> left, ConsumerConfig<?> right) {
         return Objects.equals(left.getQueueName(), right.getQueueName())
                 && Objects.equals(left.getSubscriptionId(), right.getSubscriptionId())
@@ -182,6 +185,7 @@ public class QueueManager {
                 && sameComponent(left.getMessageConsumerTelemetry(), right.getMessageConsumerTelemetry());
     }
 
+    //todo: зачем так сложно почему бы не использовать equals объекта?
     private boolean sameProperties(ConsumerConfig.Properties left, ConsumerConfig.Properties right) {
         return Objects.equals(left.getMaxPollRecords(), right.getMaxPollRecords())
                 && Objects.equals(left.getConcurrency(), right.getConcurrency())
@@ -191,12 +195,14 @@ public class QueueManager {
                 && left.isSerializedByKey() == right.isSerializedByKey();
     }
 
+    //todo: зачем так сложно почему бы не использовать equals объекта?
     private boolean sameProducerConfig(ProducerConfig<?> left, ProducerConfig<?> right) {
         return Objects.equals(left.getQueueName(), right.getQueueName())
                 && Objects.equals(left.getClazz(), right.getClazz())
                 && sameComponent(left.getMessageContextPropagator(), right.getMessageContextPropagator());
     }
 
+    //todo: зачем так сложно почему бы не использовать equals объекта?
     private boolean sameQueueConfig(QueueConfig left, QueueConfig right) {
         return Objects.equals(left.getQueueName(), right.getQueueName())
                 && left.getProperties().getRetentionDays() == right.getProperties().getRetentionDays();

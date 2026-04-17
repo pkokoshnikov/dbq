@@ -24,7 +24,7 @@ final class RecordingAcknowledger<T> implements Acknowledger<T> {
             SubscriptionId subscriptionId,
             boolean historyEnabled,
             Map<BigInteger, MessageContainer<T>> messageContainersById,
-            Set<BigInteger> acknowledgedRecords
+            Set<BigInteger> acknowledgedRecords //todo:плохая практика передовать так, нужно создавать новый объект внутри и иметь метод по его получению
     ) {
         this.queryService = queryService;
         this.subscriptionId = subscriptionId;

@@ -46,28 +46,29 @@ public class ConsumerStarter<T> {
                     .map(i -> {
                         AbstractConsumer<T> consumer = consumerConfig.getBatchMessageHandler() != null
                                 ? new BatchConsumer<>(
-                                consumerConfig.getBatchMessageHandler(),
-                                consumerConfig.getQueueName(),
-                                consumerConfig.getSubscriptionId(),
-                                queryService,
-                                transactionService,
-                                consumerConfig.getMessageContextPropagator(),
-                                consumerConfig.getMessageConsumerTelemetry(),
-                                messageFactory,
-                                consumerConfig.getProperties())
-                                : new Consumer<>(
-                                consumerConfig.getMessageHandler(),
-                                consumerConfig.getQueueName(),
-                                consumerConfig.getSubscriptionId(),
-                                consumerConfig.getRetryablePolicy(),
-                                consumerConfig.getNonRetryablePolicy(),
-                                consumerConfig.getBlockingPolicy(),
-                                queryService,
-                                transactionService,
-                                consumerConfig.getMessageContextPropagator(),
-                                consumerConfig.getMessageConsumerTelemetry(),
-                                messageFactory,
-                                consumerConfig.getProperties());
+                                    consumerConfig.getBatchMessageHandler(),
+                                    consumerConfig.getQueueName(),
+                                    consumerConfig.getSubscriptionId(),
+                                    queryService,
+                                    transactionService,
+                                    consumerConfig.getMessageContextPropagator(),
+                                    consumerConfig.getMessageConsumerTelemetry(),
+                                    messageFactory,
+                                    consumerConfig.getProperties())
+                                :
+                                new Consumer<>(
+                                    consumerConfig.getMessageHandler(),
+                                    consumerConfig.getQueueName(),
+                                    consumerConfig.getSubscriptionId(),
+                                    consumerConfig.getRetryablePolicy(),
+                                    consumerConfig.getNonRetryablePolicy(),
+                                    consumerConfig.getBlockingPolicy(),
+                                    queryService,
+                                    transactionService,
+                                    consumerConfig.getMessageContextPropagator(),
+                                    consumerConfig.getMessageConsumerTelemetry(),
+                                    messageFactory,
+                                    consumerConfig.getProperties());
                         fixedThreadPoolExecutor.submit(consumer::poolLoop);
                         return consumer;
                     }).toList();
