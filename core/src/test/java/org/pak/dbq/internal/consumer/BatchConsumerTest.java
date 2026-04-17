@@ -111,28 +111,31 @@ class BatchConsumerTest {
     }
 
     @Test
-    void poolAndProcessAllowsAnotherOutcomeAfterFailedComplete() {
+    void recordingBatchAcknowledgerAllowsAnotherOutcomeAfterFailedComplete() {
         var queryService = new CoreTestSupport.RecordingQueryService();
-        var transactionService = new CoreTestSupport.DirectTransactionService();
         var container = CoreTestSupport.messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
-        queryService.setSelectedMessages(List.of(container));
+        var record = new MessageRecord<>(
+                container.getId(),
+                new Message<>(container.getKey(), container.getOriginatedTime(), container.getPayload(), container.getHeaders()),
+                container.getAttempt(),
+                container.getExecuteAfter());
+        var acknowledgedRecords = new java.util.HashSet<java.math.BigInteger>();
+        var messageContainersById = java.util.Map.of(record.id(), container);
         var failure = new RetryablePersistenceException(new RuntimeException("db"), null);
         queryService.enqueueCompleteMessageResult(failure);
         var expectedFailureException = new IllegalStateException("fallback");
-        var consumer = batchProcessor(
+        var acknowledger = new RecordingBatchAcknowledger<>(
                 queryService,
-                transactionService,
-                (messages, acknowledger) -> {
-                    try {
-                        acknowledger.complete(messages.getFirst());
-                    } catch (RetryablePersistenceException ignored) {
-                        acknowledger.fail(messages.getFirst(), expectedFailureException);
-                    }
-                });
+                SUBSCRIPTION_NAME,
+                false,
+                messageContainersById,
+                acknowledgedRecords
+        );
 
-        var pooled = consumer.poolAndProcess();
+        assertThatThrownBy(() -> acknowledger.complete(record)).isSameAs(failure);
+        acknowledger.fail(record, expectedFailureException);
 
-        assertThat(pooled).isTrue();
+        assertThat(acknowledgedRecords).containsExactly(record.id());
         assertThat(queryService.getCompletions()).isEmpty();
         assertThat(queryService.getRetries()).isEmpty();
         assertThat(queryService.getFailures()).hasSize(1);
