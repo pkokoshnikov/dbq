@@ -69,7 +69,7 @@ public class JsonbConverter {
         }
     }
 
-    public <T extends PGobject> T toPGObject(Object source) {
+    public <T extends PGobject> T toPGObject(Object source) throws NonRetrayablePersistenceException {
         try {
             var value = objectMapper.writerFor(source.getClass())
                     .withAttribute("@type", classTypeMap.get(source.getClass()))
@@ -102,7 +102,7 @@ public class JsonbConverter {
         }
     }
 
-    public <T extends PGobject> T toPGObject(Map<String, String> source) {
+    public <T extends PGobject> T toPGObject(Map<String, String> source) throws NonRetrayablePersistenceException {
         try {
             var jsonObject = new PGobject();
             jsonObject.setType("jsonb");

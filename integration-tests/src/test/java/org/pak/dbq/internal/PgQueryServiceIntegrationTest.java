@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.pg.PgQueryService;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.api.Message;
@@ -30,7 +31,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         dataSource = setupDatasource();
         springTransactionService = setupSpringTransactionService(dataSource);
         jdbcTemplate = setupJdbcTemplate(dataSource);
@@ -45,7 +46,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void createQueuePartitionTest() {
+    void createQueuePartitionTest() throws Exception {
         createQueueTable();
         pgQueryService.createQueuePartition(QUEUE_NAME, Instant.now());
         var partitions = selectPartitions(QUEUE_TABLE);
@@ -55,7 +56,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void createSubscriptionPartitionTest() {
+    void createSubscriptionPartitionTest() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, Instant.now());
@@ -66,7 +67,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void createSubscriptionTableDoesNotCreateKeyLockTableByDefault() {
+    void createSubscriptionTableDoesNotCreateKeyLockTableByDefault() throws Exception {
         createQueueTable();
 
         createSubscriptionTable(SUBSCRIPTION_NAME_1, false, false);
@@ -76,7 +77,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void createSubscriptionTableCreatesKeyLockTableWhenSerializedByKeyEnabled() {
+    void createSubscriptionTableCreatesKeyLockTableWhenSerializedByKeyEnabled() throws Exception {
         createQueueTable();
 
         createSubscriptionTable(SUBSCRIPTION_NAME_1, false, true);
@@ -87,7 +88,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void selectMessagesWithKeySerializationRequiresKeyLockTable() {
+    void selectMessagesWithKeySerializationRequiresKeyLockTable() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, false, false);
 
@@ -97,7 +98,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void dropQueuePartition() {
+    void dropQueuePartition() throws Exception {
         createQueueTable();
         pgQueryService.createQueuePartition(QUEUE_NAME, Instant.now());
         var partitions = pgQueryService.getAllQueuePartitions(QUEUE_NAME);
@@ -109,7 +110,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void dropQueuePartitionIsIdempotent() {
+    void dropQueuePartitionIsIdempotent() throws Exception {
         createQueueTable();
         Instant originatedTime = Instant.now();
         pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
@@ -122,7 +123,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void dropQueuePartitionIgnoresAlreadyDetachedPartition() {
+    void dropQueuePartitionIgnoresAlreadyDetachedPartition() throws Exception {
         createQueueTable();
         Instant originatedTime = Instant.now();
         pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
@@ -141,7 +142,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void dropQueuePartitionReturnsHasReferences() {
+    void dropQueuePartitionReturnsHasReferences() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
@@ -168,7 +169,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void dropSubscriptionPartition() {
+    void dropSubscriptionPartition() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, Instant.now());
@@ -183,7 +184,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void dropSubscriptionPartitionIsIdempotent() {
+    void dropSubscriptionPartitionIsIdempotent() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
@@ -197,7 +198,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testInsertCreatesQueuePartitionOnDemand() {
+    void testInsertCreatesQueuePartitionOnDemand() throws Exception {
         createQueueTable();
 
         Instant originatedTime = Instant.now();
@@ -209,7 +210,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testInsertRoutesMessagesAcrossUtcMidnightToDifferentPartitions() {
+    void testInsertRoutesMessagesAcrossUtcMidnightToDifferentPartitions() throws Exception {
         createQueueTable();
         Instant beforeMidnightUtc = Instant.parse("2026-04-03T23:59:59Z");
         Instant afterMidnightUtc = Instant.parse("2026-04-04T00:00:00Z");
@@ -233,7 +234,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testInsertFailsWhenExistingPartitionHasUnexpectedBounds() {
+    void testInsertFailsWhenExistingPartitionHasUnexpectedBounds() throws Exception {
         createQueueTable();
         Instant originatedTime = Instant.parse("2026-04-04T12:00:00Z");
 
@@ -250,7 +251,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testBatchInsertCreatesQueuePartitionsOnDemand() {
+    void testBatchInsertCreatesQueuePartitionsOnDemand() throws Exception {
         createQueueTable();
 
         Instant originatedTime_1 = Instant.now();
@@ -268,7 +269,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testCompleteAndFailCreateHistoryPartitionOnDemand() {
+    void testCompleteAndFailCreateHistoryPartitionOnDemand() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTimeComplete = Instant.now();
@@ -306,7 +307,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testCompleteAndFailWithoutHistoryJustDeleteMessages() {
+    void testCompleteAndFailWithoutHistoryJustDeleteMessages() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, false);
         Instant originatedTime = Instant.now();
@@ -336,7 +337,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testSuccessfullySubmitMessage() {
+    void testSuccessfullySubmitMessage() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         createSubscriptionTable(SUBSCRIPTION_NAME_2, true);
@@ -359,7 +360,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testSuccessfullySubmitBatchMessages() {
+    void testSuccessfullySubmitBatchMessages() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         createSubscriptionTable(SUBSCRIPTION_NAME_2, true);
@@ -380,7 +381,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testDuplicateKeySubmit() {
+    void testDuplicateKeySubmit() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
@@ -400,7 +401,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testSelectMessages() {
+    void testSelectMessages() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
@@ -419,7 +420,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testCompleteMessages() {
+    void testCompleteMessages() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
@@ -436,9 +437,9 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 10);
 
         assertThat(messages).hasSize(3);
-        messages.forEach(message -> {
+        for (var message : messages) {
             pgQueryService.completeMessage(SUBSCRIPTION_NAME_1, message, true);
-        });
+        }
 
         messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 10);
         assertThat(messages).isEmpty();
@@ -449,7 +450,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testFailMessages() {
+    void testFailMessages() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
@@ -466,9 +467,9 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 10);
 
         assertThat(messages).hasSize(3);
-        messages.forEach(message -> {
+        for (var message : messages) {
             pgQueryService.failMessage(SUBSCRIPTION_NAME_1, message, new RuntimeException(), true);
-        });
+        }
 
         messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 10);
         assertThat(messages).isEmpty();
@@ -479,7 +480,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testRetryMessages() {
+    void testRetryMessages() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
@@ -499,9 +500,11 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         assertThat(messages).hasSize(3);
         messages.forEach(message -> assertThat(message.getAttempt()).isEqualTo(0));
 
-        messages.forEach(message -> pgQueryService.retryMessage(SUBSCRIPTION_NAME_1, message,
-                Duration.of(10, ChronoUnit.SECONDS),
-                new RuntimeException()));
+        for (var message : messages) {
+            pgQueryService.retryMessage(SUBSCRIPTION_NAME_1, message,
+                    Duration.of(10, ChronoUnit.SECONDS),
+                    new RuntimeException());
+        }
 
         messages = selectTestMessages(SUBSCRIPTION_NAME_1);
         assertThat(messages).hasSize(3);
@@ -509,7 +512,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testRetryMessagesUsesLatestRetryDuration() {
+    void testRetryMessagesUsesLatestRetryDuration() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
@@ -556,7 +559,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
         try {
             var firstFuture = executor.submit(() -> springTransactionService.inTransaction(() -> {
-                var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, false);
+                var messages = selectMessagesUnchecked(SUBSCRIPTION_NAME_1, false);
                 firstLocked.countDown();
                 awaitLatch(releaseFirst);
                 return messages;
@@ -566,7 +569,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
             var secondFuture = executor.submit(() ->
                     springTransactionService.inTransaction(() ->
-                            pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, false)));
+                            selectMessagesUnchecked(SUBSCRIPTION_NAME_1, false)));
 
             var secondMessages = secondFuture.get(5, TimeUnit.SECONDS);
             assertThat(secondMessages).hasSize(1);
@@ -598,7 +601,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
         try {
             var firstFuture = executor.submit(() -> springTransactionService.inTransaction(() -> {
-                var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true);
+                var messages = selectMessagesUnchecked(SUBSCRIPTION_NAME_1, true);
                 firstLocked.countDown();
                 awaitLatch(releaseFirst);
                 return messages;
@@ -608,7 +611,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
             var secondFuture = executor.submit(() ->
                     springTransactionService.inTransaction(() ->
-                            pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true)));
+                            selectMessagesUnchecked(SUBSCRIPTION_NAME_1, true)));
 
             var secondMessages = secondFuture.get(5, TimeUnit.SECONDS);
             assertThat(secondMessages).isEmpty();
@@ -639,7 +642,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
         try {
             var firstFuture = executor.submit(() -> springTransactionService.inTransaction(() -> {
-                var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true);
+                var messages = selectMessagesUnchecked(SUBSCRIPTION_NAME_1, true);
                 firstLocked.countDown();
                 awaitLatch(releaseFirst);
                 return messages;
@@ -649,7 +652,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
             var secondFuture = executor.submit(() ->
                     springTransactionService.inTransaction(() ->
-                            pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true)));
+                            selectMessagesUnchecked(SUBSCRIPTION_NAME_1, true)));
 
             var secondMessages = secondFuture.get(5, TimeUnit.SECONDS);
             assertThat(secondMessages).hasSize(1);
@@ -673,5 +676,21 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
         }
+    }
+
+    private List<MessageContainer<TestMessage>> selectMessagesUnchecked(
+            SubscriptionId subscriptionId,
+            boolean serializedByKey
+    ) {
+        try {
+            return pgQueryService.selectMessages(QUEUE_NAME, subscriptionId, 1, serializedByKey);
+        } catch (Exception e) {
+            return sneakyThrow(e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T, E extends Throwable> T sneakyThrow(Throwable throwable) throws E {
+        throw (E) throwable;
     }
 }

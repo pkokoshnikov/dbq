@@ -2,7 +2,7 @@ package org.pak.dbq.spi.error;
 
 import lombok.Getter;
 
-public class PersistenceException extends RuntimeException {
+public class PersistenceException extends Exception {
     @Getter
     private final Throwable originalCause;
 

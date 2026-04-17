@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PgQueryServiceTest {
 
     @Test
-    void createPartitionUsesUtcBoundariesForRange() {
+    void createPartitionUsesUtcBoundariesForRange() throws Exception {
         var persistenceService = new CapturingPersistenceService();
         var queryService = new PgQueryService(persistenceService, new SchemaName("public"), new JsonbConverter());
 

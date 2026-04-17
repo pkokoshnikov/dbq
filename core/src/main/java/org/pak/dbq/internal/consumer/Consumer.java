@@ -16,6 +16,7 @@ import org.pak.dbq.spi.MessageFactory;
 import org.pak.dbq.spi.QueryService;
 import org.pak.dbq.spi.TransactionService;
 import org.pak.dbq.spi.error.NonRetrayablePersistenceException;
+import org.pak.dbq.spi.error.PersistenceException;
 import org.pak.dbq.spi.error.RetryablePersistenceException;
 import org.slf4j.MDC;
 
@@ -53,7 +54,8 @@ public class Consumer<T> extends AbstractConsumer<T> {
     }
 
     @Override
-    protected void processMessages(List<MessageContainer<T>> messageContainerList) {
+    protected void processMessages(List<MessageContainer<T>> messageContainerList)
+            throws PersistenceException, InterruptedException {
         for (var messageContainer : messageContainerList) {
             try (var ignoredMessageContext = getMessageContextPropagator()
                     .extractToCurrentContext(messageContainer.getHeaders());
@@ -65,10 +67,11 @@ public class Consumer<T> extends AbstractConsumer<T> {
                 try (var telemetry = getMessageConsumerTelemetry().start(message, getQueueName(), getSubscriptionId())) {
                     try {
                         messageHandler.handle(message);
+                    } catch (MessageSerializationException e) {
+                        throw e;
+                    } catch (PersistenceException | InterruptedException e) {
+                        sneakyThrow(e);
                     } catch (Exception e) {
-                        if (shouldRethrow(e)) {
-                            sneakyThrow(e);
-                        }
                         telemetry.recordError(e);
                         optionalException = of(e);
                     }
@@ -91,19 +94,14 @@ public class Consumer<T> extends AbstractConsumer<T> {
         }
     }
 
-    private boolean shouldRethrow(Exception e) {
-        return e instanceof MessageSerializationException
-                || e instanceof NonRetrayablePersistenceException
-                || e instanceof RetryablePersistenceException
-                || e instanceof InterruptedException;
-    }
-
-    private void handleNonRetryableException(MessageContainer<T> messageContainer, Exception e) {
+    private void handleNonRetryableException(MessageContainer<T> messageContainer, Exception e)
+            throws PersistenceException {
         log.error("Non retryable exception occurred", e);
         getQueryService().failMessage(getSubscriptionId(), messageContainer, e, isHistoryEnabled());
     }
 
-    private void handleRetryableException(MessageContainer<T> messageContainer, Exception e) {
+    private void handleRetryableException(MessageContainer<T> messageContainer, Exception e)
+            throws PersistenceException {
         log.error("Retryable exception occurred, attempt {}", messageContainer.getAttempt(), e);
         var optionalDuration = retryablePolicy.apply(e, messageContainer.getAttempt());
 
@@ -120,10 +118,5 @@ public class Consumer<T> extends AbstractConsumer<T> {
     private void handleBlockingException(Exception e) {
         log.error("Blocking exception occurred", e);
         pause(blockingPolicy.apply(e));
-    }
-
-    @SuppressWarnings("unchecked")
-    private static <E extends Throwable> void sneakyThrow(Throwable throwable) throws E {
-        throw (E) throwable;
     }
 }

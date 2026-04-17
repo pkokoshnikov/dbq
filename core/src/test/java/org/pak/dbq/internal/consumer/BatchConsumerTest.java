@@ -111,7 +111,7 @@ class BatchConsumerTest {
     }
 
     @Test
-    void recordingBatchAcknowledgerAllowsAnotherOutcomeAfterFailedComplete() {
+    void recordingBatchAcknowledgerAllowsAnotherOutcomeAfterFailedComplete() throws Exception {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var container = CoreTestSupport.messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
         var record = new MessageRecord<>(

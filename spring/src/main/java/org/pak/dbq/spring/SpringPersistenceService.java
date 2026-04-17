@@ -1,6 +1,7 @@
 package org.pak.dbq.spring;
 
 import org.pak.dbq.spi.error.NonRetrayablePersistenceException;
+import org.pak.dbq.spi.error.PersistenceException;
 import org.pak.dbq.spi.error.RetryablePersistenceException;
 import org.pak.dbq.spi.PersistenceService;
 import org.springframework.dao.RecoverableDataAccessException;
@@ -24,7 +25,7 @@ public class SpringPersistenceService implements PersistenceService {
     }
 
     @Override
-    public void execute(String query, Object... args) {
+    public void execute(String query, Object... args) throws PersistenceException {
         try {
             jdbcTemplate.execute(con -> con.prepareStatement(query),
                     (PreparedStatementCallback<Object>) ps -> {
@@ -37,7 +38,7 @@ public class SpringPersistenceService implements PersistenceService {
         }
     }
 
-    public int update(String query, Object... args) {
+    public int update(String query, Object... args) throws PersistenceException {
         try {
             return jdbcTemplate.update(query, args);
         } catch (Exception e) {
@@ -46,7 +47,7 @@ public class SpringPersistenceService implements PersistenceService {
         }
     }
 
-    public int insert(String query, Object... args) {
+    public int insert(String query, Object... args) throws PersistenceException {
         try {
             return jdbcTemplate.update(query, args);
         } catch (Exception e) {
@@ -56,7 +57,7 @@ public class SpringPersistenceService implements PersistenceService {
     }
 
     @Override
-    public int[] batchInsert(String query, List<Object[]> args) {
+    public int[] batchInsert(String query, List<Object[]> args) throws PersistenceException {
         try {
             return jdbcTemplate.batchUpdate(query, args);
         } catch (Exception e) {
@@ -65,7 +66,7 @@ public class SpringPersistenceService implements PersistenceService {
         }
     }
 
-    private void classifyException(Exception e) {
+    private void classifyException(Exception e) throws PersistenceException {
         if (e instanceof TransientDataAccessException
                 || e instanceof RecoverableDataAccessException
                 || e instanceof CannotGetJdbcConnectionException) {
@@ -75,7 +76,7 @@ public class SpringPersistenceService implements PersistenceService {
     }
 
     @Override
-    public <R> List<R> query(String query, Function<ResultSet, R> mapper) {
+    public <R> List<R> query(String query, Function<ResultSet, R> mapper) throws PersistenceException {
         try {
             return jdbcTemplate.query(query, (rs, rowNum) -> mapper.apply(rs));
         } catch (Exception e) {

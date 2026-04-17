@@ -13,6 +13,7 @@ import org.pak.dbq.spi.MessageFactory;
 import org.pak.dbq.spi.QueryService;
 import org.pak.dbq.spi.TransactionService;
 import org.pak.dbq.spi.error.NonRetrayablePersistenceException;
+import org.pak.dbq.spi.error.PersistenceException;
 import org.pak.dbq.spi.error.RetryablePersistenceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -91,23 +92,30 @@ public abstract class AbstractConsumer<T> {
                             Thread.sleep(50);
                         }
                     } while (isRunning.get());
-                } catch (MessageSerializationException e) {
-                    log.error("Serializer exception occurred, we cannot skip messages", e);
-                    isRunning.set(false);
-                } catch (NonRetrayablePersistenceException e) {
-                    log.error("Non recoverable persistence exception occurred, stop processing", e);
-                    isRunning.set(false);
-                } catch (RetryablePersistenceException e) {
-                    log.warn("Retryable persistence exception occurred, pause processing", e);
-                    pause = persistenceExceptionPause;
                 } catch (InterruptedException e) {
                     log.warn("Consumer is interrupted", e);
 
                     Thread.currentThread().interrupt();
                     isRunning.set(false);
                 } catch (Exception e) {
-                    log.error("Unexpected exception occurred", e);
-                    pause = unpredictedExceptionPause;
+                    switch (e) {
+                        case MessageSerializationException messageSerializationException -> {
+                            log.error("Serializer exception occurred, we cannot skip messages", e);
+                            isRunning.set(false);
+                        }
+                        case NonRetrayablePersistenceException nonRetrayablePersistenceException -> {
+                            log.error("Non recoverable persistence exception occurred, stop processing", e);
+                            isRunning.set(false);
+                        }
+                        case RetryablePersistenceException retryablePersistenceException -> {
+                            log.warn("Retryable persistence exception occurred, pause processing", e);
+                            pause = persistenceExceptionPause;
+                        }
+                        default -> {
+                            log.error("Unexpected exception occurred", e);
+                            pause = unpredictedExceptionPause;
+                        }
+                    }
                 }
             } while (isRunning.get());
 
@@ -116,15 +124,20 @@ public abstract class AbstractConsumer<T> {
     }
 
     public boolean poolAndProcess() {
-        List<MessageContainer<T>> messageContainerList =
-                queryService.selectMessages(queueName, subscriptionId, maxPollRecords, serializedByKey);
+        try {
+            List<MessageContainer<T>> messageContainerList =
+                    queryService.selectMessages(queueName, subscriptionId, maxPollRecords, serializedByKey);
 
-        if (messageContainerList.isEmpty()) {
+            if (messageContainerList.isEmpty()) {
+                return false;
+            }
+
+            processMessages(messageContainerList);
+            return true;
+        } catch (PersistenceException | InterruptedException e) {
+            sneakyThrow(e);
             return false;
         }
-
-        processMessages(messageContainerList);
-        return true;
     }
 
     public void stop() {
@@ -135,7 +148,8 @@ public abstract class AbstractConsumer<T> {
         }
     }
 
-    protected abstract void processMessages(List<MessageContainer<T>> messageContainerList);
+    protected abstract void processMessages(List<MessageContainer<T>> messageContainerList)
+            throws PersistenceException, InterruptedException;
 
     protected Message<T> toMessage(MessageContainer<T> messageContainer) {
         return messageFactory.createMessage(
@@ -171,5 +185,10 @@ public abstract class AbstractConsumer<T> {
 
     protected void pause(Duration duration) {
         pause = duration;
+    }
+
+    @SuppressWarnings("unchecked")
+    protected static <E extends Throwable> void sneakyThrow(Throwable throwable) throws E {
+        throw (E) throwable;
     }
 }

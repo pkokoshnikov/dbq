@@ -24,7 +24,7 @@ import static org.pak.dbq.internal.TestMessage.QUEUE_NAME;
 class TableManagerIntegrationTest extends BaseIntegrationTest {
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         dataSource = setupDatasource();
         springTransactionService = setupSpringTransactionService(dataSource);
         jdbcTemplate = setupJdbcTemplate(dataSource);
@@ -46,7 +46,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void cleanMessagePartitionTest() {
+    void cleanMessagePartitionTest() throws Exception {
         var now = Instant.now().truncatedTo(ChronoUnit.DAYS).minus(Duration.ofDays(10));
         pgQueryService.createQueuePartition(TestMessage.QUEUE_NAME, now);
         pgQueryService.createQueuePartition(TestMessage.QUEUE_NAME, now.plus(Duration.ofDays(1)));
@@ -71,7 +71,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void cleanSubscriptionPartitionTest() {
+    void cleanSubscriptionPartitionTest() throws Exception {
         var now = Instant.now().truncatedTo(ChronoUnit.DAYS).minus(Duration.ofDays(10));
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, now);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, now.plus(Duration.ofDays(1)));
@@ -97,7 +97,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void cleanPartitionsUsesUtcDateForRetentionCutoff() {
+    void cleanPartitionsUsesUtcDateForRetentionCutoff() throws Exception {
         var fixedClock = Clock.fixed(Instant.parse("2026-04-04T21:30:00Z"), ZoneId.of("Europe/Moscow"));
         var tm = new PgTableManager(pgQueryService, "* * * * * ?", "* * * * * ?", fixedClock);
 
@@ -113,7 +113,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testCreateMessagePartitions() {
+    void testCreateMessagePartitions() throws Exception {
         tableManager.registerQueue(TestMessage.QUEUE_NAME, 30, false);
 
         List<String> partitions = selectPartitions(QUEUE_TABLE);
@@ -123,7 +123,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testCreateSubscriptionPartitions() {
+    void testCreateSubscriptionPartitions() throws Exception {
         tableManager.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, true, false);
 
         List<String> partitions = selectPartitions(SUBSCRIPTION_TABLE_1_HISTORY);
@@ -134,7 +134,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testAutoDdlDoesNotFailWhenTablesAlreadyExist() {
+    void testAutoDdlDoesNotFailWhenTablesAlreadyExist() throws Exception {
         var tm = new PgTableManager(pgQueryService, "* * * * * ?", "* * * * * ?");
 
         Assertions.assertDoesNotThrow(() -> {
@@ -147,7 +147,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testStartCronJobSuccessfully() {
+    void testStartCronJobSuccessfully() throws Exception {
         tableManager.registerQueue(TestMessage.QUEUE_NAME, 30, false);
         tableManager.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, true, false);
         tableManager.startCronJobs();
@@ -155,7 +155,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testRejectConflictingRetentionRegistration() {
+    void testRejectConflictingRetentionRegistration() throws Exception {
         Assertions.assertThrows(IllegalArgumentException.class,
                 () -> tableManager.registerQueue(TestMessage.QUEUE_NAME, 1, false));
         Assertions.assertThrows(IllegalStateException.class,
@@ -164,7 +164,7 @@ class TableManagerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testStartCronJobFailed() {
+    void testStartCronJobFailed() throws Exception {
         var corruptedTableManager = new PgTableManager(pgQueryService, "* * * * ?", "* * * * * ?");
         corruptedTableManager.registerQueue(TestMessage.QUEUE_NAME, 1, false);
         corruptedTableManager.registerSubscription(TestMessage.QUEUE_NAME, SUBSCRIPTION_NAME_1, true, false);

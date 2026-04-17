@@ -35,7 +35,7 @@ import static org.pak.dbq.internal.TestMessage.QUEUE_NAME;
 @Slf4j
 class ConsumerIntegrationTest extends BaseIntegrationTest {
     @BeforeEach
-    void setup() {
+    void setup() throws Exception {
         dataSource = setupDatasource();
         springTransactionService = setupSpringTransactionService(dataSource);
         jdbcTemplate = setupJdbcTemplate(dataSource);
@@ -58,7 +58,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testSubmitMessage() {
+    void testSubmitMessage() throws Exception {
         TestMessage testMessage = new TestMessage(TEST_VALUE);
 
         var producer = producerFactory.build().create();
@@ -77,7 +77,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testSuccessHandle() throws RetryablePersistenceException {
+    void testSuccessHandle() throws Exception {
         var consumer = consumerFactoryBuilder.build().create();
 
         var producer = producerFactory.build().create();
@@ -102,13 +102,15 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testBatchSuccessHandle() {
+    void testBatchSuccessHandle() throws Exception {
         var handledRecords = new ArrayList<MessageRecord<TestMessage>>();
         var consumer = consumerFactoryBuilder
                 .messageHandler(null)
                 .batchMessageHandler((records, acknowledger) -> {
                     handledRecords.addAll(records);
-                    records.forEach(acknowledger::complete);
+                    for (var record : records) {
+                        acknowledger.complete(record);
+                    }
                 })
                 .properties(ConsumerConfig.Properties.builder()
                         .historyEnabled(true)
@@ -140,7 +142,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testBatchRetryAndFail() {
+    void testBatchRetryAndFail() throws Exception {
         var retryException = new RetryableApplicationException(TEST_EXCEPTION_MESSAGE);
         var failException = new NonRetryableApplicationException("batch-fail");
         var consumer = consumerFactoryBuilder
@@ -178,7 +180,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testHandleNonRetryableException() {
+    void testHandleNonRetryableException() throws Exception {
         var consumer = consumerFactoryBuilder.messageHandler(testMessage -> {
                     throw new NonRetryableApplicationException(TEST_EXCEPTION_MESSAGE);
                 })
@@ -201,7 +203,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testHandleRetryableException() {
+    void testHandleRetryableException() throws Exception {
         var consumer = consumerFactoryBuilder.messageHandler(testMessage -> {
                     throw new RetryableApplicationException(TEST_EXCEPTION_MESSAGE);
                 })
@@ -240,7 +242,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testHandleRetryableException2() {
+    void testHandleRetryableException2() throws Exception {
         var consumer = consumerFactoryBuilder.messageHandler(testMessage -> {
                     throw new RetryableApplicationException(TEST_EXCEPTION_MESSAGE);
                 })
@@ -275,7 +277,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testHandleRetryableExceptionFail() {
+    void testHandleRetryableExceptionFail() throws Exception {
         var consumer = consumerFactoryBuilder.messageHandler(testMessage -> {
                     throw new RetryableApplicationException(TEST_EXCEPTION_MESSAGE);
                 })
@@ -315,7 +317,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testDuplicateKeyPublish() {
+    void testDuplicateKeyPublish() throws Exception {
         var producer = producerFactory.build().create();
 
         TestMessage testMessage = new TestMessage(TEST_VALUE);
@@ -337,7 +339,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testPublishTimeoutException() throws IOException {
+    void testPublishTimeoutException() throws Exception {
         var producer = producerFactory.build().create();
 
         TestMessage testMessage = new TestMessage(TEST_VALUE);
@@ -349,7 +351,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testProcessTimeoutException() throws IOException {
+    void testProcessTimeoutException() throws Exception {
         var producer = producerFactory.build().create();
 
         var messageProcessor = consumerFactoryBuilder.build().create();
@@ -365,7 +367,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testBlockingException() {
+    void testBlockingException() throws Exception {
         var producer = producerFactory.build().create();
 
         var consumer = consumerFactoryBuilder.messageHandler(testMessage -> {
@@ -401,7 +403,7 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void testSuccessHandleWithoutHistory() {
+    void testSuccessHandleWithoutHistory() throws Exception {
         clearTables();
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, false);

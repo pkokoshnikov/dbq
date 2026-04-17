@@ -17,7 +17,7 @@ class QueueManagerTest {
     private static final SubscriptionId SUBSCRIPTION_ID = new SubscriptionId("test-subscription");
 
     @Test
-    void registerProducerReturnsProducerThatStoresMessage() {
+    void registerProducerReturnsProducerThatStoresMessage() throws Exception {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var tableManager = new CoreTestSupport.RecordingTableManager();
@@ -39,7 +39,7 @@ class QueueManagerTest {
     }
 
     @Test
-    void registerProducerKeepsSeparateProducersForDifferentQueuesWithSamePayloadClass() {
+    void registerProducerKeepsSeparateProducersForDifferentQueuesWithSamePayloadClass() throws Exception {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var queueManager = new QueueManager(queryService, transactionService);
@@ -70,7 +70,7 @@ class QueueManagerTest {
     }
 
     @Test
-    void registerProducerAllowsIdempotentRegistrationWithSameConfigInstance() {
+    void registerProducerAllowsIdempotentRegistrationWithSameConfigInstance() throws Exception {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var queueManager = new QueueManager(queryService, transactionService);
@@ -89,7 +89,7 @@ class QueueManagerTest {
     }
 
     @Test
-    void registerProducerFailsOnConflictingRegistration() {
+    void registerProducerFailsOnConflictingRegistration() throws Exception {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var queueManager = new QueueManager(queryService, transactionService);
@@ -126,7 +126,7 @@ class QueueManagerTest {
     }
 
     @Test
-    void registerQueueRegistersQueueRetention() {
+    void registerQueueRegistersQueueRetention() throws Exception {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var tableManager = new CoreTestSupport.RecordingTableManager();
@@ -144,7 +144,7 @@ class QueueManagerTest {
     }
 
     @Test
-    void registerQueuePropagatesAutoDdlFromQueueManagerProperties() {
+    void registerQueuePropagatesAutoDdlFromQueueManagerProperties() throws Exception {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var tableManager = new CoreTestSupport.RecordingTableManager();
@@ -165,7 +165,7 @@ class QueueManagerTest {
     }
 
     @Test
-    void registerConsumerAllowsIdempotentRegistrationWithSameConfigInstance() {
+    void registerConsumerAllowsIdempotentRegistrationWithSameConfigInstance() throws Exception {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var tableManager = new CoreTestSupport.RecordingTableManager();
@@ -193,7 +193,7 @@ class QueueManagerTest {
     }
 
     @Test
-    void registerConsumerRegistersHistoryRetentionWhenQueueIsInitialized() {
+    void registerConsumerRegistersHistoryRetentionWhenQueueIsInitialized() throws Exception {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var tableManager = new CoreTestSupport.RecordingTableManager();
@@ -246,7 +246,7 @@ class QueueManagerTest {
     }
 
     @Test
-    void registerQueueFailsOnConflictingRegistration() {
+    void registerQueueFailsOnConflictingRegistration() throws Exception {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var queueManager = new QueueManager(queryService, transactionService);
@@ -269,7 +269,7 @@ class QueueManagerTest {
     }
 
     @Test
-    void registerConsumerFailsOnConflictingRegistration() {
+    void registerConsumerFailsOnConflictingRegistration() throws Exception {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var queueManager = new QueueManager(queryService, transactionService);

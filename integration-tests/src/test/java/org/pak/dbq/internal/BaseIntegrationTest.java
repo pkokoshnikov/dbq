@@ -161,15 +161,15 @@ public class BaseIntegrationTest {
         return new PgTableManager(pgQueryService, "* * * * * ?", "* * * * * ?");
     }
 
-    protected void createQueueTable() {
+    protected void createQueueTable() throws Exception {
         pgQueryService.createQueueTable(QUEUE_NAME);
     }
 
-    protected void createSubscriptionTable(SubscriptionId subscriptionId) {
+    protected void createSubscriptionTable(SubscriptionId subscriptionId) throws Exception {
         createSubscriptionTable(subscriptionId, false, false);
     }
 
-    protected void createSubscriptionTable(SubscriptionId subscriptionId, boolean historyEnabled) {
+    protected void createSubscriptionTable(SubscriptionId subscriptionId, boolean historyEnabled) throws Exception {
         createSubscriptionTable(subscriptionId, historyEnabled, false);
     }
 
@@ -177,7 +177,7 @@ public class BaseIntegrationTest {
             SubscriptionId subscriptionId,
             boolean historyEnabled,
             boolean serializedByKey
-    ) {
+    ) throws Exception {
         pgQueryService.createSubscriptionTable(QUEUE_NAME, subscriptionId, historyEnabled, serializedByKey);
     }
 

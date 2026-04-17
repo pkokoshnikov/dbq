@@ -10,6 +10,7 @@ import org.pak.dbq.spi.MessageFactory;
 import org.pak.dbq.spi.QueryService;
 import org.pak.dbq.spi.TableManager;
 import org.pak.dbq.spi.TransactionService;
+import org.pak.dbq.spi.error.PersistenceException;
 import org.pak.dbq.internal.support.SimpleMessageFactory;
 
 import java.util.Objects;
@@ -99,7 +100,7 @@ public class QueueManager {
     private final ConcurrentHashMap<String, Producer<?>> producers =
             new ConcurrentHashMap<>();
 
-    public void registerQueue(QueueConfig queueConfig) {
+    public void registerQueue(QueueConfig queueConfig) throws PersistenceException {
         var existingConfig = queueConfigs.putIfAbsent(queueConfig.getQueueName(), queueConfig);
         if (existingConfig != null) {
             if (!sameQueueConfig(existingConfig, queueConfig)) {
@@ -115,7 +116,7 @@ public class QueueManager {
                     queueConfig.getQueueName(),
                     queueConfig.getProperties().getRetentionDays(),
                     properties.isAutoDdl());
-        } catch (RuntimeException e) {
+        } catch (PersistenceException | RuntimeException e) {
             queueConfigs.remove(queueConfig.getQueueName(), queueConfig);
             throw e;
         }
@@ -140,7 +141,7 @@ public class QueueManager {
         return producer;
     }
 
-    public <T> void registerConsumer(ConsumerConfig<T> consumerConfig) {
+    public <T> void registerConsumer(ConsumerConfig<T> consumerConfig) throws PersistenceException {
         requireInitializedQueue(consumerConfig.getQueueName());
 
         var consumerKey = consumerConfig.getQueueName() + "_" + consumerConfig.getSubscriptionId();
@@ -162,7 +163,7 @@ public class QueueManager {
             log.info("Register consumer on queue {} with subscription {}",
                     consumerConfig.getQueueName(),
                     consumerConfig.getSubscriptionId());
-        } catch (RuntimeException e) {
+        } catch (PersistenceException | RuntimeException e) {
             consumerConfigs.remove(consumerKey, consumerConfig);
             throw e;
         }
@@ -201,7 +202,7 @@ public class QueueManager {
                 && left.getProperties().getRetentionDays() == right.getProperties().getRetentionDays();
     }
 
-    private void registerSubscription(ConsumerConfig<?> consumerConfig) {
+    private void registerSubscription(ConsumerConfig<?> consumerConfig) throws PersistenceException {
         tableManager.registerSubscription(
                 consumerConfig.getQueueName(),
                 consumerConfig.getSubscriptionId(),

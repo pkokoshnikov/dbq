@@ -25,7 +25,7 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
     QueueManager queueManager;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         var viburDBCPDataSource = new ViburDBCPDataSource();
         viburDBCPDataSource.setJdbcUrl(postgres.getJdbcUrl());
         viburDBCPDataSource.setPoolMaxSize(50);
@@ -52,7 +52,7 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void registerProducerAndConsumerPropagateRetentionToTableManager() {
+    void registerProducerAndConsumerPropagateRetentionToTableManager() throws Exception {
         queueManager.registerQueue(QueueConfig.builder()
                 .queueName(QUEUE_NAME)
                 .properties(QueueConfig.Properties.builder()
@@ -80,7 +80,7 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void publishSubscribeTest() throws InterruptedException {
+    void publishSubscribeTest() throws Exception {
         queueManager.registerQueue(QueueConfig.builder()
                 .queueName(QUEUE_NAME)
                 .properties(QueueConfig.Properties.builder()
@@ -129,7 +129,7 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void publishBatchSubscribeTest() throws InterruptedException {
+    void publishBatchSubscribeTest() throws Exception {
         queueManager.registerQueue(QueueConfig.builder()
                 .queueName(QUEUE_NAME)
                 .properties(QueueConfig.Properties.builder()
@@ -147,11 +147,11 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
 
         queueManager.registerConsumer(ConsumerConfig.<TestMessage>builder()
                 .batchMessageHandler((records, acknowledger) -> {
-                    records.forEach(record -> {
+                    for (var record : records) {
                         handledMessages.add(record.message().payload());
                         acknowledger.complete(record);
                         countDownLatch.countDown();
-                    });
+                    }
                 })
                 .queueName(QUEUE_NAME)
                 .subscriptionId(SUBSCRIPTION_NAME_1)

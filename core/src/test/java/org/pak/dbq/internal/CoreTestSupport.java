@@ -9,6 +9,7 @@ import org.pak.dbq.spi.MessageContextPropagator;
 import org.pak.dbq.spi.QueryService;
 import org.pak.dbq.spi.TableManager;
 import org.pak.dbq.spi.TransactionService;
+import org.pak.dbq.spi.error.PersistenceException;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -198,7 +199,7 @@ public class CoreTestSupport {
         private final List<SubscriptionRegistrationCall> subscriptionRegistrations = new ArrayList<>();
 
         @Override
-        public void registerQueue(QueueName queueName, int retentionDays, boolean autoDdl) {
+        public void registerQueue(QueueName queueName, int retentionDays, boolean autoDdl) throws PersistenceException {
             queueRegistrations.add(new QueueRegistrationCall(queueName, retentionDays, autoDdl));
         }
 
@@ -208,7 +209,7 @@ public class CoreTestSupport {
                 SubscriptionId subscriptionId,
                 boolean historyEnabled,
                 boolean serializedByKey
-        ) {
+        ) throws PersistenceException {
             subscriptionRegistrations.add(new SubscriptionRegistrationCall(
                     queueName,
                     subscriptionId,
@@ -289,7 +290,7 @@ public class CoreTestSupport {
                 SubscriptionId subscriptionId,
                 Integer maxPollRecords,
                 boolean serializedByKey
-        ) {
+        ) throws PersistenceException {
             lastSerializedByKey = serializedByKey;
             return (List<MessageContainer<T>>) selectedMessages;
         }
@@ -300,8 +301,11 @@ public class CoreTestSupport {
                 MessageContainer<T> messageContainer,
                 Duration retryDuration,
                 Exception e
-        ) {
+        ) throws PersistenceException {
             Object result = retryMessageResults.poll();
+            if (result instanceof PersistenceException persistenceException) {
+                throw persistenceException;
+            }
             if (result instanceof RuntimeException runtimeException) {
                 throw runtimeException;
             }
@@ -314,8 +318,11 @@ public class CoreTestSupport {
                 MessageContainer<T> messageContainer,
                 Exception e,
                 boolean historyEnabled
-        ) {
+        ) throws PersistenceException {
             Object result = failMessageResults.poll();
+            if (result instanceof PersistenceException persistenceException) {
+                throw persistenceException;
+            }
             if (result instanceof RuntimeException runtimeException) {
                 throw runtimeException;
             }
@@ -327,8 +334,11 @@ public class CoreTestSupport {
                 SubscriptionId subscriptionId,
                 MessageContainer<T> messageContainer,
                 boolean historyEnabled
-        ) {
+        ) throws PersistenceException {
             Object result = completeMessageResults.poll();
+            if (result instanceof PersistenceException persistenceException) {
+                throw persistenceException;
+            }
             if (result instanceof RuntimeException runtimeException) {
                 throw runtimeException;
             }
@@ -337,9 +347,12 @@ public class CoreTestSupport {
 
         @SuppressWarnings("unchecked")
         @Override
-        public <T> boolean insertMessage(QueueName queueName, Message<T> message) {
+        public <T> boolean insertMessage(QueueName queueName, Message<T> message) throws PersistenceException {
             inserts.add(new InsertCall<>(queueName, message));
             Object result = insertMessageResults.poll();
+            if (result instanceof PersistenceException persistenceException) {
+                throw persistenceException;
+            }
             if (result instanceof RuntimeException runtimeException) {
                 throw runtimeException;
             }
@@ -350,7 +363,8 @@ public class CoreTestSupport {
         }
 
         @Override
-        public <T> List<Boolean> insertBatchMessage(QueueName queueName, List<Message<T>> messages) {
+        public <T> List<Boolean> insertBatchMessage(QueueName queueName, List<Message<T>> messages)
+                throws PersistenceException {
             batchInserts.add(new BatchInsertCall<>(queueName, List.copyOf(messages)));
             return java.util.Collections.nCopies(messages.size(), Boolean.TRUE);
         }

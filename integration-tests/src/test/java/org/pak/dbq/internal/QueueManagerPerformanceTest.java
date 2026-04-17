@@ -27,7 +27,7 @@ class QueueManagerPerformanceTest extends BaseIntegrationTest {
     QueueManager queueManager;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         var viburDBCPDataSource = new ViburDBCPDataSource();
         viburDBCPDataSource.setJdbcUrl(postgres.getJdbcUrl());
         viburDBCPDataSource.setPoolMaxSize(50);
@@ -51,7 +51,7 @@ class QueueManagerPerformanceTest extends BaseIntegrationTest {
     }
 
     @Test
-    void performanceTest() throws InterruptedException {
+    void performanceTest() throws Exception {
         queueManager.registerQueue(QueueConfig.builder()
                 .queueName(QUEUE_NAME)
                 .build());

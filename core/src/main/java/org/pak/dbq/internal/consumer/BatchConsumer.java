@@ -12,6 +12,7 @@ import org.pak.dbq.spi.MessageContextPropagator;
 import org.pak.dbq.spi.MessageFactory;
 import org.pak.dbq.spi.QueryService;
 import org.pak.dbq.spi.TransactionService;
+import org.pak.dbq.spi.error.PersistenceException;
 
 import java.math.BigInteger;
 import java.util.HashSet;
@@ -38,7 +39,8 @@ public class BatchConsumer<T> extends AbstractConsumer<T> {
     }
 
     @Override
-    protected void processMessages(List<MessageContainer<T>> messageContainerList) {
+    protected void processMessages(List<MessageContainer<T>> messageContainerList)
+            throws PersistenceException, InterruptedException {
         var messageContainersById = new LinkedHashMap<BigInteger, MessageContainer<T>>();
         var records = messageContainerList.stream()
                 .map(messageContainer -> {

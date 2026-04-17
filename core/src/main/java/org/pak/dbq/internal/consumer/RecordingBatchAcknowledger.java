@@ -5,6 +5,7 @@ import org.pak.dbq.api.MessageRecord;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.spi.QueryService;
+import org.pak.dbq.spi.error.PersistenceException;
 
 import java.math.BigInteger;
 import java.time.Duration;
@@ -33,14 +34,14 @@ final class RecordingBatchAcknowledger<T> implements BatchAcknowledger<T> {
     }
 
     @Override
-    public void complete(MessageRecord<T> record) {
+    public void complete(MessageRecord<T> record) throws PersistenceException {
         var messageContainer = getPendingRecord(record);
         queryService.completeMessage(subscriptionId, messageContainer, historyEnabled);
         acknowledgedRecords.add(record.id());
     }
 
     @Override
-    public void retry(MessageRecord<T> record, Duration duration, Exception exception) {
+    public void retry(MessageRecord<T> record, Duration duration, Exception exception) throws PersistenceException {
         if (duration == null || duration.isNegative()) {
             throw new IllegalArgumentException("retry duration must be >= 0");
         }
@@ -53,7 +54,7 @@ final class RecordingBatchAcknowledger<T> implements BatchAcknowledger<T> {
     }
 
     @Override
-    public void fail(MessageRecord<T> record, Exception exception) {
+    public void fail(MessageRecord<T> record, Exception exception) throws PersistenceException {
         if (exception == null) {
             throw new NullPointerException("exception");
         }

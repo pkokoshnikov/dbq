@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.spi.TableManager;
+import org.pak.dbq.spi.error.PersistenceException;
 import org.pak.dbq.spi.error.RetryablePersistenceException;
 import org.quartz.*;
 import org.quartz.impl.StdSchedulerFactory;
@@ -17,12 +18,12 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 
 @Slf4j
 public class PgTableManager implements TableManager {
     public static final String TABLE_MANAGER = "tableManager";
     public static final String QUEUE_GROUP = "queue";
+    static final Duration RETRYABLE_JOB_DELAY = Duration.ofSeconds(5);
 
     private final PgQueryService pgQueryService;
     private final String cronCreatePartitions;
@@ -49,7 +50,7 @@ public class PgTableManager implements TableManager {
         this.clock = clock.withZone(ZoneOffset.UTC);
     }
 
-    public void registerQueue(QueueName queueName, int retentionDays, boolean autoDdl) {
+    public void registerQueue(QueueName queueName, int retentionDays, boolean autoDdl) throws PersistenceException {
         validateRetentionDays(retentionDays);
         registerQueueAutoDdl(queueName, autoDdl);
         if (autoDdl) {
@@ -66,7 +67,7 @@ public class PgTableManager implements TableManager {
             SubscriptionId subscriptionId,
             boolean historyEnabled,
             boolean serializedByKey
-    ) {
+    ) throws PersistenceException {
         if (queueAutoDdl.getOrDefault(queueName, false)) {
             pgQueryService.createSubscriptionTable(queueName, subscriptionId, historyEnabled, serializedByKey);
         }
@@ -113,40 +114,50 @@ public class PgTableManager implements TableManager {
     public void createPartitions() {
         var date = Instant.now(clock).plus(Duration.ofDays(1));
 
-        queueRetentionDays.keySet().forEach(queueName -> pgQueryService.createQueuePartition(queueName, date));
-        historyRetentionDays.keySet().forEach(subscriptionId -> pgQueryService.createHistoryPartition(subscriptionId, date));
+        for (var queueName : queueRetentionDays.keySet()) {
+            pgQueryService.createQueuePartition(queueName, date);
+        }
+        for (var subscriptionId : historyRetentionDays.keySet()) {
+            pgQueryService.createHistoryPartition(subscriptionId, date);
+        }
     }
 
+    @SneakyThrows
     public void cleanPartitions() {
         var todayUtc = LocalDate.now(clock);
-        historyRetentionDays.forEach((subscriptionId, retentionDays) -> {
+        for (var entry : historyRetentionDays.entrySet()) {
+            var subscriptionId = entry.getKey();
+            var retentionDays = entry.getValue();
             var partitions = pgQueryService.getAllHistoryPartitions(subscriptionId);
-            partitions.stream()
-                    .filter(partition -> partition.isBefore(todayUtc.minusDays(retentionDays)))
-                    .forEach(partition -> {
-                        log.info("Dropping history subscription partition {} for {}", partition,
-                                subscriptionId.id());
-                        var result = pgQueryService.dropHistoryPartition(subscriptionId, partition);
-                        if (result == PgQueryService.DropPartitionResult.HAS_REFERENCES) {
-                            log.warn("Partition {} for history {} still has references, skipping", partition,
-                                    subscriptionId.id());
-                        }
-                    });
-        });
+            for (var partition : partitions) {
+                if (!partition.isBefore(todayUtc.minusDays(retentionDays))) {
+                    continue;
+                }
+                log.info("Dropping history subscription partition {} for {}", partition, subscriptionId.id());
+                var result = pgQueryService.dropHistoryPartition(subscriptionId, partition);
+                if (result == PgQueryService.DropPartitionResult.HAS_REFERENCES) {
+                    log.warn("Partition {} for history {} still has references, skipping", partition,
+                            subscriptionId.id());
+                }
+            }
+        }
 
-        queueRetentionDays.forEach((queueName, retentionDays) -> {
+        for (var entry : queueRetentionDays.entrySet()) {
+            var queueName = entry.getKey();
+            var retentionDays = entry.getValue();
             var partitions = pgQueryService.getAllQueuePartitions(queueName);
-            partitions.stream()
-                    .filter(partition -> partition.isBefore(todayUtc.minusDays(retentionDays)))
-                    .forEach(partition -> {
-                        log.info("Dropping message partition {} for {}", partition, queueName.name());
-                        var result = pgQueryService.dropQueuePartition(queueName, partition);
-                        if (result == PgQueryService.DropPartitionResult.HAS_REFERENCES) {
-                            log.warn("Partition {} for queue {} still has references, skipping", partition,
-                                    queueName.name());
-                        }
-                    });
-        });
+            for (var partition : partitions) {
+                if (!partition.isBefore(todayUtc.minusDays(retentionDays))) {
+                    continue;
+                }
+                log.info("Dropping message partition {} for {}", partition, queueName.name());
+                var result = pgQueryService.dropQueuePartition(queueName, partition);
+                if (result == PgQueryService.DropPartitionResult.HAS_REFERENCES) {
+                    log.warn("Partition {} for queue {} still has references, skipping", partition,
+                            queueName.name());
+                }
+            }
+        }
     }
 
     private void addCronJob(String jobKey, Class<? extends Job> clazz, String cron, Scheduler scheduler)
@@ -210,26 +221,46 @@ public class PgTableManager implements TableManager {
         }
     }
 
-    private static void doJob(JobExecutionContext context, Consumer<PgTableManager> job) {
+    @FunctionalInterface
+    interface ThrowingJob {
+        void accept(PgTableManager tableManager) throws Exception;
+    }
+
+    @FunctionalInterface
+    interface Sleeper {
+        void sleep(Duration duration) throws InterruptedException;
+    }
+
+    private static void doJob(JobExecutionContext context, ThrowingJob job) {
         try {
-            do {
-                try {
-                    job.accept(((PgTableManager) context.getScheduler().getContext().get(TABLE_MANAGER)));
-                    break;
-                } catch (SchedulerException e) {
-                    log.error("Unpredicted exception during getting table manager", e);
-                    throw new IllegalArgumentException(e);
-                } catch (RetryablePersistenceException e) {
-                    log.warn("Retryable persistence exception during job execution", e);
-                    Thread.sleep(5000);
-                } catch (Exception e) {
-                    log.error("Unpredicted exception during job execution", e);
-                    break;
-                }
-            } while (true);
+            var tableManager = (PgTableManager) context.getScheduler().getContext().get(TABLE_MANAGER);
+            doJob(tableManager, job, RETRYABLE_JOB_DELAY, duration -> Thread.sleep(duration.toMillis()));
+        } catch (SchedulerException e) {
+            log.error("Unpredicted exception during getting table manager", e);
+            throw new IllegalArgumentException(e);
         } catch (InterruptedException e) {
             log.error("Interrupted exception during job execution", e);
             Thread.currentThread().interrupt();
         }
+    }
+
+    static void doJob(
+            PgTableManager tableManager,
+            ThrowingJob job,
+            Duration retryDelay,
+            Sleeper sleeper
+    ) throws InterruptedException {
+        do {
+            try {
+                job.accept(tableManager);
+                break;
+            } catch (RetryablePersistenceException e) {
+                log.warn("Retryable persistence exception during job execution", e);
+                sleeper.sleep(retryDelay);
+            } catch (Exception e) {
+                log.error("Unpredicted exception during job execution", e);
+                break;
+            }
+        } while (true);
     }
 }

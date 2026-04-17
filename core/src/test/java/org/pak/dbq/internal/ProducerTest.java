@@ -10,7 +10,7 @@ import static org.pak.dbq.internal.CoreTestSupport.QUEUE_NAME;
 
 class ProducerTest {
     @Test
-    void sendCreatesAndInsertsMessageForPayload() {
+    void sendCreatesAndInsertsMessageForPayload() throws Exception {
         var queryService = new CoreTestSupport.RecordingQueryService();
         var messageContextPropagator = new CoreTestSupport.RecordingMessageContextPropagator(
                 java.util.Map.of("traceparent", "00-test-parent"));
