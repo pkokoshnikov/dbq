@@ -9,27 +9,25 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.pak.dbq.api.ConsumerConfig;
+import org.pak.dbq.api.Message;
 import org.pak.dbq.api.MessageRecord;
+import org.pak.dbq.api.policy.BlockingPolicy;
 import org.pak.dbq.internal.BaseIntegrationTest;
 import org.pak.dbq.internal.TestMessage;
 import org.pak.dbq.spi.error.RetryablePersistenceException;
-import org.pak.dbq.api.Message;
-import org.pak.dbq.api.policy.BlockingPolicy;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.io.IOException;
-import java.util.ArrayList;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
+import java.util.ArrayList;
 import java.util.Optional;
 import java.util.UUID;
 
 import static java.util.Optional.of;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.pak.dbq.internal.TestMessage.QUEUE_NAME;
 import static org.pak.dbq.internal.persistence.Status.FAILED;
 import static org.pak.dbq.internal.persistence.Status.PROCESSED;
-import static org.pak.dbq.internal.TestMessage.QUEUE_NAME;
 
 @Testcontainers
 @Slf4j

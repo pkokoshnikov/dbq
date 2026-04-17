@@ -4,7 +4,7 @@ import org.pak.dbq.spi.error.PersistenceException;
 
 import java.time.Duration;
 
-public interface BatchAcknowledger<T> {
+public interface Acknowledger<T> {
     void complete(MessageRecord<T> record) throws PersistenceException;
 
     void retry(MessageRecord<T> record, Duration duration, Exception exception) throws PersistenceException;

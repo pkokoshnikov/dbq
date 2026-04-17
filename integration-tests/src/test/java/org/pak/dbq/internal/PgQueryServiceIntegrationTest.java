@@ -1,14 +1,13 @@
 package org.pak.dbq.internal;
 
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.pak.dbq.api.SubscriptionId;
-import org.pak.dbq.pg.PgQueryService;
-import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.api.Message;
+import org.pak.dbq.api.SubscriptionId;
+import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.persistence.Status;
+import org.pak.dbq.pg.PgQueryService;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;

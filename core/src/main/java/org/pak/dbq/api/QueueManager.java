@@ -2,16 +2,16 @@ package org.pak.dbq.api;
 
 import lombok.Builder;
 import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
 import lombok.experimental.FieldDefaults;
+import lombok.extern.slf4j.Slf4j;
 import org.pak.dbq.internal.consumer.ConsumerStarter;
 import org.pak.dbq.internal.support.NoOpTableManager;
+import org.pak.dbq.internal.support.SimpleMessageFactory;
 import org.pak.dbq.spi.MessageFactory;
 import org.pak.dbq.spi.QueryService;
 import org.pak.dbq.spi.TableManager;
 import org.pak.dbq.spi.TransactionService;
 import org.pak.dbq.spi.error.PersistenceException;
-import org.pak.dbq.internal.support.SimpleMessageFactory;
 
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;

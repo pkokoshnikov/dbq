@@ -10,14 +10,8 @@ import org.pak.dbq.api.policy.NonRetryablePolicy;
 import org.pak.dbq.api.policy.RetryablePolicy;
 import org.pak.dbq.error.MessageSerializationException;
 import org.pak.dbq.internal.persistence.MessageContainer;
-import org.pak.dbq.spi.MessageConsumerTelemetry;
-import org.pak.dbq.spi.MessageContextPropagator;
-import org.pak.dbq.spi.MessageFactory;
-import org.pak.dbq.spi.QueryService;
-import org.pak.dbq.spi.TransactionService;
-import org.pak.dbq.spi.error.NonRetrayablePersistenceException;
+import org.pak.dbq.spi.*;
 import org.pak.dbq.spi.error.PersistenceException;
-import org.pak.dbq.spi.error.RetryablePersistenceException;
 import org.slf4j.MDC;
 
 import java.util.List;

@@ -1,15 +1,15 @@
 package org.pak.dbq.spring;
 
+import org.pak.dbq.spi.PersistenceService;
 import org.pak.dbq.spi.error.NonRetrayablePersistenceException;
 import org.pak.dbq.spi.error.PersistenceException;
 import org.pak.dbq.spi.error.RetryablePersistenceException;
-import org.pak.dbq.spi.PersistenceService;
 import org.springframework.dao.RecoverableDataAccessException;
+import org.springframework.dao.TransientDataAccessException;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.jdbc.core.ArgumentPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementCallback;
-import org.springframework.jdbc.CannotGetJdbcConnectionException;
-import org.springframework.dao.TransientDataAccessException;
 
 import java.sql.ResultSet;
 import java.util.List;

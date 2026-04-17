@@ -124,7 +124,7 @@ class BatchConsumerTest {
         var failure = new RetryablePersistenceException(new RuntimeException("db"), null);
         queryService.enqueueCompleteMessageResult(failure);
         var expectedFailureException = new IllegalStateException("fallback");
-        var acknowledger = new RecordingBatchAcknowledger<>(
+        var acknowledger = new RecordingAcknowledger<>(
                 queryService,
                 SUBSCRIPTION_NAME,
                 false,

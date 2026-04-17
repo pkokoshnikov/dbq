@@ -1,8 +1,8 @@
 package org.pak.dbq.internal.support;
 
+import org.pak.dbq.api.Message;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
-import org.pak.dbq.api.Message;
 import org.pak.dbq.spi.MessageConsumerTelemetry;
 
 public final class NoOpMessageConsumerTelemetry implements MessageConsumerTelemetry {

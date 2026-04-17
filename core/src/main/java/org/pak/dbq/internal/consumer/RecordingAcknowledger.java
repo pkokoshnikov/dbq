@@ -1,6 +1,6 @@
 package org.pak.dbq.internal.consumer;
 
-import org.pak.dbq.api.BatchAcknowledger;
+import org.pak.dbq.api.Acknowledger;
 import org.pak.dbq.api.MessageRecord;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.internal.persistence.MessageContainer;
@@ -12,14 +12,14 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
 
-final class RecordingBatchAcknowledger<T> implements BatchAcknowledger<T> {
+final class RecordingAcknowledger<T> implements Acknowledger<T> {
     private final QueryService queryService;
     private final SubscriptionId subscriptionId;
     private final boolean historyEnabled;
     private final Map<BigInteger, MessageContainer<T>> messageContainersById;
     private final Set<BigInteger> acknowledgedRecords;
 
-    RecordingBatchAcknowledger(
+    RecordingAcknowledger(
             QueryService queryService,
             SubscriptionId subscriptionId,
             boolean historyEnabled,

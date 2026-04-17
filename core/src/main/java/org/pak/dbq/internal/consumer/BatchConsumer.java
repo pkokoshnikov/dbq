@@ -1,17 +1,9 @@
 package org.pak.dbq.internal.consumer;
 
 import lombok.NonNull;
-import org.pak.dbq.api.BatchMessageHandler;
-import org.pak.dbq.api.ConsumerConfig;
-import org.pak.dbq.api.MessageRecord;
-import org.pak.dbq.api.QueueName;
-import org.pak.dbq.api.SubscriptionId;
+import org.pak.dbq.api.*;
 import org.pak.dbq.internal.persistence.MessageContainer;
-import org.pak.dbq.spi.MessageConsumerTelemetry;
-import org.pak.dbq.spi.MessageContextPropagator;
-import org.pak.dbq.spi.MessageFactory;
-import org.pak.dbq.spi.QueryService;
-import org.pak.dbq.spi.TransactionService;
+import org.pak.dbq.spi.*;
 import org.pak.dbq.spi.error.PersistenceException;
 
 import java.math.BigInteger;
@@ -54,7 +46,7 @@ public class BatchConsumer<T> extends AbstractConsumer<T> {
                 .toList();
         var acknowledgedRecords = new HashSet<BigInteger>();
 
-        batchMessageHandler.handle(records, new RecordingBatchAcknowledger<>(
+        batchMessageHandler.handle(records, new RecordingAcknowledger<>(
                 getQueryService(),
                 getSubscriptionId(),
                 isHistoryEnabled(),

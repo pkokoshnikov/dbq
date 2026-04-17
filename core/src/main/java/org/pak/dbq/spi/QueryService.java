@@ -1,9 +1,9 @@
 package org.pak.dbq.spi;
 
+import org.pak.dbq.api.Message;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.internal.persistence.MessageContainer;
-import org.pak.dbq.api.Message;
 import org.pak.dbq.spi.error.PersistenceException;
 
 import java.time.Duration;

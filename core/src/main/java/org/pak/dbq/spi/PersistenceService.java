@@ -1,10 +1,10 @@
 package org.pak.dbq.spi;
 
+import org.pak.dbq.spi.error.PersistenceException;
+
 import java.sql.ResultSet;
 import java.util.List;
 import java.util.function.Function;
-
-import org.pak.dbq.spi.error.PersistenceException;
 
 public interface PersistenceService {
     void execute(String sql, Object... args) throws PersistenceException;
