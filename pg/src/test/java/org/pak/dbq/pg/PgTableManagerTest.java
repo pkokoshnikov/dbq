@@ -1,7 +1,7 @@
 package org.pak.dbq.pg;
 
 import org.junit.jupiter.api.Test;
-import org.pak.dbq.spi.error.RetryablePersistenceException;
+import org.pak.dbq.error.RetryablePersistenceException;
 
 import java.time.Duration;
 import java.util.ArrayList;

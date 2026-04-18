@@ -87,6 +87,30 @@ Main public types:
 - `SubscriptionId`
 - policy interfaces in `org.pak.dbq.api.policy`
 
+### Exception hierarchy
+
+The checked root type exposed by DBQ is `DbqException`.
+
+Decision-oriented branches:
+
+- `RetryableDbqException`
+- `NonRetryableDbqException`
+
+Current concrete exceptions:
+
+- `RetryablePersistenceException`
+- `NonRetrayablePersistenceException`
+- `MessageSerializationException`
+- `MessageDeserializationException`
+
+This hierarchy is intentionally policy-first:
+
+- callers can decide retry vs terminal handling from the top-level subtype
+- concrete exception classes still preserve the source of failure
+
+For new integrations, prefer catching `RetryableDbqException` and `NonRetryableDbqException`.
+`PersistenceException` remains only as a deprecated compatibility layer.
+
 ### Queue registration
 
 Queue must be registered before producer or consumer registration.
@@ -181,6 +205,16 @@ Current default behavior:
 - nothing is non-retryable by default
 
 So to make an exception blocking or terminal, caller must provide custom policy implementations.
+
+### Consumer reaction to DBQ exceptions
+
+Inside polling loop:
+
+- `RetryableDbqException` pauses the consumer for `persistenceExceptionPause`
+- `NonRetryableDbqException` stops the consumer
+- any other unexpected exception pauses the consumer for `unpredictedExceptionPause`
+
+This means deserialization and serialization failures are treated as terminal, while retryable storage failures pause and retry later.
 
 ## 5. Runtime Flow
 

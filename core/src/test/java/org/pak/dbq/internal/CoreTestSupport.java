@@ -4,12 +4,12 @@ import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.api.Message;
+import org.pak.dbq.error.DbqException;
 import org.pak.dbq.spi.MessageConsumerTelemetry;
 import org.pak.dbq.spi.MessageContextPropagator;
 import org.pak.dbq.spi.QueryService;
 import org.pak.dbq.spi.TableManager;
 import org.pak.dbq.spi.TransactionService;
-import org.pak.dbq.spi.error.PersistenceException;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -199,7 +199,7 @@ public class CoreTestSupport {
         private final List<SubscriptionRegistrationCall> subscriptionRegistrations = new ArrayList<>();
 
         @Override
-        public void registerQueue(QueueName queueName, int retentionDays, boolean autoDdl) throws PersistenceException {
+        public void registerQueue(QueueName queueName, int retentionDays, boolean autoDdl) throws DbqException {
             queueRegistrations.add(new QueueRegistrationCall(queueName, retentionDays, autoDdl));
         }
 
@@ -209,7 +209,7 @@ public class CoreTestSupport {
                 SubscriptionId subscriptionId,
                 boolean historyEnabled,
                 boolean serializedByKey
-        ) throws PersistenceException {
+        ) throws DbqException {
             subscriptionRegistrations.add(new SubscriptionRegistrationCall(
                     queueName,
                     subscriptionId,
@@ -290,7 +290,7 @@ public class CoreTestSupport {
                 SubscriptionId subscriptionId,
                 Integer maxPollRecords,
                 boolean serializedByKey
-        ) throws PersistenceException {
+        ) throws DbqException {
             lastSerializedByKey = serializedByKey;
             return (List<MessageContainer<T>>) selectedMessages;
         }
@@ -301,13 +301,10 @@ public class CoreTestSupport {
                 MessageContainer<T> messageContainer,
                 Duration retryDuration,
                 Exception e
-        ) throws PersistenceException {
+        ) throws DbqException {
             Object result = retryMessageResults.poll();
-            if (result instanceof PersistenceException persistenceException) {
-                throw persistenceException;
-            }
-            if (result instanceof RuntimeException runtimeException) {
-                throw runtimeException;
+            if (result instanceof Throwable throwable) {
+                sneakyThrow(throwable);
             }
             retries.add(new RetryCall(subscriptionId, messageContainer, retryDuration, e));
         }
@@ -318,13 +315,10 @@ public class CoreTestSupport {
                 MessageContainer<T> messageContainer,
                 Exception e,
                 boolean historyEnabled
-        ) throws PersistenceException {
+        ) throws DbqException {
             Object result = failMessageResults.poll();
-            if (result instanceof PersistenceException persistenceException) {
-                throw persistenceException;
-            }
-            if (result instanceof RuntimeException runtimeException) {
-                throw runtimeException;
+            if (result instanceof Throwable throwable) {
+                sneakyThrow(throwable);
             }
             failures.add(new FailureCall(subscriptionId, messageContainer, e, historyEnabled));
         }
@@ -334,27 +328,21 @@ public class CoreTestSupport {
                 SubscriptionId subscriptionId,
                 MessageContainer<T> messageContainer,
                 boolean historyEnabled
-        ) throws PersistenceException {
+        ) throws DbqException {
             Object result = completeMessageResults.poll();
-            if (result instanceof PersistenceException persistenceException) {
-                throw persistenceException;
-            }
-            if (result instanceof RuntimeException runtimeException) {
-                throw runtimeException;
+            if (result instanceof Throwable throwable) {
+                sneakyThrow(throwable);
             }
             completions.add(new CompletionCall(subscriptionId, messageContainer, historyEnabled));
         }
 
         @SuppressWarnings("unchecked")
         @Override
-        public <T> boolean insertMessage(QueueName queueName, Message<T> message) throws PersistenceException {
+        public <T> boolean insertMessage(QueueName queueName, Message<T> message) throws DbqException {
             inserts.add(new InsertCall<>(queueName, message));
             Object result = insertMessageResults.poll();
-            if (result instanceof PersistenceException persistenceException) {
-                throw persistenceException;
-            }
-            if (result instanceof RuntimeException runtimeException) {
-                throw runtimeException;
+            if (result instanceof Throwable throwable) {
+                sneakyThrow(throwable);
             }
             if (result instanceof Boolean bool) {
                 return bool;
@@ -364,9 +352,14 @@ public class CoreTestSupport {
 
         @Override
         public <T> List<Boolean> insertBatchMessage(QueueName queueName, List<Message<T>> messages)
-                throws PersistenceException {
+                throws DbqException {
             batchInserts.add(new BatchInsertCall<>(queueName, List.copyOf(messages)));
             return java.util.Collections.nCopies(messages.size(), Boolean.TRUE);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <E extends Throwable> void sneakyThrow(Throwable throwable) throws E {
+        throw (E) throwable;
     }
 }

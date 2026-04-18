@@ -7,13 +7,13 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.pak.dbq.api.Message;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
+import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.jsonb.JsonbConverter;
 import org.pak.dbq.spi.PersistenceService;
 import org.pak.dbq.spi.QueryService;
-import org.pak.dbq.spi.error.NonRetrayablePersistenceException;
-import org.pak.dbq.spi.error.PersistenceException;
+import org.pak.dbq.error.NonRetrayablePersistenceException;
 import org.postgresql.util.PGobject;
 
 import java.math.BigInteger;
@@ -73,12 +73,12 @@ public class PgQueryService implements QueryService {
         this.jsonbConverter = jsonbConverter;
     }
 
-    public void createQueueTable(QueueName queueName) throws PersistenceException {
+    public void createQueueTable(QueueName queueName) throws DbqException {
         persistenceService.execute(createQueueTableSql(schemaName, queueName));
     }
 
     public void createSubscriptionTable(QueueName queueName, SubscriptionId subscriptionId, boolean historyEnabled)
-            throws PersistenceException {
+            throws DbqException {
         createSubscriptionTable(queueName, subscriptionId, historyEnabled, false);
     }
 
@@ -87,7 +87,7 @@ public class PgQueryService implements QueryService {
             SubscriptionId subscriptionId,
             boolean historyEnabled,
             boolean serializedByKey
-    ) throws PersistenceException {
+    ) throws DbqException {
         persistenceService.execute(createSubscriptionTableSql(
                 schemaName,
                 queueName,
@@ -244,7 +244,7 @@ public class PgQueryService implements QueryService {
         return sql.toString();
     }
 
-    public void createPartition(String table, Instant dateTime) throws PersistenceException {
+    public void createPartition(String table, Instant dateTime) throws DbqException {
         var partition = partitionName(table, dateTime.atOffset(ZoneOffset.UTC).toLocalDate());
         log.info("Create partition {}", partition);
 
@@ -265,37 +265,37 @@ public class PgQueryService implements QueryService {
         persistenceService.execute(query);
     }
 
-    public DropPartitionResult dropQueuePartition(QueueName queueName, LocalDate partition) throws PersistenceException {
+    public DropPartitionResult dropQueuePartition(QueueName queueName, LocalDate partition) throws DbqException {
         var table = queueTable(queueName);
         var partitionName = partitionName(table, partition);
         return dropPartition(table, partitionName, true);
     }
 
     public DropPartitionResult dropHistoryPartition(SubscriptionId subscriptionId, LocalDate partition)
-            throws PersistenceException {
+            throws DbqException {
         var table = subscriptionHistoryTable(subscriptionId);
         var partitionName = partitionName(table, partition);
         return dropPartition(table, partitionName, false);
     }
 
-    public void createQueuePartition(QueueName queueName, Instant includeDateTime) throws PersistenceException {
+    public void createQueuePartition(QueueName queueName, Instant includeDateTime) throws DbqException {
         createPartition(queueTable(queueName), includeDateTime);
     }
 
     public void createHistoryPartition(SubscriptionId subscriptionId, Instant includeDateTime)
-            throws PersistenceException {
+            throws DbqException {
         createPartition(subscriptionHistoryTable(subscriptionId), includeDateTime);
     }
 
-    public List<LocalDate> getAllQueuePartitions(QueueName queueName) throws PersistenceException {
+    public List<LocalDate> getAllQueuePartitions(QueueName queueName) throws DbqException {
         return getAllPartitions(queueTable(queueName));
     }
 
-    public List<LocalDate> getAllHistoryPartitions(SubscriptionId subscriptionId) throws PersistenceException {
+    public List<LocalDate> getAllHistoryPartitions(SubscriptionId subscriptionId) throws DbqException {
         return getAllPartitions(subscriptionHistoryTable(subscriptionId));
     }
 
-    private List<LocalDate> getAllPartitions(String tableName) throws PersistenceException {
+    private List<LocalDate> getAllPartitions(String tableName) throws DbqException {
         var query = formatter.execute("""
                         SELECT inhrelid::regclass AS partition
                         FROM   pg_catalog.pg_inherits
@@ -311,7 +311,7 @@ public class PgQueryService implements QueryService {
     }
 
     @Override
-    public <T> boolean insertMessage(QueueName queueName, Message<T> message) throws PersistenceException {
+    public <T> boolean insertMessage(QueueName queueName, Message<T> message) throws DbqException {
         ensureQueuePartitionExists(queueName, message.originatedTime());
 
         var query = queryCache.computeIfAbsent("insertMessage|" + queueName.name(), k -> formatter.execute("""
@@ -329,7 +329,7 @@ public class PgQueryService implements QueryService {
 
     @Override
     public <T> List<Boolean> insertBatchMessage(QueueName queueName, List<Message<T>> messages)
-            throws PersistenceException {
+            throws DbqException {
         ensureQueuePartitionsExist(queueName, messages.stream()
                 .map(Message::originatedTime)
                 .toList());
@@ -360,7 +360,7 @@ public class PgQueryService implements QueryService {
             SubscriptionId subscriptionId,
             Integer maxPollRecords,
             boolean serializedByKey
-    ) throws PersistenceException {
+    ) throws DbqException {
         if (serializedByKey && !hasKeyLockTable(subscriptionId)) {
             throw new IllegalStateException("Subscription %s was created without serializedByKey support"
                     .formatted(subscriptionId.id()));
@@ -411,11 +411,13 @@ public class PgQueryService implements QueryService {
                                 .orElse(null),
                         ofNullable(rs.getObject("originated_at", OffsetDateTime.class)).map(OffsetDateTime::toInstant)
                                 .orElse(null),
-                        jsonbConverter.toJsonb(rs.getObject("payload", PGobject.class)),
-                        jsonbConverter.toStringMap(rs.getObject("headers", PGobject.class)),
+                        jsonbConverter.fromPGobject(rs.getObject("payload", PGobject.class)),
+                        jsonbConverter.fromPGHeaders(rs.getObject("headers", PGobject.class)),
                         rs.getString("error_message"), rs.getString("stack_trace"));
             } catch (SQLException e) {
                 return sneakyThrow(new NonRetrayablePersistenceException(e, e.getCause()));
+            } catch (DbqException e) {
+                return sneakyThrow(e);
             }
         });
     }
@@ -424,14 +426,14 @@ public class PgQueryService implements QueryService {
             QueueName queueName,
             SubscriptionId subscriptionId,
             Integer maxPollRecords
-    ) throws PersistenceException {
+    ) throws DbqException {
         return selectMessages(queueName, subscriptionId, maxPollRecords, false);
     }
 
     @Override
     public <T> void retryMessage(
             SubscriptionId subscriptionId, MessageContainer<T> messageContainer, Duration retryDuration, Exception e
-    ) throws PersistenceException {
+    ) throws DbqException {
         var query = queryCache.computeIfAbsent("retryMessage|" + subscriptionId.id(), k -> formatter.execute("""
                         UPDATE ${schema}.${subscriptionTable} SET updated_at = CURRENT_TIMESTAMP,
                             execute_after = CURRENT_TIMESTAMP + (? * INTERVAL '1 second'), attempt = attempt + 1,
@@ -451,7 +453,7 @@ public class PgQueryService implements QueryService {
             MessageContainer<T> messageContainer,
             Exception e,
             boolean historyEnabled
-    ) throws PersistenceException {
+    ) throws DbqException {
         if (!historyEnabled) {
             var query = queryCache.computeIfAbsent("deleteFailedMessage|" + subscriptionId.id(), k -> formatter.execute("""
                             DELETE FROM ${schema}.${subscriptionTable} WHERE id = ?""",
@@ -488,7 +490,7 @@ public class PgQueryService implements QueryService {
             SubscriptionId subscriptionId,
             MessageContainer<T> messageContainer,
             boolean historyEnabled
-    ) throws PersistenceException {
+    ) throws DbqException {
         if (!historyEnabled) {
             var query = queryCache.computeIfAbsent("deleteCompletedMessage|" + subscriptionId.id(), k -> formatter.execute("""
                             DELETE FROM ${schema}.${subscriptionTable} WHERE id = ?""",
@@ -552,7 +554,7 @@ public class PgQueryService implements QueryService {
         return subscriptionKeyLockTableName(subscriptionId);
     }
 
-    private void cleanupKeyLock(SubscriptionId subscriptionId, String key) throws PersistenceException {
+    private void cleanupKeyLock(SubscriptionId subscriptionId, String key) throws DbqException {
         if (key == null || !hasKeyLockTable(subscriptionId)) {
             return;
         }
@@ -571,7 +573,7 @@ public class PgQueryService implements QueryService {
         persistenceService.update(query, key, key);
     }
 
-    private boolean hasKeyLockTable(SubscriptionId subscriptionId) throws PersistenceException {
+    private boolean hasKeyLockTable(SubscriptionId subscriptionId) throws DbqException {
         var cached = keyLockTableExistsCache.get(subscriptionId.id());
         if (cached != null) {
             return cached;
@@ -601,11 +603,11 @@ public class PgQueryService implements QueryService {
         return table + "_" + dateFormatter.format(partition);
     }
 
-    private void ensureQueuePartitionExists(QueueName queueName, Instant originatedTime) throws PersistenceException {
+    private void ensureQueuePartitionExists(QueueName queueName, Instant originatedTime) throws DbqException {
         ensurePartitionExists(queueTable(queueName), originatedTime);
     }
 
-    private void ensureQueuePartitionsExist(QueueName queueName, List<Instant> originatedTimes) throws PersistenceException {
+    private void ensureQueuePartitionsExist(QueueName queueName, List<Instant> originatedTimes) throws DbqException {
         var table = queueTable(queueName);
         var partitionDates = originatedTimes.stream()
                 .map(originatedTime -> originatedTime.atOffset(ZoneOffset.UTC).toLocalDate())
@@ -616,11 +618,11 @@ public class PgQueryService implements QueryService {
     }
 
     private void ensureHistoryPartitionExists(SubscriptionId subscriptionId, Instant originatedTime)
-            throws PersistenceException {
+            throws DbqException {
         ensurePartitionExists(subscriptionHistoryTable(subscriptionId), originatedTime);
     }
 
-    private void ensurePartitionExists(String table, Instant originatedTime) throws PersistenceException {
+    private void ensurePartitionExists(String table, Instant originatedTime) throws DbqException {
         var partitionDate = originatedTime.atOffset(ZoneOffset.UTC).toLocalDate();
         var partition = partitionName(table, partitionDate);
         var from = partitionDate.atStartOfDay().toInstant(ZoneOffset.UTC);
@@ -635,12 +637,12 @@ public class PgQueryService implements QueryService {
         ensuredPartitions.put(partition, Boolean.TRUE);
     }
 
-    private void acquirePartitionLock(String partition) throws PersistenceException {
+    private void acquirePartitionLock(String partition) throws DbqException {
         persistenceService.execute("SELECT pg_advisory_xact_lock(hashtext(?))", partition);
     }
 
     private void validatePartitionBounds(String partition, Instant expectedFrom, Instant expectedTo)
-            throws PersistenceException {
+            throws DbqException {
         var query = formatter.execute("""
                 SELECT pg_get_expr(c.relpartbound, c.oid) AS partition_bound
                 FROM pg_class c
@@ -669,11 +671,11 @@ public class PgQueryService implements QueryService {
     }
 
     private DropPartitionResult dropPartition(String table, String partition, boolean failOnReferences)
-            throws PersistenceException {
+            throws DbqException {
         var alreadyAbsent = false;
         try {
             persistenceService.execute(detachPartitionSql(table, partition));
-        } catch (PersistenceException e) {
+        } catch (DbqException e) {
             if (failOnReferences && hasPartitionReferences(e)) {
                 return DropPartitionResult.HAS_REFERENCES;
             }
@@ -686,7 +688,7 @@ public class PgQueryService implements QueryService {
 
         try {
             persistenceService.execute(dropPartitionTableSql(partition));
-        } catch (PersistenceException e) {
+        } catch (DbqException e) {
             if (!isIgnorableMissingPartitionException(e)) {
                 throw e;
             }
@@ -715,12 +717,12 @@ public class PgQueryService implements QueryService {
                 """, Map.of("schema", schemaName.value(), "partition", partition));
     }
 
-    private boolean hasPartitionReferences(PersistenceException exception) {
+    private boolean hasPartitionReferences(DbqException exception) {
         var sqlException = findSqlException(exception);
         return sqlException != null && PARTITION_HAS_REFERENCES_CODE.equals(sqlException.getSQLState());
     }
 
-    private boolean isIgnorableDetachException(PersistenceException exception) {
+    private boolean isIgnorableDetachException(DbqException exception) {
         var sqlException = findSqlException(exception);
         if (sqlException == null) {
             return false;
@@ -732,7 +734,7 @@ public class PgQueryService implements QueryService {
                 || message.contains("is not a partition of relation");
     }
 
-    private boolean isIgnorableMissingPartitionException(PersistenceException exception) {
+    private boolean isIgnorableMissingPartitionException(DbqException exception) {
         var sqlException = findSqlException(exception);
         if (sqlException == null) {
             return false;
@@ -742,7 +744,7 @@ public class PgQueryService implements QueryService {
                 || UNDEFINED_OBJECT_CODE.equals(sqlException.getSQLState());
     }
 
-    private SQLException findSqlException(PersistenceException exception) {
+    private SQLException findSqlException(DbqException exception) {
         return ExceptionUtils.getThrowableList(exception).stream()
                 .filter(SQLException.class::isInstance)
                 .map(SQLException.class::cast)

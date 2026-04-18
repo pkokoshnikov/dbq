@@ -1,9 +1,11 @@
 package org.pak.dbq.spring;
 
+import org.pak.dbq.error.DbqException;
+import org.pak.dbq.error.MessageDeserializationException;
+import org.pak.dbq.error.MessageSerializationException;
 import org.pak.dbq.spi.PersistenceService;
-import org.pak.dbq.spi.error.NonRetrayablePersistenceException;
-import org.pak.dbq.spi.error.PersistenceException;
-import org.pak.dbq.spi.error.RetryablePersistenceException;
+import org.pak.dbq.error.NonRetrayablePersistenceException;
+import org.pak.dbq.error.RetryablePersistenceException;
 import org.springframework.dao.RecoverableDataAccessException;
 import org.springframework.dao.TransientDataAccessException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
@@ -25,7 +27,7 @@ public class SpringPersistenceService implements PersistenceService {
     }
 
     @Override
-    public void execute(String query, Object... args) throws PersistenceException {
+    public void execute(String query, Object... args) throws DbqException {
         try {
             jdbcTemplate.execute(con -> con.prepareStatement(query),
                     (PreparedStatementCallback<Object>) ps -> {
@@ -38,7 +40,7 @@ public class SpringPersistenceService implements PersistenceService {
         }
     }
 
-    public int update(String query, Object... args) throws PersistenceException {
+    public int update(String query, Object... args) throws DbqException {
         try {
             return jdbcTemplate.update(query, args);
         } catch (Exception e) {
@@ -47,7 +49,7 @@ public class SpringPersistenceService implements PersistenceService {
         }
     }
 
-    public int insert(String query, Object... args) throws PersistenceException {
+    public int insert(String query, Object... args) throws DbqException {
         try {
             return jdbcTemplate.update(query, args);
         } catch (Exception e) {
@@ -57,7 +59,7 @@ public class SpringPersistenceService implements PersistenceService {
     }
 
     @Override
-    public int[] batchInsert(String query, List<Object[]> args) throws PersistenceException {
+    public int[] batchInsert(String query, List<Object[]> args) throws DbqException {
         try {
             return jdbcTemplate.batchUpdate(query, args);
         } catch (Exception e) {
@@ -66,7 +68,13 @@ public class SpringPersistenceService implements PersistenceService {
         }
     }
 
-    private void classifyException(Exception e) throws PersistenceException {
+    private void classifyException(Exception e) throws DbqException {
+        if (e instanceof MessageSerializationException messageSerializationException) {
+            throw messageSerializationException;
+        }
+        if (e instanceof MessageDeserializationException messageDeserializationException) {
+            throw messageDeserializationException;
+        }
         if (e instanceof TransientDataAccessException
                 || e instanceof RecoverableDataAccessException
                 || e instanceof CannotGetJdbcConnectionException) {
@@ -76,7 +84,7 @@ public class SpringPersistenceService implements PersistenceService {
     }
 
     @Override
-    public <R> List<R> query(String query, Function<ResultSet, R> mapper) throws PersistenceException {
+    public <R> List<R> query(String query, Function<ResultSet, R> mapper) throws DbqException {
         try {
             return jdbcTemplate.query(query, (rs, rowNum) -> mapper.apply(rs));
         } catch (Exception e) {

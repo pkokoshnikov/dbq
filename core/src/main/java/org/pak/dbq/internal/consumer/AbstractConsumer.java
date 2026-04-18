@@ -3,14 +3,17 @@ package org.pak.dbq.internal.consumer;
 import lombok.NonNull;
 import org.pak.dbq.api.ConsumerConfig;
 import org.pak.dbq.api.Message;
+import org.pak.dbq.error.DbqException;
+import org.pak.dbq.error.NonRetryableDbqException;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
-import org.pak.dbq.error.MessageSerializationException;
 import org.pak.dbq.internal.persistence.MessageContainer;
-import org.pak.dbq.spi.*;
-import org.pak.dbq.spi.error.NonRetrayablePersistenceException;
-import org.pak.dbq.spi.error.PersistenceException;
-import org.pak.dbq.spi.error.RetryablePersistenceException;
+import org.pak.dbq.spi.MessageConsumerTelemetry;
+import org.pak.dbq.spi.MessageContextPropagator;
+import org.pak.dbq.spi.MessageFactory;
+import org.pak.dbq.spi.QueryService;
+import org.pak.dbq.spi.TransactionService;
+import org.pak.dbq.error.RetryableDbqException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -95,16 +98,12 @@ public abstract class AbstractConsumer<T> {
                     isRunning.set(false);
                 } catch (Exception e) {
                     switch (e) {
-                        case MessageSerializationException messageSerializationException -> {
-                            log.error("Serializer exception occurred, we cannot skip messages", e);
+                        case NonRetryableDbqException nonRetryableDbqException -> {
+                            log.error("Non-retryable DBQ exception occurred, stop processing", e);
                             isRunning.set(false);
                         }
-                        case NonRetrayablePersistenceException nonRetrayablePersistenceException -> {
-                            log.error("Non recoverable persistence exception occurred, stop processing", e);
-                            isRunning.set(false);
-                        }
-                        case RetryablePersistenceException retryablePersistenceException -> {
-                            log.warn("Retryable persistence exception occurred, pause processing", e);
+                        case RetryableDbqException retryableDbqException -> {
+                            log.warn("Retryable DBQ exception occurred, pause processing", e);
                             pause = persistenceExceptionPause;
                         }
                         default -> {
@@ -130,7 +129,7 @@ public abstract class AbstractConsumer<T> {
 
             processMessages(messageContainerList);
             return true;
-        } catch (PersistenceException | InterruptedException e) {
+        } catch (DbqException | InterruptedException e) {
             sneakyThrow(e);
             return false;
         }
@@ -145,7 +144,7 @@ public abstract class AbstractConsumer<T> {
     }
 
     protected abstract void processMessages(List<MessageContainer<T>> messageContainerList)
-            throws PersistenceException, InterruptedException;
+            throws DbqException, InterruptedException;
 
     protected Message<T> toMessage(MessageContainer<T> messageContainer) {
         return messageFactory.createMessage(

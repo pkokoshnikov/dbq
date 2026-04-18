@@ -1,6 +1,6 @@
-package org.pak.dbq.spi.error;
+package org.pak.dbq.error;
 
-public class NonRetrayablePersistenceException extends PersistenceException {
+public class NonRetrayablePersistenceException extends NonRetryableDbqException {
     public NonRetrayablePersistenceException(Throwable cause, Throwable originalCause) {
         super(cause, originalCause);
     }

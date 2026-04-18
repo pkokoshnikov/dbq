@@ -4,7 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.pak.dbq.spi.MessageContextPropagator;
 import org.pak.dbq.spi.MessageFactory;
 import org.pak.dbq.spi.QueryService;
-import org.pak.dbq.spi.error.PersistenceException;
+import org.pak.dbq.error.DbqException;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -27,11 +27,11 @@ public class Producer<T> {
         this.messageFactory = messageFactory;
     }
 
-    public void send(T payload) throws PersistenceException {
+    public void send(T payload) throws DbqException {
         send(messageFactory.createMessage(UUID.randomUUID().toString(), Instant.now(), payload));
     }
 
-    public void send(Message<T> message) throws PersistenceException {
+    public void send(Message<T> message) throws DbqException {
         var messageToStore = message.withHeaders(messageContextPropagator.injectCurrentContext(message.headers()));
 
         try (var ignoredCollectionMDC = org.slf4j.MDC.putCloseable("queueName", queueName.name());

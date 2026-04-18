@@ -11,8 +11,10 @@ import com.fasterxml.jackson.databind.cfg.CoercionAction;
 import com.fasterxml.jackson.databind.cfg.CoercionInputShape;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
+import org.pak.dbq.error.DbqException;
+import org.pak.dbq.error.MessageDeserializationException;
 import org.pak.dbq.error.MessageSerializationException;
-import org.pak.dbq.spi.error.NonRetrayablePersistenceException;
+import org.pak.dbq.error.NonRetrayablePersistenceException;
 import org.postgresql.util.PGobject;
 
 import java.sql.SQLException;
@@ -38,17 +40,13 @@ public class JsonbConverter {
         objectMapper.coercionConfigDefaults().setCoercion(CoercionInputShape.EmptyString, CoercionAction.AsNull);
     }
 
-    public JsonbConverter(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
-    }
-
     public void registerType(String name, Class clazz) {
         classTypeMap.put(clazz, name);
         typeClassMap.put(name, clazz);
         objectMapper.addMixIn(clazz, JsonbMixin.class);
     }
 
-    public <T> T toJsonb(PGobject source) {
+    public <T> T fromPGobject(PGobject source) throws DbqException {
         try {
             JsonNode tree = objectMapper.readTree(source.getValue());
             if (tree.get("@type") != null) {
@@ -65,11 +63,11 @@ public class JsonbConverter {
                 return null;
             }
         } catch (JsonProcessingException e) {
-            throw new MessageSerializationException(e);
+            throw new MessageDeserializationException(e);
         }
     }
 
-    public <T extends PGobject> T toPGObject(Object source) throws NonRetrayablePersistenceException {
+    public <T extends PGobject> T toPGObject(Object source) throws DbqException {
         try {
             var value = objectMapper.writerFor(source.getClass())
                     .withAttribute("@type", classTypeMap.get(source.getClass()))
@@ -87,7 +85,7 @@ public class JsonbConverter {
         }
     }
 
-    public Map<String, String> toStringMap(PGobject source) {
+    public Map<String, String> fromPGHeaders(PGobject source) throws DbqException {
         try {
             if (source == null || source.getValue() == null) {
                 return Map.of();
@@ -98,11 +96,11 @@ public class JsonbConverter {
                     objectMapper.getTypeFactory().constructMapType(HashMap.class, String.class, String.class)
             );
         } catch (JsonProcessingException e) {
-            throw new MessageSerializationException(e);
+            throw new MessageDeserializationException(e);
         }
     }
 
-    public <T extends PGobject> T toPGObject(Map<String, String> source) throws NonRetrayablePersistenceException {
+    public <T extends PGobject> T toPGObject(Map<String, String> source) throws DbqException {
         try {
             var jsonObject = new PGobject();
             jsonObject.setType("jsonb");
@@ -112,8 +110,8 @@ public class JsonbConverter {
             return (T) jsonObject;
         } catch (SQLException e) {
             throw new NonRetrayablePersistenceException(e, e.getCause());
-        } catch (JsonProcessingException e) { //todo:что тут вообще может пойти не так?
-            throw new MessageSerializationException(e); //todo: если это может произойти то получается нужно клиенту его показать и объявить в сигнатуре
+        } catch (JsonProcessingException e) {
+            throw new MessageSerializationException(e);
         }
     }
 }

@@ -3,12 +3,13 @@ package org.pak.dbq.internal.consumer;
 import org.pak.dbq.api.Acknowledger;
 import org.pak.dbq.api.MessageRecord;
 import org.pak.dbq.api.SubscriptionId;
+import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.spi.QueryService;
-import org.pak.dbq.spi.error.PersistenceException;
 
 import java.math.BigInteger;
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -23,25 +24,24 @@ final class RecordingAcknowledger<T> implements Acknowledger<T> {
             QueryService queryService,
             SubscriptionId subscriptionId,
             boolean historyEnabled,
-            Map<BigInteger, MessageContainer<T>> messageContainersById,
-            Set<BigInteger> acknowledgedRecords //todo:плохая практика передовать так, нужно создавать новый объект внутри и иметь метод по его получению
+            Map<BigInteger, MessageContainer<T>> messageContainersById
     ) {
         this.queryService = queryService;
         this.subscriptionId = subscriptionId;
         this.historyEnabled = historyEnabled;
         this.messageContainersById = messageContainersById;
-        this.acknowledgedRecords = acknowledgedRecords;
+        this.acknowledgedRecords = new HashSet<>();
     }
 
     @Override
-    public void complete(MessageRecord<T> record) throws PersistenceException {
+    public void complete(MessageRecord<T> record) throws DbqException {
         var messageContainer = getPendingRecord(record);
         queryService.completeMessage(subscriptionId, messageContainer, historyEnabled);
         acknowledgedRecords.add(record.id());
     }
 
     @Override
-    public void retry(MessageRecord<T> record, Duration duration, Exception exception) throws PersistenceException {
+    public void retry(MessageRecord<T> record, Duration duration, Exception exception) throws DbqException {
         if (duration == null || duration.isNegative()) {
             throw new IllegalArgumentException("retry duration must be >= 0");
         }
@@ -54,7 +54,7 @@ final class RecordingAcknowledger<T> implements Acknowledger<T> {
     }
 
     @Override
-    public void fail(MessageRecord<T> record, Exception exception) throws PersistenceException {
+    public void fail(MessageRecord<T> record, Exception exception) throws DbqException {
         if (exception == null) {
             throw new NullPointerException("exception");
         }
@@ -75,5 +75,9 @@ final class RecordingAcknowledger<T> implements Acknowledger<T> {
             throw new IllegalStateException("Each batch record can be acknowledged only once");
         }
         return messageContainer;
+    }
+
+    int acknowledgedCount() {
+        return acknowledgedRecords.size();
     }
 }

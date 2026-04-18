@@ -4,9 +4,9 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
+import org.pak.dbq.error.DbqException;
 import org.pak.dbq.spi.TableManager;
-import org.pak.dbq.spi.error.PersistenceException;
-import org.pak.dbq.spi.error.RetryablePersistenceException;
+import org.pak.dbq.error.RetryablePersistenceException;
 import org.quartz.*;
 import org.quartz.impl.StdSchedulerFactory;
 
@@ -46,7 +46,7 @@ public class PgTableManager implements TableManager {
         this.clock = clock.withZone(ZoneOffset.UTC);
     }
 
-    public void registerQueue(QueueName queueName, int retentionDays, boolean autoDdl) throws PersistenceException {
+    public void registerQueue(QueueName queueName, int retentionDays, boolean autoDdl) throws DbqException {
         validateRetentionDays(retentionDays);
         registerQueueAutoDdl(queueName, autoDdl);
         if (autoDdl) {
@@ -63,7 +63,7 @@ public class PgTableManager implements TableManager {
             SubscriptionId subscriptionId,
             boolean historyEnabled,
             boolean serializedByKey
-    ) throws PersistenceException {
+    ) throws DbqException {
         if (queueAutoDdl.getOrDefault(queueName, false)) {
             pgQueryService.createSubscriptionTable(queueName, subscriptionId, historyEnabled, serializedByKey);
         }

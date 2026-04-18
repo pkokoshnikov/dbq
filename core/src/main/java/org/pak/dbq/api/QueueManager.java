@@ -11,7 +11,7 @@ import org.pak.dbq.spi.MessageFactory;
 import org.pak.dbq.spi.QueryService;
 import org.pak.dbq.spi.TableManager;
 import org.pak.dbq.spi.TransactionService;
-import org.pak.dbq.spi.error.PersistenceException;
+import org.pak.dbq.error.DbqException;
 
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -47,7 +47,6 @@ public class QueueManager {
         this(queryService, transactionService, messageFactory, tableManager, Properties.builder().build());
     }
 
-    //todo: нежен ли ?
     public QueueManager(
             QueryService queryService,
             TransactionService transactionService,
@@ -56,7 +55,6 @@ public class QueueManager {
         this(queryService, transactionService, messageFactory, new NoOpTableManager(), Properties.builder().build());
     }
 
-    //todo: нежен ли ?
     public QueueManager(
             QueryService queryService,
             TransactionService transactionService,
@@ -102,7 +100,7 @@ public class QueueManager {
     private final ConcurrentHashMap<String, Producer<?>> producers =
             new ConcurrentHashMap<>();
 
-    public void registerQueue(QueueConfig queueConfig) throws PersistenceException {
+    public void registerQueue(QueueConfig queueConfig) throws DbqException {
         var existingConfig = queueConfigs.putIfAbsent(queueConfig.getQueueName(), queueConfig);
         if (existingConfig != null) {
             if (!sameQueueConfig(existingConfig, queueConfig)) {
@@ -118,7 +116,7 @@ public class QueueManager {
                     queueConfig.getQueueName(),
                     queueConfig.getProperties().getRetentionDays(),
                     properties.isAutoDdl());
-        } catch (PersistenceException | RuntimeException e) {
+        } catch (DbqException | RuntimeException e) {
             queueConfigs.remove(queueConfig.getQueueName(), queueConfig);
             throw e;
         }
@@ -143,7 +141,7 @@ public class QueueManager {
         return producer;
     }
 
-    public <T> void registerConsumer(ConsumerConfig<T> consumerConfig) throws PersistenceException {
+    public <T> void registerConsumer(ConsumerConfig<T> consumerConfig) throws DbqException {
         requireInitializedQueue(consumerConfig.getQueueName());
 
         var consumerKey = consumerConfig.getQueueName() + "_" + consumerConfig.getSubscriptionId();
@@ -165,13 +163,12 @@ public class QueueManager {
             log.info("Register consumer on queue {} with subscription {}",
                     consumerConfig.getQueueName(),
                     consumerConfig.getSubscriptionId());
-        } catch (PersistenceException | RuntimeException e) {
+        } catch (DbqException | RuntimeException e) {
             consumerConfigs.remove(consumerKey, consumerConfig);
             throw e;
         }
     }
 
-    //todo: зачем так сложно почему бы не использовать equals объекта?
     private boolean sameConsumerConfig(ConsumerConfig<?> left, ConsumerConfig<?> right) {
         return Objects.equals(left.getQueueName(), right.getQueueName())
                 && Objects.equals(left.getSubscriptionId(), right.getSubscriptionId())
@@ -185,7 +182,6 @@ public class QueueManager {
                 && sameComponent(left.getMessageConsumerTelemetry(), right.getMessageConsumerTelemetry());
     }
 
-    //todo: зачем так сложно почему бы не использовать equals объекта?
     private boolean sameProperties(ConsumerConfig.Properties left, ConsumerConfig.Properties right) {
         return Objects.equals(left.getMaxPollRecords(), right.getMaxPollRecords())
                 && Objects.equals(left.getConcurrency(), right.getConcurrency())
@@ -195,20 +191,18 @@ public class QueueManager {
                 && left.isSerializedByKey() == right.isSerializedByKey();
     }
 
-    //todo: зачем так сложно почему бы не использовать equals объекта?
     private boolean sameProducerConfig(ProducerConfig<?> left, ProducerConfig<?> right) {
         return Objects.equals(left.getQueueName(), right.getQueueName())
                 && Objects.equals(left.getClazz(), right.getClazz())
                 && sameComponent(left.getMessageContextPropagator(), right.getMessageContextPropagator());
     }
 
-    //todo: зачем так сложно почему бы не использовать equals объекта?
     private boolean sameQueueConfig(QueueConfig left, QueueConfig right) {
         return Objects.equals(left.getQueueName(), right.getQueueName())
                 && left.getProperties().getRetentionDays() == right.getProperties().getRetentionDays();
     }
 
-    private void registerSubscription(ConsumerConfig<?> consumerConfig) throws PersistenceException {
+    private void registerSubscription(ConsumerConfig<?> consumerConfig) throws DbqException {
         tableManager.registerSubscription(
                 consumerConfig.getQueueName(),
                 consumerConfig.getSubscriptionId(),

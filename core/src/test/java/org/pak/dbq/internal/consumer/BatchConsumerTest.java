@@ -9,7 +9,7 @@ import org.pak.dbq.internal.CoreTestSupport;
 import org.pak.dbq.internal.support.NoOpMessageConsumerTelemetry;
 import org.pak.dbq.internal.support.NoOpMessageContextPropagator;
 import org.pak.dbq.internal.support.SimpleMessageFactory;
-import org.pak.dbq.spi.error.RetryablePersistenceException;
+import org.pak.dbq.error.RetryablePersistenceException;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -119,7 +119,6 @@ class BatchConsumerTest {
                 new Message<>(container.getKey(), container.getOriginatedTime(), container.getPayload(), container.getHeaders()),
                 container.getAttempt(),
                 container.getExecuteAfter());
-        var acknowledgedRecords = new java.util.HashSet<java.math.BigInteger>();
         var messageContainersById = java.util.Map.of(record.id(), container);
         var failure = new RetryablePersistenceException(new RuntimeException("db"), null);
         queryService.enqueueCompleteMessageResult(failure);
@@ -128,14 +127,13 @@ class BatchConsumerTest {
                 queryService,
                 SUBSCRIPTION_NAME,
                 false,
-                messageContainersById,
-                acknowledgedRecords
+                messageContainersById
         );
 
         assertThatThrownBy(() -> acknowledger.complete(record)).isSameAs(failure);
         acknowledger.fail(record, expectedFailureException);
 
-        assertThat(acknowledgedRecords).containsExactly(record.id());
+        assertThat(acknowledger.acknowledgedCount()).isEqualTo(1);
         assertThat(queryService.getCompletions()).isEmpty();
         assertThat(queryService.getRetries()).isEmpty();
         assertThat(queryService.getFailures()).hasSize(1);

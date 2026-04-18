@@ -8,10 +8,10 @@ import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.api.policy.BlockingPolicy;
 import org.pak.dbq.api.policy.NonRetryablePolicy;
 import org.pak.dbq.api.policy.RetryablePolicy;
+import org.pak.dbq.error.DbqException;
 import org.pak.dbq.error.MessageSerializationException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.spi.*;
-import org.pak.dbq.spi.error.PersistenceException;
 import org.slf4j.MDC;
 
 import java.util.List;
@@ -49,7 +49,7 @@ public class Consumer<T> extends AbstractConsumer<T> {
 
     @Override
     protected void processMessages(List<MessageContainer<T>> messageContainerList)
-            throws PersistenceException, InterruptedException { //TODO: почему то InterruptedException подсвечен как ненужный
+            throws DbqException, InterruptedException {
         for (var messageContainer : messageContainerList) {
             try (var ignoredMessageContext = getMessageContextPropagator()
                     .extractToCurrentContext(messageContainer.getHeaders());
@@ -62,13 +62,12 @@ public class Consumer<T> extends AbstractConsumer<T> {
                     try {
                         messageHandler.handle(message);
                     } catch (MessageSerializationException e) {
-                        //todo: почему тут нет вызова телеметрии
+                        telemetry.recordError(e);
                         throw e;
-                    } catch (PersistenceException | InterruptedException e) {
-                        //todo: почему тут нет вызова телеметрии
+                    } catch (DbqException | InterruptedException e) {
+                        telemetry.recordError(e);
                         sneakyThrow(e);
                     } catch (Exception e) {
-                        telemetry.recordError(e);
                         optionalException = of(e);
                     }
 
@@ -84,6 +83,7 @@ public class Consumer<T> extends AbstractConsumer<T> {
                         } else {
                             handleRetryableException(messageContainer, exception);
                         }
+                        telemetry.recordError(exception);
                     }
                 }
             }
@@ -91,13 +91,13 @@ public class Consumer<T> extends AbstractConsumer<T> {
     }
 
     private void handleNonRetryableException(MessageContainer<T> messageContainer, Exception e)
-            throws PersistenceException {
+            throws DbqException {
         log.error("Non retryable exception occurred", e);
         getQueryService().failMessage(getSubscriptionId(), messageContainer, e, isHistoryEnabled());
     }
 
     private void handleRetryableException(MessageContainer<T> messageContainer, Exception e)
-            throws PersistenceException {
+            throws DbqException {
         log.error("Retryable exception occurred, attempt {}", messageContainer.getAttempt(), e);
         var optionalDuration = retryablePolicy.apply(e, messageContainer.getAttempt());
 

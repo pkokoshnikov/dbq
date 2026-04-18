@@ -14,7 +14,8 @@ import org.pak.dbq.api.MessageRecord;
 import org.pak.dbq.api.policy.BlockingPolicy;
 import org.pak.dbq.internal.BaseIntegrationTest;
 import org.pak.dbq.internal.TestMessage;
-import org.pak.dbq.spi.error.RetryablePersistenceException;
+import org.pak.dbq.error.MessageDeserializationException;
+import org.pak.dbq.error.RetryablePersistenceException;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;
@@ -25,6 +26,7 @@ import java.util.UUID;
 
 import static java.util.Optional.of;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.pak.dbq.internal.TestMessage.QUEUE_NAME;
 import static org.pak.dbq.internal.persistence.Status.FAILED;
 import static org.pak.dbq.internal.persistence.Status.PROCESSED;
@@ -398,6 +400,28 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         assertThat(testMessageContainer.getAttempt()).isEqualTo(0);
         assertThat(testMessageContainer.getErrorMessage()).isNull();
         assertThat(testMessageContainer.getStackTrace()).isNull();
+    }
+
+    @Test
+    void testProcessMessageDeserializationException() throws Exception {
+        var producer = producerFactory.build().create();
+        var consumer = consumerFactoryBuilder.build().create();
+
+        var key = UUID.randomUUID().toString();
+        var originatedTime = Instant.now();
+        producer.send(new Message<>(key, originatedTime, new TestMessage(TEST_VALUE)));
+
+        jdbcTemplate.update("""
+                        UPDATE public.test_message
+                        SET payload = ?::jsonb
+                        WHERE key = ? AND originated_at = ?""",
+                """
+                        {"@type":"test-message","name":{"invalid":"value"}}""",
+                key,
+                java.time.OffsetDateTime.ofInstant(originatedTime, java.time.ZoneId.systemDefault()));
+
+        assertThatThrownBy(consumer::poolAndProcess)
+                .isInstanceOf(MessageDeserializationException.class);
     }
 
     @Test

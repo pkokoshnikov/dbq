@@ -2,12 +2,12 @@ package org.pak.dbq.internal.support;
 
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
+import org.pak.dbq.error.DbqException;
 import org.pak.dbq.spi.TableManager;
-import org.pak.dbq.spi.error.PersistenceException;
 
 public class NoOpTableManager implements TableManager {
     @Override
-    public void registerQueue(QueueName queueName, int retentionDays, boolean autoDdl) throws PersistenceException {
+    public void registerQueue(QueueName queueName, int retentionDays, boolean autoDdl) throws DbqException {
     }
 
     @Override
@@ -16,6 +16,6 @@ public class NoOpTableManager implements TableManager {
             SubscriptionId subscriptionId,
             boolean historyEnabled,
             boolean serializedByKey
-    ) throws PersistenceException {
+    ) throws DbqException {
     }
 }

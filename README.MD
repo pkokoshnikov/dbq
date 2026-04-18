@@ -50,6 +50,40 @@ Detailed architecture, table model, ER diagram, and producer/consumer interactio
 
 Each subscription has its own state. If two subscriptions are registered for the same queue, both will receive the same message and track their progress independently.
 
+## Exception Model
+
+DBQ uses `DbqException` as the checked root for infrastructure and conversion failures exposed by the library.
+
+Top-level decision types:
+
+- `RetryableDbqException` - caller may retry the operation
+- `NonRetryableDbqException` - caller should treat the failure as terminal
+
+Current concrete DBQ exceptions include:
+
+- `RetryablePersistenceException`
+- `NonRetrayablePersistenceException`
+- `MessageSerializationException`
+- `MessageDeserializationException`
+
+Typical client-side handling:
+
+```java
+try {
+    producer.send(orderCreated);
+} catch (RetryableDbqException e) {
+    // retry, reschedule, or surface temporary failure
+} catch (NonRetryableDbqException e) {
+    // fail permanently and inspect concrete subtype for diagnostics
+}
+```
+
+Notes:
+
+- `MessageSerializationException` means DBQ could not serialize payload or headers before writing to PostgreSQL.
+- `MessageDeserializationException` means DBQ could not reconstruct payload or headers from stored JSONB.
+- `PersistenceException` is kept only as a deprecated compatibility type and should not be used as the main catch target in new code.
+
 ## Maven Coordinates
 
 Add the modules you actually use:

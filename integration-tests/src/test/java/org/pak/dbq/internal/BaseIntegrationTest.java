@@ -9,6 +9,7 @@ import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.api.policy.SimpleBlockingPolicy;
 import org.pak.dbq.api.policy.SimpleNonRetryablePolicy;
 import org.pak.dbq.api.policy.SimpleRetryablePolicy;
+import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.persistence.MessageHistoryContainer;
 import org.pak.dbq.internal.persistence.Status;
@@ -235,23 +236,29 @@ public class BaseIntegrationTest {
                         "queueTable", "test_message"));
 
         return jdbcTemplate.query(query,
-                (rs, rowNum) -> new MessageContainer<>(
-                        rs.getObject("id", BigInteger.class),
-                        rs.getObject("message_id", BigInteger.class),
-                        rs.getString("key"),
-                        rs.getInt("attempt"),
-                        ofNullable(rs.getObject("execute_after", OffsetDateTime.class))
-                                .map(OffsetDateTime::toInstant).orElse(null),
-                        ofNullable(rs.getObject("created_at", OffsetDateTime.class))
-                                .map(OffsetDateTime::toInstant).orElse(null),
-                        ofNullable(rs.getObject("updated_at", OffsetDateTime.class))
-                                .map(OffsetDateTime::toInstant).orElse(null),
-                        ofNullable(rs.getObject("originated_at", OffsetDateTime.class))
-                                .map(OffsetDateTime::toInstant).orElse(null),
-                        jsonbConverter.toJsonb(rs.getObject("payload", PGobject.class)),
-                        jsonbConverter.toStringMap(rs.getObject("headers", PGobject.class)),
-                        rs.getString("error_message"),
-                        rs.getString("stack_trace")));
+                (rs, rowNum) -> {
+                    try {
+                        return new MessageContainer<>(
+                                rs.getObject("id", BigInteger.class),
+                                rs.getObject("message_id", BigInteger.class),
+                                rs.getString("key"),
+                                rs.getInt("attempt"),
+                                ofNullable(rs.getObject("execute_after", OffsetDateTime.class))
+                                        .map(OffsetDateTime::toInstant).orElse(null),
+                                ofNullable(rs.getObject("created_at", OffsetDateTime.class))
+                                        .map(OffsetDateTime::toInstant).orElse(null),
+                                ofNullable(rs.getObject("updated_at", OffsetDateTime.class))
+                                        .map(OffsetDateTime::toInstant).orElse(null),
+                                ofNullable(rs.getObject("originated_at", OffsetDateTime.class))
+                                        .map(OffsetDateTime::toInstant).orElse(null),
+                                jsonbConverter.fromPGobject(rs.getObject("payload", PGobject.class)),
+                                jsonbConverter.fromPGHeaders(rs.getObject("headers", PGobject.class)),
+                                rs.getString("error_message"),
+                                rs.getString("stack_trace"));
+                    } catch (DbqException e) {
+                        return sneakyThrow(e);
+                    }
+                });
     }
 
     protected List<MessageHistoryContainer<TestMessage>> selectTestMessagesFromHistory(
@@ -265,15 +272,21 @@ public class BaseIntegrationTest {
                         "queueTable", "test_message"));
 
         return jdbcTemplate.query(query,
-                (rs, rowNum) -> new MessageHistoryContainer<>(
-                        rs.getObject("id", BigInteger.class),
-                        rs.getInt("attempt"),
-                        ofNullable(rs.getObject("created_at", OffsetDateTime.class))
-                                .map(OffsetDateTime::toInstant).orElse(null),
-                        Status.valueOf(rs.getString("status")),
-                        jsonbConverter.toJsonb(rs.getObject("payload", PGobject.class)),
-                        rs.getString("error_message"),
-                        rs.getString("stack_trace")));
+                (rs, rowNum) -> {
+                    try {
+                        return new MessageHistoryContainer<>(
+                                rs.getObject("id", BigInteger.class),
+                                rs.getInt("attempt"),
+                                ofNullable(rs.getObject("created_at", OffsetDateTime.class))
+                                        .map(OffsetDateTime::toInstant).orElse(null),
+                                Status.valueOf(rs.getString("status")),
+                                jsonbConverter.fromPGobject(rs.getObject("payload", PGobject.class)),
+                                rs.getString("error_message"),
+                                rs.getString("stack_trace"));
+                    } catch (DbqException e) {
+                        return sneakyThrow(e);
+                    }
+                });
     }
 
     protected void assertPartitions(String tableName, List<String> partitions) {
@@ -295,6 +308,11 @@ public class BaseIntegrationTest {
                         WHERE  inhparent = '${schema}.${table}'::regclass;""",
                 formatParams);
         return jdbcTemplate.query(query, (rs, rowNum) -> rs.getString("partition"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T, E extends Throwable> T sneakyThrow(Throwable throwable) throws E {
+        throw (E) throwable;
     }
 
 

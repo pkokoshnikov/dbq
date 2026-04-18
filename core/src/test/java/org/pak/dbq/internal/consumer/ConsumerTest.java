@@ -11,8 +11,8 @@ import org.pak.dbq.error.MessageSerializationException;
 import org.pak.dbq.internal.CoreTestSupport;
 import org.pak.dbq.spi.MessageConsumerTelemetry;
 import org.pak.dbq.spi.MessageContextPropagator;
-import org.pak.dbq.spi.error.NonRetrayablePersistenceException;
-import org.pak.dbq.spi.error.RetryablePersistenceException;
+import org.pak.dbq.error.NonRetrayablePersistenceException;
+import org.pak.dbq.error.RetryablePersistenceException;
 import org.pak.dbq.internal.support.NoOpMessageConsumerTelemetry;
 import org.pak.dbq.internal.support.NoOpMessageContextPropagator;
 import org.pak.dbq.internal.support.SimpleMessageFactory;
@@ -256,7 +256,7 @@ class ConsumerTest {
         );
 
         assertThatThrownBy(consumer::poolAndProcess).isSameAs(exception);
-        assertThat(messageConsumerTelemetry.recordedException()).isNull();
+        assertThat(messageConsumerTelemetry.recordedException()).isSameAs(exception);
         assertThat(queryService.getFailures()).isEmpty();
         assertThat(queryService.getRetries()).isEmpty();
         assertThat(queryService.getCompletions()).isEmpty();
@@ -284,7 +284,7 @@ class ConsumerTest {
         );
 
         assertThatThrownBy(consumer::poolAndProcess).isSameAs(exception);
-        assertThat(messageConsumerTelemetry.recordedException()).isNull();
+        assertThat(messageConsumerTelemetry.recordedException()).isSameAs(exception);
         assertThat(queryService.getFailures()).isEmpty();
         assertThat(queryService.getRetries()).isEmpty();
         assertThat(queryService.getCompletions()).isEmpty();
@@ -312,7 +312,7 @@ class ConsumerTest {
         );
 
         assertThatThrownBy(consumer::poolAndProcess).isSameAs(exception);
-        assertThat(messageConsumerTelemetry.recordedException()).isNull();
+        assertThat(messageConsumerTelemetry.recordedException()).isSameAs(exception);
         assertThat(queryService.getFailures()).isEmpty();
         assertThat(queryService.getRetries()).isEmpty();
         assertThat(queryService.getCompletions()).isEmpty();
@@ -338,7 +338,7 @@ class ConsumerTest {
         );
 
         assertThatThrownBy(consumer::poolAndProcess).isSameAs(exception);
-        assertThat(messageConsumerTelemetry.recordedException()).isNull();
+        assertThat(messageConsumerTelemetry.recordedException()).isSameAs(exception);
         assertThat(queryService.getFailures()).isEmpty();
         assertThat(queryService.getRetries()).isEmpty();
         assertThat(queryService.getCompletions()).isEmpty();

@@ -2,14 +2,14 @@ package org.pak.dbq.internal.consumer;
 
 import lombok.NonNull;
 import org.pak.dbq.api.*;
+import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.spi.*;
-import org.pak.dbq.spi.error.PersistenceException;
 
-import java.math.BigInteger;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public class BatchConsumer<T> extends AbstractConsumer<T> {
     private final BatchMessageHandler<T> batchMessageHandler;
@@ -32,28 +32,29 @@ public class BatchConsumer<T> extends AbstractConsumer<T> {
 
     @Override
     protected void processMessages(List<MessageContainer<T>> messageContainerList)
-            throws PersistenceException, InterruptedException {
-        var messageContainersById = new LinkedHashMap<BigInteger, MessageContainer<T>>();
+            throws DbqException, InterruptedException {
+        var messageContainersById = messageContainerList.stream()
+                .collect(Collectors.toMap(
+                        MessageContainer::getId,
+                        Function.identity(),
+                        (left, right) -> left,
+                        LinkedHashMap::new));
         var records = messageContainerList.stream()
-                .map(messageContainer -> {
-                    messageContainersById.put(messageContainer.getId(), messageContainer); // todo: я бы вынес это просто в отдельную операцию на стримах
-                    return new MessageRecord<>(
-                            messageContainer.getId(),
-                            toMessage(messageContainer),
-                            messageContainer.getAttempt(),
-                            messageContainer.getExecuteAfter());
-                })
+                .map(messageContainer -> new MessageRecord<>(
+                        messageContainer.getId(),
+                        toMessage(messageContainer),
+                        messageContainer.getAttempt(),
+                        messageContainer.getExecuteAfter()))
                 .toList();
-        var acknowledgedRecords = new HashSet<BigInteger>();
-
-        batchMessageHandler.handle(records, new RecordingAcknowledger<>(
+        var acknowledger = new RecordingAcknowledger<>(
                 getQueryService(),
                 getSubscriptionId(),
                 isHistoryEnabled(),
-                messageContainersById,
-                acknowledgedRecords));
+                messageContainersById);
 
-        if (acknowledgedRecords.size() != messageContainerList.size()) {
+        batchMessageHandler.handle(records, acknowledger);
+
+        if (acknowledger.acknowledgedCount() != messageContainerList.size()) {
             throw new IllegalStateException("Batch handler must acknowledge every message exactly once");
         }
     }
