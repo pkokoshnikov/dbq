@@ -62,7 +62,7 @@ Top-level decision types:
 Current concrete DBQ exceptions include:
 
 - `RetryablePersistenceException`
-- `NonRetrayablePersistenceException`
+- `NonRetryablePersistenceException`
 - `MessageSerializationException`
 - `MessageDeserializationException`
 

@@ -11,7 +11,7 @@ import org.pak.dbq.error.MessageSerializationException;
 import org.pak.dbq.internal.CoreTestSupport;
 import org.pak.dbq.spi.MessageConsumerTelemetry;
 import org.pak.dbq.spi.MessageContextPropagator;
-import org.pak.dbq.error.NonRetrayablePersistenceException;
+import org.pak.dbq.error.NonRetryablePersistenceException;
 import org.pak.dbq.error.RetryablePersistenceException;
 import org.pak.dbq.internal.support.NoOpMessageConsumerTelemetry;
 import org.pak.dbq.internal.support.NoOpMessageContextPropagator;
@@ -268,7 +268,7 @@ class ConsumerTest {
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var container = messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
         queryService.setSelectedMessages(List.of(container));
-        var exception = new NonRetrayablePersistenceException(new RuntimeException("boom"), null);
+        var exception = new NonRetryablePersistenceException(new RuntimeException("boom"), null);
         var messageConsumerTelemetry = new CoreTestSupport.RecordingMessageConsumerTelemetry();
         var consumer = processor(
                 queryService,

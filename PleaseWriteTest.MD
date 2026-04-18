@@ -8,7 +8,7 @@
 
 Что важно покрыть:
 - `MessageSerializationException` должен останавливать consumer.
-- `NonRetrayablePersistenceException` должен останавливать consumer.
+- `NonRetryablePersistenceException` должен останавливать consumer.
 - `RetryablePersistenceException` должен ставить паузу `persistenceExceptionPause`.
 - Неожиданные исключения должны ставить паузу `unpredictedExceptionPause`.
 - `InterruptedException` в `poolLoop` должен корректно завершать цикл и выставлять `Thread.currentThread().interrupt()`.

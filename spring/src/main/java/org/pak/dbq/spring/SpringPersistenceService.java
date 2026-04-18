@@ -4,7 +4,7 @@ import org.pak.dbq.error.DbqException;
 import org.pak.dbq.error.MessageDeserializationException;
 import org.pak.dbq.error.MessageSerializationException;
 import org.pak.dbq.spi.PersistenceService;
-import org.pak.dbq.error.NonRetrayablePersistenceException;
+import org.pak.dbq.error.NonRetryablePersistenceException;
 import org.pak.dbq.error.RetryablePersistenceException;
 import org.springframework.dao.RecoverableDataAccessException;
 import org.springframework.dao.TransientDataAccessException;
@@ -80,7 +80,7 @@ public class SpringPersistenceService implements PersistenceService {
                 || e instanceof CannotGetJdbcConnectionException) {
             throw new RetryablePersistenceException(e, e.getCause());
         }
-        throw new NonRetrayablePersistenceException(e, e.getCause());
+        throw new NonRetryablePersistenceException(e, e.getCause());
     }
 
     @Override

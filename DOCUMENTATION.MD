@@ -99,7 +99,7 @@ Decision-oriented branches:
 Current concrete exceptions:
 
 - `RetryablePersistenceException`
-- `NonRetrayablePersistenceException`
+- `NonRetryablePersistenceException`
 - `MessageSerializationException`
 - `MessageDeserializationException`
 

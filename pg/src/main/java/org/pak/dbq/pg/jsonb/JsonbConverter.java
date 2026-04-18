@@ -14,7 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.pak.dbq.error.DbqException;
 import org.pak.dbq.error.MessageDeserializationException;
 import org.pak.dbq.error.MessageSerializationException;
-import org.pak.dbq.error.NonRetrayablePersistenceException;
+import org.pak.dbq.error.NonRetryablePersistenceException;
 import org.postgresql.util.PGobject;
 
 import java.sql.SQLException;
@@ -79,7 +79,7 @@ public class JsonbConverter {
 
             return (T) jsonObject;
         } catch (SQLException e) {
-            throw new NonRetrayablePersistenceException(e, e.getCause());
+            throw new NonRetryablePersistenceException(e, e.getCause());
         } catch (JsonProcessingException e) {
             throw new MessageSerializationException(e);
         }
@@ -109,7 +109,7 @@ public class JsonbConverter {
 
             return (T) jsonObject;
         } catch (SQLException e) {
-            throw new NonRetrayablePersistenceException(e, e.getCause());
+            throw new NonRetryablePersistenceException(e, e.getCause());
         } catch (JsonProcessingException e) {
             throw new MessageSerializationException(e);
         }

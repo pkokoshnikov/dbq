@@ -13,7 +13,7 @@ import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.jsonb.JsonbConverter;
 import org.pak.dbq.spi.PersistenceService;
 import org.pak.dbq.spi.QueryService;
-import org.pak.dbq.error.NonRetrayablePersistenceException;
+import org.pak.dbq.error.NonRetryablePersistenceException;
 import org.postgresql.util.PGobject;
 
 import java.math.BigInteger;
@@ -305,7 +305,7 @@ public class PgQueryService implements QueryService {
             try {
                 return LocalDate.parse(rs.getString("partition").replace(tableName + "_", ""), dateFormatter);
             } catch (SQLException e) {
-                return sneakyThrow(new NonRetrayablePersistenceException(e, e.getCause()));
+                return sneakyThrow(new NonRetryablePersistenceException(e, e.getCause()));
             }
         });
     }
@@ -415,7 +415,7 @@ public class PgQueryService implements QueryService {
                         jsonbConverter.fromPGHeaders(rs.getObject("headers", PGobject.class)),
                         rs.getString("error_message"), rs.getString("stack_trace"));
             } catch (SQLException e) {
-                return sneakyThrow(new NonRetrayablePersistenceException(e, e.getCause()));
+                return sneakyThrow(new NonRetryablePersistenceException(e, e.getCause()));
             } catch (DbqException e) {
                 return sneakyThrow(e);
             }
@@ -590,7 +590,7 @@ public class PgQueryService implements QueryService {
             try {
                 return rs.getBoolean("exists");
             } catch (SQLException e) {
-                return sneakyThrow(new NonRetrayablePersistenceException(e, e.getCause()));
+                return sneakyThrow(new NonRetryablePersistenceException(e, e.getCause()));
             }
         });
 
@@ -654,7 +654,7 @@ public class PgQueryService implements QueryService {
             try {
                 return parsePartitionBounds(rs.getString("partition_bound"));
             } catch (SQLException e) {
-                return sneakyThrow(new NonRetrayablePersistenceException(e, e.getCause()));
+                return sneakyThrow(new NonRetryablePersistenceException(e, e.getCause()));
             }
         });
 
