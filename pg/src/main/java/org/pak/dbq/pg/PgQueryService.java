@@ -4,16 +4,19 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.pak.dbq.api.ConsumerConfig;
 import org.pak.dbq.api.Message;
+import org.pak.dbq.api.ProducerConfig;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.error.DbqException;
+import org.pak.dbq.error.NonRetryablePersistenceException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.jsonb.JsonbConverter;
 import org.pak.dbq.spi.PersistenceService;
 import org.pak.dbq.spi.QueryService;
-import org.pak.dbq.error.NonRetryablePersistenceException;
+import org.pak.dbq.spi.QueryServiceFactory;
 import org.postgresql.util.PGobject;
 
 import java.math.BigInteger;
@@ -30,7 +33,7 @@ import java.util.stream.Collectors;
 import static java.util.Optional.ofNullable;
 
 @Slf4j
-public class PgQueryService implements QueryService {
+public class PgQueryService implements QueryServiceFactory {
     private static final StringFormatter STATIC_FORMATTER = new StringFormatter();
     private record PartitionBounds(Instant from, Instant to) {
     }
@@ -71,6 +74,28 @@ public class PgQueryService implements QueryService {
         this.persistenceService = persistenceService;
         this.schemaName = schemaName;
         this.jsonbConverter = jsonbConverter;
+    }
+
+    @Override
+    public QueryService createProducerQueryService(ProducerConfig<?> producerConfig) {
+        return new ProducerQueryService(producerConfig.getQueueName());
+    }
+
+    @Override
+    public QueryService createConsumerQueryService(ConsumerConfig<?> consumerConfig) {
+        var properties = consumerConfig.getProperties();
+        if (properties.isSerializedByKey()) {
+            return new SerializedByKeyConsumerQueryService(
+                    consumerConfig.getQueueName(),
+                    consumerConfig.getSubscriptionId(),
+                    properties.getMaxPollRecords(),
+                    properties.isHistoryEnabled());
+        }
+        return new DefaultConsumerQueryService(
+                consumerConfig.getQueueName(),
+                consumerConfig.getSubscriptionId(),
+                properties.getMaxPollRecords(),
+                properties.isHistoryEnabled());
     }
 
     public void createQueueTable(QueueName queueName) throws DbqException {
@@ -310,8 +335,7 @@ public class PgQueryService implements QueryService {
         });
     }
 
-    @Override
-    public <T> boolean insertMessage(QueueName queueName, Message<T> message) throws DbqException {
+    private <T> boolean insertMessage(QueueName queueName, Message<T> message) throws DbqException {
         ensureQueuePartitionExists(queueName, message.originatedTime());
 
         var query = queryCache.computeIfAbsent("insertMessage|" + queueName.name(), k -> formatter.execute("""
@@ -327,8 +351,7 @@ public class PgQueryService implements QueryService {
                 jsonbConverter.toPGObject(message.payload())) > 0;
     }
 
-    @Override
-    public <T> List<Boolean> insertBatchMessage(QueueName queueName, List<Message<T>> messages)
+    private <T> List<Boolean> insertBatchMessage(QueueName queueName, List<Message<T>> messages)
             throws DbqException {
         ensureQueuePartitionsExist(queueName, messages.stream()
                 .map(Message::originatedTime)
@@ -354,8 +377,7 @@ public class PgQueryService implements QueryService {
         return Arrays.stream(result).mapToObj(i -> i > 0).toList();
     }
 
-    @Override
-    public <T> List<MessageContainer<T>> selectMessages(
+    private <T> List<MessageContainer<T>> selectMessages(
             QueueName queueName,
             SubscriptionId subscriptionId,
             Integer maxPollRecords,
@@ -397,41 +419,36 @@ public class PgQueryService implements QueryService {
                                 "queueTable", queueTable(queueName),
                                 "maxPollRecords", maxPollRecords.toString())));
 
-        return persistenceService.query(query, rs -> {
-            try {
-                return new MessageContainer<>(rs.getObject("id", BigInteger.class),
-                        rs.getObject("message_id", BigInteger.class),
-                        rs.getString("key"),
-                        rs.getInt("attempt"),
-                        ofNullable(rs.getObject("execute_after", OffsetDateTime.class)).map(OffsetDateTime::toInstant)
-                                .orElse(null),
-                        ofNullable(rs.getObject("created_at", OffsetDateTime.class)).map(OffsetDateTime::toInstant)
-                                .orElse(null),
-                        ofNullable(rs.getObject("updated_at", OffsetDateTime.class)).map(OffsetDateTime::toInstant)
-                                .orElse(null),
-                        ofNullable(rs.getObject("originated_at", OffsetDateTime.class)).map(OffsetDateTime::toInstant)
-                                .orElse(null),
-                        jsonbConverter.fromPGobject(rs.getObject("payload", PGobject.class)),
-                        jsonbConverter.fromPGHeaders(rs.getObject("headers", PGobject.class)),
-                        rs.getString("error_message"), rs.getString("stack_trace"));
-            } catch (SQLException e) {
-                return sneakyThrow(new NonRetryablePersistenceException(e, e.getCause()));
-            } catch (DbqException e) {
-                return sneakyThrow(e);
-            }
-        });
+        return persistenceService.query(query, this::mapMessageContainer);
     }
 
-    public <T> List<MessageContainer<T>> selectMessages(
-            QueueName queueName,
-            SubscriptionId subscriptionId,
-            Integer maxPollRecords
-    ) throws DbqException {
-        return selectMessages(queueName, subscriptionId, maxPollRecords, false);
+    @SuppressWarnings("unchecked")
+    private <T> MessageContainer<T> mapMessageContainer(java.sql.ResultSet rs) {
+        try {
+            return new MessageContainer<>(rs.getObject("id", BigInteger.class),
+                    rs.getObject("message_id", BigInteger.class),
+                    rs.getString("key"),
+                    rs.getInt("attempt"),
+                    ofNullable(rs.getObject("execute_after", OffsetDateTime.class)).map(OffsetDateTime::toInstant)
+                            .orElse(null),
+                    ofNullable(rs.getObject("created_at", OffsetDateTime.class)).map(OffsetDateTime::toInstant)
+                            .orElse(null),
+                    ofNullable(rs.getObject("updated_at", OffsetDateTime.class)).map(OffsetDateTime::toInstant)
+                            .orElse(null),
+                    ofNullable(rs.getObject("originated_at", OffsetDateTime.class)).map(OffsetDateTime::toInstant)
+                            .orElse(null),
+                    jsonbConverter.fromPGobject(rs.getObject("payload", PGobject.class)),
+                    jsonbConverter.fromPGHeaders(rs.getObject("headers", PGobject.class)),
+                    rs.getString("error_message"),
+                    rs.getString("stack_trace"));
+        } catch (SQLException e) {
+            return sneakyThrow(new NonRetryablePersistenceException(e, e.getCause()));
+        } catch (DbqException e) {
+            return sneakyThrow(e);
+        }
     }
 
-    @Override
-    public <T> void retryMessage(
+    private <T> void retryMessage(
             SubscriptionId subscriptionId, MessageContainer<T> messageContainer, Duration retryDuration, Exception e
     ) throws DbqException {
         var query = queryCache.computeIfAbsent("retryMessage|" + subscriptionId.id(), k -> formatter.execute("""
@@ -448,7 +465,7 @@ public class PgQueryService implements QueryService {
         assertNonEmptyUpdate(updated, query);
     }
 
-    public <T> void failMessage(
+    private <T> void failMessage(
             SubscriptionId subscriptionId,
             MessageContainer<T> messageContainer,
             Exception e,
@@ -486,7 +503,7 @@ public class PgQueryService implements QueryService {
         cleanupKeyLock(subscriptionId, messageContainer.getKey());
     }
 
-    public <T> void completeMessage(
+    private <T> void completeMessage(
             SubscriptionId subscriptionId,
             MessageContainer<T> messageContainer,
             boolean historyEnabled
@@ -769,6 +786,131 @@ public class PgQueryService implements QueryService {
     private void assertNonEmptyUpdate(int updated, String query) {
         if (updated == 0) {
             log.warn("No records were updated by query '{}'", query);
+        }
+    }
+
+    private abstract class UnsupportedQueryService implements QueryService {
+        @Override
+        public <T> List<MessageContainer<T>> selectMessages() throws DbqException {
+            throw new UnsupportedOperationException("selectMessages is not supported by this query service");
+        }
+
+        @Override
+        public <T> void retryMessage(MessageContainer<T> messageContainer, Duration retryDuration, Exception e)
+                throws DbqException {
+            throw new UnsupportedOperationException("retryMessage is not supported by this query service");
+        }
+
+        @Override
+        public <T> void failMessage(MessageContainer<T> messageContainer, Exception e) throws DbqException {
+            throw new UnsupportedOperationException("failMessage is not supported by this query service");
+        }
+
+        @Override
+        public <T> void completeMessage(MessageContainer<T> messageContainer) throws DbqException {
+            throw new UnsupportedOperationException("completeMessage is not supported by this query service");
+        }
+
+        @Override
+        public <T> boolean insertMessage(Message<T> message) throws DbqException {
+            throw new UnsupportedOperationException("insertMessage is not supported by this query service");
+        }
+
+        @Override
+        public <T> List<Boolean> insertBatchMessage(List<Message<T>> messages) throws DbqException {
+            throw new UnsupportedOperationException("insertBatchMessage is not supported by this query service");
+        }
+    }
+
+    private final class ProducerQueryService extends UnsupportedQueryService {
+        private final QueueName queueName;
+
+        private ProducerQueryService(QueueName queueName) {
+            this.queueName = queueName;
+        }
+
+        @Override
+        public <T> boolean insertMessage(Message<T> message) throws DbqException {
+            return PgQueryService.this.insertMessage(queueName, message);
+        }
+
+        @Override
+        public <T> List<Boolean> insertBatchMessage(List<Message<T>> messages) throws DbqException {
+            return PgQueryService.this.insertBatchMessage(queueName, messages);
+        }
+    }
+
+    private abstract class AbstractConsumerQueryService extends UnsupportedQueryService {
+        private final QueueName queueName;
+        private final SubscriptionId subscriptionId;
+        private final Integer maxPollRecords;
+        private final boolean historyEnabled;
+
+        private AbstractConsumerQueryService(
+                QueueName queueName,
+                SubscriptionId subscriptionId,
+                Integer maxPollRecords,
+                boolean historyEnabled
+        ) {
+            this.queueName = queueName;
+            this.subscriptionId = subscriptionId;
+            this.maxPollRecords = maxPollRecords;
+            this.historyEnabled = historyEnabled;
+        }
+
+        protected abstract boolean serializedByKey();
+
+        @Override
+        public <T> List<MessageContainer<T>> selectMessages() throws DbqException {
+            return PgQueryService.this.selectMessages(queueName, subscriptionId, maxPollRecords, serializedByKey());
+        }
+
+        @Override
+        public <T> void retryMessage(MessageContainer<T> messageContainer, Duration retryDuration, Exception e)
+                throws DbqException {
+            PgQueryService.this.retryMessage(subscriptionId, messageContainer, retryDuration, e);
+        }
+
+        @Override
+        public <T> void failMessage(MessageContainer<T> messageContainer, Exception e) throws DbqException {
+            PgQueryService.this.failMessage(subscriptionId, messageContainer, e, historyEnabled);
+        }
+
+        @Override
+        public <T> void completeMessage(MessageContainer<T> messageContainer) throws DbqException {
+            PgQueryService.this.completeMessage(subscriptionId, messageContainer, historyEnabled);
+        }
+    }
+
+    private final class DefaultConsumerQueryService extends AbstractConsumerQueryService {
+        private DefaultConsumerQueryService(
+                QueueName queueName,
+                SubscriptionId subscriptionId,
+                Integer maxPollRecords,
+                boolean historyEnabled
+        ) {
+            super(queueName, subscriptionId, maxPollRecords, historyEnabled);
+        }
+
+        @Override
+        protected boolean serializedByKey() {
+            return false;
+        }
+    }
+
+    private final class SerializedByKeyConsumerQueryService extends AbstractConsumerQueryService {
+        private SerializedByKeyConsumerQueryService(
+                QueueName queueName,
+                SubscriptionId subscriptionId,
+                Integer maxPollRecords,
+                boolean historyEnabled
+        ) {
+            super(queueName, subscriptionId, maxPollRecords, historyEnabled);
+        }
+
+        @Override
+        protected boolean serializedByKey() {
+            return true;
         }
     }
 }

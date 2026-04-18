@@ -3,11 +3,14 @@ package org.pak.dbq.internal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.pak.dbq.api.ConsumerConfig;
 import org.pak.dbq.api.Message;
+import org.pak.dbq.api.ProducerConfig;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.persistence.Status;
 import org.pak.dbq.pg.PgQueryService;
+import org.pak.dbq.spi.QueryService;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;
@@ -91,7 +94,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, false, false);
 
-        assertThatThrownBy(() -> pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1, true))
+        assertThatThrownBy(() -> consumerQueryService(SUBSCRIPTION_NAME_1, 1, false, true).selectMessages())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("without serializedByKey support");
     }
@@ -148,15 +151,15 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
 
-        pgQueryService.insertMessage(QUEUE_NAME,
-                new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
+        producerQueryService().insertMessage(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
 
         var partitions = pgQueryService.getAllQueuePartitions(QUEUE_NAME);
         assertThat(pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0)))
                 .isEqualTo(PgQueryService.DropPartitionResult.HAS_REFERENCES);
 
-        var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1);
-        pgQueryService.completeMessage(SUBSCRIPTION_NAME_1, messages.get(0), true);
+        var consumerQueryService = consumerQueryService(SUBSCRIPTION_NAME_1, 1, true, false);
+        var messages = consumerQueryService.selectMessages();
+        consumerQueryService.completeMessage(messages.get(0));
 
         assertThat(pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0)))
                 .isEqualTo(PgQueryService.DropPartitionResult.HAS_REFERENCES);
@@ -201,7 +204,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         createQueueTable();
 
         Instant originatedTime = Instant.now();
-        var inserted = pgQueryService.insertMessage(QUEUE_NAME,
+        var inserted = producerQueryService().insertMessage(
                 new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
 
         assertThat(inserted).isTrue();
@@ -216,7 +219,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         String beforeKey = UUID.randomUUID().toString();
         String afterKey = UUID.randomUUID().toString();
 
-        pgQueryService.insertBatchMessage(QUEUE_NAME,
+        producerQueryService().insertBatchMessage(
                 List.of(new Message<>(beforeKey, beforeMidnightUtc, new TestMessage("before")),
                         new Message<>(afterKey, afterMidnightUtc, new TestMessage("after"))));
 
@@ -243,7 +246,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
                 FOR VALUES FROM ('2026-04-04T01:00:00Z') TO ('2026-04-05T01:00:00Z')
                 """);
 
-        assertThatThrownBy(() -> pgQueryService.insertMessage(QUEUE_NAME,
+        assertThatThrownBy(() -> producerQueryService().insertMessage(
                 new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test"))))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Unexpected partition bounds for test_message_2026_04_04");
@@ -255,7 +258,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
         Instant originatedTime_1 = Instant.now();
         Instant originatedTime_2 = originatedTime_1.plus(2, ChronoUnit.DAYS);
-        var inserted = pgQueryService.insertBatchMessage(QUEUE_NAME,
+        var inserted = producerQueryService().insertBatchMessage(
                 List.of(new Message<>(UUID.randomUUID().toString(), originatedTime_1,
                                 new TestMessage("test")),
                         new Message<>(UUID.randomUUID().toString(), originatedTime_2,
@@ -274,13 +277,14 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         Instant originatedTimeComplete = Instant.now();
         Instant originatedTimeFail = originatedTimeComplete.plus(1, ChronoUnit.DAYS);
 
-        pgQueryService.insertBatchMessage(QUEUE_NAME,
+        producerQueryService().insertBatchMessage(
                 List.of(new Message<>(UUID.randomUUID().toString(), originatedTimeComplete,
                                 new TestMessage("complete")),
                         new Message<>(UUID.randomUUID().toString(), originatedTimeFail,
                                 new TestMessage("fail"))));
 
-        var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 10);
+        var consumerQueryService = consumerQueryService(SUBSCRIPTION_NAME_1, 10, true, false);
+        var messages = consumerQueryService.selectMessages();
         assertThat(messages).hasSize(2);
 
         var completeMessage = messages.stream()
@@ -292,8 +296,8 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
                 .findFirst()
                 .orElseThrow();
 
-        pgQueryService.completeMessage(SUBSCRIPTION_NAME_1, completeMessage, true);
-        pgQueryService.failMessage(SUBSCRIPTION_NAME_1, failMessage, new RuntimeException("fail"), true);
+        consumerQueryService.completeMessage(completeMessage);
+        consumerQueryService.failMessage(failMessage, new RuntimeException("fail"));
 
         assertThat(pgQueryService.getAllHistoryPartitions(SUBSCRIPTION_NAME_1))
                 .contains(originatedTimeComplete.atOffset(java.time.ZoneOffset.UTC).toLocalDate(),
@@ -311,11 +315,12 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         createSubscriptionTable(SUBSCRIPTION_NAME_1, false);
         Instant originatedTime = Instant.now();
 
-        pgQueryService.insertBatchMessage(QUEUE_NAME,
+        producerQueryService().insertBatchMessage(
                 List.of(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("complete")),
                         new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("fail"))));
 
-        var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 10);
+        var consumerQueryService = consumerQueryService(SUBSCRIPTION_NAME_1, 10, false, false);
+        var messages = consumerQueryService.selectMessages();
         assertThat(messages).hasSize(2);
 
         var completeMessage = messages.stream()
@@ -327,8 +332,8 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
                 .findFirst()
                 .orElseThrow();
 
-        pgQueryService.completeMessage(SUBSCRIPTION_NAME_1, completeMessage, false);
-        pgQueryService.failMessage(SUBSCRIPTION_NAME_1, failMessage, new RuntimeException("fail"), false);
+        consumerQueryService.completeMessage(completeMessage);
+        consumerQueryService.failMessage(failMessage, new RuntimeException("fail"));
 
         assertThat(selectTestMessages(SUBSCRIPTION_NAME_1)).isEmpty();
         assertThat(jdbcTemplate.queryForObject("SELECT to_regclass(?)", String.class,
@@ -346,14 +351,14 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_2, originatedTime);
 
         var headers = java.util.Map.of("traceparent", "00-test-parent");
-        pgQueryService.insertMessage(QUEUE_NAME,
+        producerQueryService().insertMessage(
                 new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test"), headers));
 
-        var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1);
+        var messages = consumerQueryService(SUBSCRIPTION_NAME_1, 1, true, false).selectMessages();
         assertThat(messages).hasSize(1);
         assertThat(messages.getFirst().getHeaders()).containsEntry("traceparent", "00-test-parent");
 
-        messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_2, 1);
+        messages = consumerQueryService(SUBSCRIPTION_NAME_2, 1, true, false).selectMessages();
         assertThat(messages).hasSize(1);
         assertThat(messages.getFirst().getHeaders()).containsEntry("traceparent", "00-test-parent");
     }
@@ -368,14 +373,14 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_2, originatedTime);
 
-        pgQueryService.insertBatchMessage(QUEUE_NAME,
+        producerQueryService().insertBatchMessage(
                 List.of(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")),
                         new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test"))));
 
-        var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1);
+        var messages = consumerQueryService(SUBSCRIPTION_NAME_1, 1, true, false).selectMessages();
         assertThat(messages).hasSize(1);
 
-        messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_2, 1);
+        messages = consumerQueryService(SUBSCRIPTION_NAME_2, 1, true, false).selectMessages();
         assertThat(messages).hasSize(1);
     }
 
@@ -388,14 +393,13 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
 
         String key = UUID.randomUUID().toString();
-        pgQueryService.insertBatchMessage(QUEUE_NAME,
+        producerQueryService().insertBatchMessage(
                 List.of(new Message<>(key, originatedTime, new TestMessage("test")),
                         new Message<>(key, originatedTime, new TestMessage("test"))));
 
-        pgQueryService.insertMessage(QUEUE_NAME,
-                new Message<>(key, originatedTime, new TestMessage("test")));
+        producerQueryService().insertMessage(new Message<>(key, originatedTime, new TestMessage("test")));
 
-        var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 10);
+        var messages = consumerQueryService(SUBSCRIPTION_NAME_1, 10, true, false).selectMessages();
         assertThat(messages).hasSize(1);
     }
 
@@ -407,14 +411,13 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
 
-        pgQueryService.insertBatchMessage(QUEUE_NAME,
+        producerQueryService().insertBatchMessage(
                 List.of(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")),
                         new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test"))));
 
-        pgQueryService.insertMessage(QUEUE_NAME,
-                new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
+        producerQueryService().insertMessage(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
 
-        var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 10);
+        var messages = consumerQueryService(SUBSCRIPTION_NAME_1, 10, true, false).selectMessages();
         assertThat(messages).hasSize(3);
     }
 
@@ -426,21 +429,21 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
 
-        pgQueryService.insertBatchMessage(QUEUE_NAME,
+        producerQueryService().insertBatchMessage(
                 List.of(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")),
                         new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test"))));
 
-        pgQueryService.insertMessage(QUEUE_NAME,
-                new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
+        producerQueryService().insertMessage(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
 
-        var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 10);
+        var consumerQueryService = consumerQueryService(SUBSCRIPTION_NAME_1, 10, true, false);
+        var messages = consumerQueryService.selectMessages();
 
         assertThat(messages).hasSize(3);
         for (var message : messages) {
-            pgQueryService.completeMessage(SUBSCRIPTION_NAME_1, message, true);
+            consumerQueryService.completeMessage(message);
         }
 
-        messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 10);
+        messages = consumerQueryService.selectMessages();
         assertThat(messages).isEmpty();
 
         var historyMessages = selectTestMessagesFromHistory(SUBSCRIPTION_NAME_1);
@@ -456,21 +459,21 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
 
-        pgQueryService.insertBatchMessage(QUEUE_NAME,
+        producerQueryService().insertBatchMessage(
                 List.of(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")),
                         new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test"))));
 
-        pgQueryService.insertMessage(QUEUE_NAME,
-                new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
+        producerQueryService().insertMessage(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
 
-        var messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 10);
+        var consumerQueryService = consumerQueryService(SUBSCRIPTION_NAME_1, 10, true, false);
+        var messages = consumerQueryService.selectMessages();
 
         assertThat(messages).hasSize(3);
         for (var message : messages) {
-            pgQueryService.failMessage(SUBSCRIPTION_NAME_1, message, new RuntimeException(), true);
+            consumerQueryService.failMessage(message, new RuntimeException());
         }
 
-        messages = pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 10);
+        messages = consumerQueryService.selectMessages();
         assertThat(messages).isEmpty();
 
         var historyMessages = selectTestMessagesFromHistory(SUBSCRIPTION_NAME_1);
@@ -486,23 +489,20 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
 
-        pgQueryService.insertBatchMessage(QUEUE_NAME,
+        producerQueryService().insertBatchMessage(
                 List.of(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")),
                         new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test"))));
 
-        pgQueryService.insertMessage(QUEUE_NAME,
-                new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
+        producerQueryService().insertMessage(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
 
-        List<MessageContainer<TestMessage>> messages =
-                pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 10);
+        var consumerQueryService = consumerQueryService(SUBSCRIPTION_NAME_1, 10, true, false);
+        List<MessageContainer<TestMessage>> messages = consumerQueryService.selectMessages();
 
         assertThat(messages).hasSize(3);
         messages.forEach(message -> assertThat(message.getAttempt()).isEqualTo(0));
 
         for (var message : messages) {
-            pgQueryService.retryMessage(SUBSCRIPTION_NAME_1, message,
-                    Duration.of(10, ChronoUnit.SECONDS),
-                    new RuntimeException());
+            consumerQueryService.retryMessage(message, Duration.of(10, ChronoUnit.SECONDS), new RuntimeException());
         }
 
         messages = selectTestMessages(SUBSCRIPTION_NAME_1);
@@ -518,19 +518,19 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
         pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
 
-        pgQueryService.insertMessage(QUEUE_NAME,
-                new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
+        producerQueryService().insertMessage(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
 
-        var message = hasSize1AndGetFirst(pgQueryService.selectMessages(QUEUE_NAME, SUBSCRIPTION_NAME_1, 1));
+        var consumerQueryService = consumerQueryService(SUBSCRIPTION_NAME_1, 1, true, false);
+        var message = hasSize1AndGetFirst(consumerQueryService.selectMessages());
 
-        pgQueryService.retryMessage(SUBSCRIPTION_NAME_1, message,
+        consumerQueryService.retryMessage(message,
                 Duration.of(5, ChronoUnit.SECONDS),
                 new RuntimeException(TEST_EXCEPTION_MESSAGE));
 
         var firstRetryMessage = hasSize1AndGetFirst(selectTestMessages(SUBSCRIPTION_NAME_1));
         assertThat(firstRetryMessage.getAttempt()).isEqualTo(1);
 
-        pgQueryService.retryMessage(SUBSCRIPTION_NAME_1, firstRetryMessage,
+        consumerQueryService.retryMessage(firstRetryMessage,
                 Duration.of(2, ChronoUnit.MINUTES),
                 new RuntimeException(TEST_EXCEPTION_MESSAGE));
 
@@ -547,7 +547,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         Instant originatedTime = Instant.now();
         String key = UUID.randomUUID().toString();
 
-        pgQueryService.insertBatchMessage(QUEUE_NAME,
+        producerQueryService().insertBatchMessage(
                 List.of(
                         new Message<>(key, originatedTime, new TestMessage("first")),
                         new Message<>(key, originatedTime.plusMillis(1), new TestMessage("second"))));
@@ -589,7 +589,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         Instant originatedTime = Instant.now();
         String key = UUID.randomUUID().toString();
 
-        pgQueryService.insertBatchMessage(QUEUE_NAME,
+        producerQueryService().insertBatchMessage(
                 List.of(
                         new Message<>(key, originatedTime, new TestMessage("first")),
                         new Message<>(key, originatedTime.plusMillis(1), new TestMessage("second"))));
@@ -630,7 +630,7 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true, true);
         Instant originatedTime = Instant.now();
 
-        pgQueryService.insertBatchMessage(QUEUE_NAME,
+        producerQueryService().insertBatchMessage(
                 List.of(
                         new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("first")),
                         new Message<>(UUID.randomUUID().toString(), originatedTime.plusMillis(1), new TestMessage("second"))));
@@ -682,10 +682,36 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
             boolean serializedByKey
     ) {
         try {
-            return pgQueryService.selectMessages(QUEUE_NAME, subscriptionId, 1, serializedByKey);
+            return consumerQueryService(subscriptionId, 1, true, serializedByKey).selectMessages();
         } catch (Exception e) {
             return sneakyThrow(e);
         }
+    }
+
+    private QueryService producerQueryService() {
+        return pgQueryService.createProducerQueryService(ProducerConfig.<TestMessage>builder()
+                .queueName(QUEUE_NAME)
+                .clazz(TestMessage.class)
+                .build());
+    }
+
+    private QueryService consumerQueryService(
+            SubscriptionId subscriptionId,
+            int maxPollRecords,
+            boolean historyEnabled,
+            boolean serializedByKey
+    ) {
+        return pgQueryService.createConsumerQueryService(ConsumerConfig.<TestMessage>builder()
+                .queueName(QUEUE_NAME)
+                .subscriptionId(subscriptionId)
+                .messageHandler(message -> {
+                })
+                .properties(ConsumerConfig.Properties.builder()
+                        .maxPollRecords(maxPollRecords)
+                        .historyEnabled(historyEnabled)
+                        .serializedByKey(serializedByKey)
+                        .build())
+                .build());
     }
 
     @SuppressWarnings("unchecked")

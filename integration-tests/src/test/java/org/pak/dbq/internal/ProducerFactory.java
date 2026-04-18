@@ -6,16 +6,19 @@ import lombok.experimental.FieldDefaults;
 import org.pak.dbq.api.Producer;
 import org.pak.dbq.api.ProducerConfig;
 import org.pak.dbq.spi.MessageFactory;
-import org.pak.dbq.spi.QueryService;
+import org.pak.dbq.spi.QueryServiceFactory;
 
 @Builder(toBuilder = true)
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ProducerFactory<T> {
     ProducerConfig<T> producerConfig;
-    QueryService queryService;
+    QueryServiceFactory queryServiceFactory;
     MessageFactory messageFactory;
 
     public Producer<T> create() {
-        return new Producer<>(producerConfig, queryService, messageFactory);
+        return new Producer<>(
+                producerConfig,
+                queryServiceFactory.createProducerQueryService(producerConfig),
+                messageFactory);
     }
 }

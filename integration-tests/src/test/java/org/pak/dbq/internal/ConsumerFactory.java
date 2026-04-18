@@ -23,13 +23,26 @@ public class ConsumerFactory<T> {
     RetryablePolicy retryablePolicy;
     BlockingPolicy blockingPolicy;
     NonRetryablePolicy nonRetryablePolicy;
-    QueryService queryService;
+    QueryServiceFactory queryServiceFactory;
     TransactionService transactionService;
     MessageContextPropagator messageContextPropagator;
     MessageConsumerTelemetry messageConsumerTelemetry;
     ConsumerConfig.Properties properties;
 
     public AbstractConsumer<T> create() {
+        var consumerConfig = ConsumerConfig.<T>builder()
+                .messageHandler(messageHandler)
+                .batchMessageHandler(batchMessageHandler)
+                .queueName(queueName)
+                .subscriptionId(subscriptionId)
+                .retryablePolicy(retryablePolicy)
+                .blockingPolicy(blockingPolicy)
+                .nonRetryablePolicy(nonRetryablePolicy)
+                .messageContextPropagator(messageContextPropagator)
+                .messageConsumerTelemetry(messageConsumerTelemetry)
+                .properties(properties)
+                .build();
+        var queryService = queryServiceFactory.createConsumerQueryService(consumerConfig);
         if (batchMessageHandler != null) {
             return new BatchConsumer<>(batchMessageHandler, queueName, subscriptionId, queryService,
                     transactionService, messageContextPropagator, messageConsumerTelemetry, messageFactory, properties);

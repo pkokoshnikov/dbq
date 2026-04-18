@@ -38,7 +38,7 @@ public class Producer<T> {
                 var ignoreKeyMDC = org.slf4j.MDC.putCloseable("messageKey", messageToStore.key())) {
             log.debug("Publish payload {}", messageToStore.payload());
 
-            var inserted = queryService.insertMessage(queueName, messageToStore);
+            var inserted = queryService.insertMessage(messageToStore);
             if (inserted) {
                 log.info("Published payload");
             } else {

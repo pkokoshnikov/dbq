@@ -72,7 +72,7 @@ public class Consumer<T> extends AbstractConsumer<T> {
                     }
 
                     if (optionalException.isEmpty()) {
-                        getQueryService().completeMessage(getSubscriptionId(), messageContainer, isHistoryEnabled());
+                        getQueryService().completeMessage(messageContainer);
                         log.info("Message processing completed");
                     } else {
                         var exception = optionalException.get();
@@ -93,7 +93,7 @@ public class Consumer<T> extends AbstractConsumer<T> {
     private void handleNonRetryableException(MessageContainer<T> messageContainer, Exception e)
             throws DbqException {
         log.error("Non retryable exception occurred", e);
-        getQueryService().failMessage(getSubscriptionId(), messageContainer, e, isHistoryEnabled());
+        getQueryService().failMessage(messageContainer, e);
     }
 
     private void handleRetryableException(MessageContainer<T> messageContainer, Exception e)
@@ -102,9 +102,9 @@ public class Consumer<T> extends AbstractConsumer<T> {
         var optionalDuration = retryablePolicy.apply(e, messageContainer.getAttempt());
 
         if (optionalDuration.isEmpty() || messageContainer.getAttempt().equals(Integer.MAX_VALUE - 1)) {
-            getQueryService().failMessage(getSubscriptionId(), messageContainer, e, isHistoryEnabled());
+            getQueryService().failMessage(messageContainer, e);
         } else {
-            getQueryService().retryMessage(getSubscriptionId(), messageContainer, optionalDuration.get(), e);
+            getQueryService().retryMessage(messageContainer, optionalDuration.get(), e);
 
             log.debug("Task will retry, attempt {} at {}", messageContainer.getAttempt() + 1,
                     messageContainer.getExecuteAfter());

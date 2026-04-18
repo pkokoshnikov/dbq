@@ -36,10 +36,7 @@ public abstract class AbstractConsumer<T> {
     private Duration pause = null;
     private final Duration unpredictedExceptionPause;
     private final MessageFactory messageFactory;
-    private final Integer maxPollRecords;
     private final Duration persistenceExceptionPause;
-    private final boolean historyEnabled;
-    private final boolean serializedByKey;
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
     protected AbstractConsumer(
@@ -59,11 +56,8 @@ public abstract class AbstractConsumer<T> {
         this.messageContextPropagator = messageContextPropagator;
         this.messageConsumerTelemetry = messageConsumerTelemetry;
         this.messageFactory = messageFactory;
-        this.maxPollRecords = properties.getMaxPollRecords();
         this.persistenceExceptionPause = properties.getPersistenceExceptionPause();
         this.unpredictedExceptionPause = properties.getUnpredictedExceptionPause();
-        this.historyEnabled = properties.isHistoryEnabled();
-        this.serializedByKey = properties.isSerializedByKey();
     }
 
     public void poolLoop() {
@@ -120,8 +114,7 @@ public abstract class AbstractConsumer<T> {
 
     public boolean poolAndProcess() {
         try {
-            List<MessageContainer<T>> messageContainerList =
-                    queryService.selectMessages(queueName, subscriptionId, maxPollRecords, serializedByKey);
+            List<MessageContainer<T>> messageContainerList = queryService.selectMessages();
 
             if (messageContainerList.isEmpty()) {
                 return false;
@@ -172,10 +165,6 @@ public abstract class AbstractConsumer<T> {
 
     protected MessageConsumerTelemetry getMessageConsumerTelemetry() {
         return messageConsumerTelemetry;
-    }
-
-    protected boolean isHistoryEnabled() {
-        return historyEnabled;
     }
 
     protected void pause(Duration duration) {

@@ -134,7 +134,7 @@ public class BaseIntegrationTest {
                         .messageContextPropagator(new NoOpMessageContextPropagator())
                         .build())
                 .messageFactory(new SimpleMessageFactory())
-                .queryService(pgQueryService);
+                .queryServiceFactory(pgQueryService);
     }
 
     protected static ConsumerFactory.ConsumerFactoryBuilder<TestMessage> setupQueueProcessorFactory(
@@ -144,7 +144,7 @@ public class BaseIntegrationTest {
         return ConsumerFactory.<TestMessage>builder()
                 .messageFactory(new SimpleMessageFactory())
                 .messageHandler(testMessage -> {})
-                .queryService(pgQueryService)
+                .queryServiceFactory(pgQueryService)
                 .transactionService(springTransactionService)
                 .retryablePolicy(new SimpleRetryablePolicy())
                 .blockingPolicy(new SimpleBlockingPolicy())

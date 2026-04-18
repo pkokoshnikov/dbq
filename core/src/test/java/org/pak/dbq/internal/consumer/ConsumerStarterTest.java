@@ -15,7 +15,11 @@ class ConsumerStarterTest {
                         .messageHandler(message -> {})
                         .properties(ConsumerConfig.Properties.builder().build())
                         .build(),
-                new CoreTestSupport.RecordingQueryService(),
+                new CoreTestSupport.RecordingQueryService(
+                        CoreTestSupport.QUEUE_NAME,
+                        CoreTestSupport.SUBSCRIPTION_NAME,
+                        false,
+                        false),
                 new CoreTestSupport.DirectTransactionService(),
                 new SimpleMessageFactory()
         );

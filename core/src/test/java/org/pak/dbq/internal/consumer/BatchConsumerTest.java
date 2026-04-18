@@ -25,7 +25,7 @@ import static org.pak.dbq.internal.CoreTestSupport.SUBSCRIPTION_NAME;
 class BatchConsumerTest {
     @Test
     void poolAndProcessAppliesBatchAcknowledgerOutcomes() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var originatedTime = Instant.parse("2026-04-02T10:15:30Z");
         var first = CoreTestSupport.messageContainer(java.math.BigInteger.ONE, java.math.BigInteger.valueOf(11), "key-1",
@@ -70,7 +70,7 @@ class BatchConsumerTest {
 
     @Test
     void poolAndProcessRejectsBatchWithMissingOutcome() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var container = CoreTestSupport.messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
         queryService.setSelectedMessages(List.of(container));
@@ -90,7 +90,7 @@ class BatchConsumerTest {
 
     @Test
     void poolAndProcessRejectsBatchWithDuplicateOutcome() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var container = CoreTestSupport.messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
         queryService.setSelectedMessages(List.of(container));
@@ -112,7 +112,7 @@ class BatchConsumerTest {
 
     @Test
     void recordingBatchAcknowledgerAllowsAnotherOutcomeAfterFailedComplete() throws Exception {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService();
         var container = CoreTestSupport.messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
         var record = new MessageRecord<>(
                 container.getId(),
@@ -125,8 +125,6 @@ class BatchConsumerTest {
         var expectedFailureException = new IllegalStateException("fallback");
         var acknowledger = new RecordingAcknowledger<>(
                 queryService,
-                SUBSCRIPTION_NAME,
-                false,
                 messageContainersById
         );
 
@@ -157,5 +155,13 @@ class BatchConsumerTest {
                 new SimpleMessageFactory(),
                 ConsumerConfig.Properties.builder().build()
         );
+    }
+
+    private CoreTestSupport.RecordingQueryService newQueryService() {
+        return new CoreTestSupport.RecordingQueryService(
+                QUEUE_NAME,
+                SUBSCRIPTION_NAME,
+                false,
+                false);
     }
 }

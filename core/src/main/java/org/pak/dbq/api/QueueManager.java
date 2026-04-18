@@ -8,7 +8,7 @@ import org.pak.dbq.internal.consumer.ConsumerStarter;
 import org.pak.dbq.internal.support.NoOpTableManager;
 import org.pak.dbq.internal.support.SimpleMessageFactory;
 import org.pak.dbq.spi.MessageFactory;
-import org.pak.dbq.spi.QueryService;
+import org.pak.dbq.spi.QueryServiceFactory;
 import org.pak.dbq.spi.TableManager;
 import org.pak.dbq.spi.TransactionService;
 import org.pak.dbq.error.DbqException;
@@ -18,20 +18,20 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 public class QueueManager {
-    private final QueryService queryService;
+    private final QueryServiceFactory queryServiceFactory;
     private final TransactionService transactionService;
     private final MessageFactory messageFactory;
     private final TableManager tableManager;
     private final Properties properties;
 
     public QueueManager(
-            QueryService queryService,
+            QueryServiceFactory queryServiceFactory,
             TransactionService transactionService,
             MessageFactory messageFactory,
             TableManager tableManager,
             Properties properties
     ) {
-        this.queryService = queryService;
+        this.queryServiceFactory = queryServiceFactory;
         this.transactionService = transactionService;
         this.messageFactory = messageFactory;
         this.tableManager = tableManager;
@@ -39,53 +39,53 @@ public class QueueManager {
     }
 
     public QueueManager(
-            QueryService queryService,
+            QueryServiceFactory queryServiceFactory,
             TransactionService transactionService,
             MessageFactory messageFactory,
             TableManager tableManager
     ) {
-        this(queryService, transactionService, messageFactory, tableManager, Properties.builder().build());
+        this(queryServiceFactory, transactionService, messageFactory, tableManager, Properties.builder().build());
     }
 
     public QueueManager(
-            QueryService queryService,
+            QueryServiceFactory queryServiceFactory,
             TransactionService transactionService,
             MessageFactory messageFactory
     ) {
-        this(queryService, transactionService, messageFactory, new NoOpTableManager(), Properties.builder().build());
+        this(queryServiceFactory, transactionService, messageFactory, new NoOpTableManager(), Properties.builder().build());
     }
 
     public QueueManager(
-            QueryService queryService,
+            QueryServiceFactory queryServiceFactory,
             TransactionService transactionService,
             MessageFactory messageFactory,
             Properties properties
     ) {
-        this(queryService, transactionService, messageFactory, new NoOpTableManager(), properties);
+        this(queryServiceFactory, transactionService, messageFactory, new NoOpTableManager(), properties);
     }
 
     public QueueManager(
-            QueryService queryService,
+            QueryServiceFactory queryServiceFactory,
             TransactionService transactionService,
             TableManager tableManager
     ) {
-        this(queryService, transactionService, new SimpleMessageFactory(), tableManager, Properties.builder().build());
+        this(queryServiceFactory, transactionService, new SimpleMessageFactory(), tableManager, Properties.builder().build());
     }
 
     public QueueManager(
-            QueryService queryService,
+            QueryServiceFactory queryServiceFactory,
             TransactionService transactionService,
             TableManager tableManager,
             Properties properties
     ) {
-        this(queryService, transactionService, new SimpleMessageFactory(), tableManager, properties);
+        this(queryServiceFactory, transactionService, new SimpleMessageFactory(), tableManager, properties);
     }
 
     public QueueManager(
-            QueryService queryService,
+            QueryServiceFactory queryServiceFactory,
             TransactionService transactionService
     ) {
-        this(queryService, transactionService, new SimpleMessageFactory(), new NoOpTableManager(),
+        this(queryServiceFactory, transactionService, new SimpleMessageFactory(), new NoOpTableManager(),
                 Properties.builder().build());
     }
 
@@ -136,7 +136,10 @@ public class QueueManager {
             return (Producer<T>) producers.get(producerKey);
         }
 
-        var producer = new Producer<>(producerConfig, queryService, messageFactory);
+        var producer = new Producer<>(
+                producerConfig,
+                queryServiceFactory.createProducerQueryService(producerConfig),
+                messageFactory);
         producers.put(producerKey, producer);
         return producer;
     }
@@ -158,7 +161,10 @@ public class QueueManager {
         try {
             registerSubscription(consumerConfig);
 
-            consumerStarters.put(consumerKey, new ConsumerStarter<>(consumerConfig, queryService, transactionService,
+            consumerStarters.put(consumerKey, new ConsumerStarter<>(
+                    consumerConfig,
+                    queryServiceFactory.createConsumerQueryService(consumerConfig),
+                    transactionService,
                     messageFactory));
             log.info("Register consumer on queue {} with subscription {}",
                     consumerConfig.getQueueName(),

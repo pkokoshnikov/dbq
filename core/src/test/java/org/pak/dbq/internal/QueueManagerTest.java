@@ -18,10 +18,10 @@ class QueueManagerTest {
 
     @Test
     void registerProducerReturnsProducerThatStoresMessage() throws Exception {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryServiceFactory = new CoreTestSupport.RecordingQueryServiceFactory();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var tableManager = new CoreTestSupport.RecordingTableManager();
-        var queue = new QueueManager(queryService, transactionService, tableManager);
+        var queue = new QueueManager(queryServiceFactory, transactionService, tableManager);
         queue.registerQueue(QueueConfig.builder()
                 .queueName(QUEUE_NAME)
                 .build());
@@ -33,16 +33,16 @@ class QueueManagerTest {
 
         producer.send("payload");
 
-        assertThat(queryService.getInserts()).hasSize(1);
-        assertThat(queryService.getInserts().getFirst().queueName()).isEqualTo(QUEUE_NAME);
-        assertThat(queryService.getInserts().getFirst().message().payload()).isEqualTo("payload");
+        assertThat(queryServiceFactory.getInserts()).hasSize(1);
+        assertThat(queryServiceFactory.getInserts().getFirst().queueName()).isEqualTo(QUEUE_NAME);
+        assertThat(queryServiceFactory.getInserts().getFirst().message().payload()).isEqualTo("payload");
     }
 
     @Test
     void registerProducerKeepsSeparateProducersForDifferentQueuesWithSamePayloadClass() throws Exception {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryServiceFactory = new CoreTestSupport.RecordingQueryServiceFactory();
         var transactionService = new CoreTestSupport.DirectTransactionService();
-        var queueManager = new QueueManager(queryService, transactionService);
+        var queueManager = new QueueManager(queryServiceFactory, transactionService);
         var anotherQueue = new QueueName("another-queue");
 
         queueManager.registerQueue(QueueConfig.builder()
@@ -64,16 +64,16 @@ class QueueManagerTest {
         firstProducer.send("first");
         secondProducer.send("second");
 
-        assertThat(queryService.getInserts()).hasSize(2);
-        assertThat(queryService.getInserts().get(0).queueName()).isEqualTo(QUEUE_NAME);
-        assertThat(queryService.getInserts().get(1).queueName()).isEqualTo(anotherQueue);
+        assertThat(queryServiceFactory.getInserts()).hasSize(2);
+        assertThat(queryServiceFactory.getInserts().get(0).queueName()).isEqualTo(QUEUE_NAME);
+        assertThat(queryServiceFactory.getInserts().get(1).queueName()).isEqualTo(anotherQueue);
     }
 
     @Test
     void registerProducerAllowsIdempotentRegistrationWithSameConfigInstance() throws Exception {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryServiceFactory = new CoreTestSupport.RecordingQueryServiceFactory();
         var transactionService = new CoreTestSupport.DirectTransactionService();
-        var queueManager = new QueueManager(queryService, transactionService);
+        var queueManager = new QueueManager(queryServiceFactory, transactionService);
         queueManager.registerQueue(QueueConfig.builder()
                 .queueName(QUEUE_NAME)
                 .build());
@@ -90,9 +90,9 @@ class QueueManagerTest {
 
     @Test
     void registerProducerFailsOnConflictingRegistration() throws Exception {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryServiceFactory = new CoreTestSupport.RecordingQueryServiceFactory();
         var transactionService = new CoreTestSupport.DirectTransactionService();
-        var queueManager = new QueueManager(queryService, transactionService);
+        var queueManager = new QueueManager(queryServiceFactory, transactionService);
         queueManager.registerQueue(QueueConfig.builder()
                 .queueName(QUEUE_NAME)
                 .build());
@@ -113,9 +113,9 @@ class QueueManagerTest {
 
     @Test
     void registerProducerFailsWhenQueueIsNotInitialized() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryServiceFactory = new CoreTestSupport.RecordingQueryServiceFactory();
         var transactionService = new CoreTestSupport.DirectTransactionService();
-        var queueManager = new QueueManager(queryService, transactionService);
+        var queueManager = new QueueManager(queryServiceFactory, transactionService);
 
         assertThatThrownBy(() -> queueManager.registerProducer(ProducerConfig.<String>builder()
                 .queueName(QUEUE_NAME)
@@ -127,10 +127,10 @@ class QueueManagerTest {
 
     @Test
     void registerQueueRegistersQueueRetention() throws Exception {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryServiceFactory = new CoreTestSupport.RecordingQueryServiceFactory();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var tableManager = new CoreTestSupport.RecordingTableManager();
-        var queueManager = new QueueManager(queryService, transactionService, tableManager);
+        var queueManager = new QueueManager(queryServiceFactory, transactionService, tableManager);
 
         queueManager.registerQueue(QueueConfig.builder()
                 .queueName(QUEUE_NAME)
@@ -145,11 +145,11 @@ class QueueManagerTest {
 
     @Test
     void registerQueuePropagatesAutoDdlFromQueueManagerProperties() throws Exception {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryServiceFactory = new CoreTestSupport.RecordingQueryServiceFactory();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var tableManager = new CoreTestSupport.RecordingTableManager();
         var queueManager = new QueueManager(
-                queryService,
+                queryServiceFactory,
                 transactionService,
                 tableManager,
                 QueueManager.Properties.builder()
@@ -166,10 +166,10 @@ class QueueManagerTest {
 
     @Test
     void registerConsumerAllowsIdempotentRegistrationWithSameConfigInstance() throws Exception {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryServiceFactory = new CoreTestSupport.RecordingQueryServiceFactory();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var tableManager = new CoreTestSupport.RecordingTableManager();
-        var queueManager = new QueueManager(queryService, transactionService, tableManager);
+        var queueManager = new QueueManager(queryServiceFactory, transactionService, tableManager);
         queueManager.registerQueue(QueueConfig.builder()
                 .queueName(QUEUE_NAME)
                 .build());
@@ -194,10 +194,10 @@ class QueueManagerTest {
 
     @Test
     void registerConsumerRegistersHistoryRetentionWhenQueueIsInitialized() throws Exception {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryServiceFactory = new CoreTestSupport.RecordingQueryServiceFactory();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var tableManager = new CoreTestSupport.RecordingTableManager();
-        var queueManager = new QueueManager(queryService, transactionService, tableManager);
+        var queueManager = new QueueManager(queryServiceFactory, transactionService, tableManager);
 
         queueManager.registerQueue(QueueConfig.builder()
                 .queueName(QUEUE_NAME)
@@ -228,9 +228,9 @@ class QueueManagerTest {
 
     @Test
     void registerConsumerFailsWhenQueueIsNotInitialized() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryServiceFactory = new CoreTestSupport.RecordingQueryServiceFactory();
         var transactionService = new CoreTestSupport.DirectTransactionService();
-        var queueManager = new QueueManager(queryService, transactionService);
+        var queueManager = new QueueManager(queryServiceFactory, transactionService);
 
         assertThatThrownBy(() -> queueManager.registerConsumer(ConsumerConfig.<String>builder()
                 .queueName(QUEUE_NAME)
@@ -247,9 +247,9 @@ class QueueManagerTest {
 
     @Test
     void registerQueueFailsOnConflictingRegistration() throws Exception {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryServiceFactory = new CoreTestSupport.RecordingQueryServiceFactory();
         var transactionService = new CoreTestSupport.DirectTransactionService();
-        var queueManager = new QueueManager(queryService, transactionService);
+        var queueManager = new QueueManager(queryServiceFactory, transactionService);
 
         queueManager.registerQueue(QueueConfig.builder()
                 .queueName(QUEUE_NAME)
@@ -270,9 +270,9 @@ class QueueManagerTest {
 
     @Test
     void registerConsumerFailsOnConflictingRegistration() throws Exception {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryServiceFactory = new CoreTestSupport.RecordingQueryServiceFactory();
         var transactionService = new CoreTestSupport.DirectTransactionService();
-        var queueManager = new QueueManager(queryService, transactionService);
+        var queueManager = new QueueManager(queryServiceFactory, transactionService);
         queueManager.registerQueue(QueueConfig.builder()
                 .queueName(QUEUE_NAME)
                 .build());

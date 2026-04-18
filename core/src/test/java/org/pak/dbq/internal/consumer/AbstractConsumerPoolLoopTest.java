@@ -69,50 +69,30 @@ class AbstractConsumerPoolLoopTest {
 
     private static final class ThrowingQueryService implements QueryService {
         @Override
-        public <T> List<MessageContainer<T>> selectMessages(
-                org.pak.dbq.api.QueueName queueName,
-                org.pak.dbq.api.SubscriptionId subscriptionId,
-                Integer maxPollRecords,
-                boolean serializedByKey
-        ) throws DbqException {
+        public <T> List<MessageContainer<T>> selectMessages() throws DbqException {
             throw new MessageDeserializationException(new IllegalStateException("broken payload"));
         }
 
         @Override
-        public <T> void retryMessage(
-                org.pak.dbq.api.SubscriptionId subscriptionId,
-                MessageContainer<T> messageContainer,
-                Duration retryDuration,
-                Exception e
-        ) throws DbqException {
-        }
-
-        @Override
-        public <T> void failMessage(
-                org.pak.dbq.api.SubscriptionId subscriptionId,
-                MessageContainer<T> messageContainer,
-                Exception e,
-                boolean historyEnabled
-        ) throws DbqException {
-        }
-
-        @Override
-        public <T> void completeMessage(
-                org.pak.dbq.api.SubscriptionId subscriptionId,
-                MessageContainer<T> messageContainer,
-                boolean historyEnabled
-        ) throws DbqException {
-        }
-
-        @Override
-        public <T> boolean insertMessage(org.pak.dbq.api.QueueName queueName, Message<T> message)
+        public <T> void retryMessage(MessageContainer<T> messageContainer, Duration retryDuration, Exception e)
                 throws DbqException {
+        }
+
+        @Override
+        public <T> void failMessage(MessageContainer<T> messageContainer, Exception e) throws DbqException {
+        }
+
+        @Override
+        public <T> void completeMessage(MessageContainer<T> messageContainer) throws DbqException {
+        }
+
+        @Override
+        public <T> boolean insertMessage(Message<T> message) throws DbqException {
             return true;
         }
 
         @Override
-        public <T> List<Boolean> insertBatchMessage(org.pak.dbq.api.QueueName queueName, List<Message<T>> messages)
-                throws DbqException {
+        public <T> List<Boolean> insertBatchMessage(List<Message<T>> messages) throws DbqException {
             return List.of();
         }
     }

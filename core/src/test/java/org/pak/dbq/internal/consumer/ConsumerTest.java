@@ -32,7 +32,7 @@ import static org.pak.dbq.internal.CoreTestSupport.messageContainer;
 class ConsumerTest {
     @Test
     void poolAndProcessCompletesMessageWhenConsumerSucceeds() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var originatedTime = Instant.parse("2026-04-02T10:15:30Z");
         var headers = Map.of("traceparent", "00-test-parent");
@@ -71,7 +71,7 @@ class ConsumerTest {
 
     @Test
     void poolAndProcessRetriesMessageWhenRetryPolicyReturnsDelay() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var container = CoreTestSupport.messageContainer("payload", 2, Instant.parse("2026-04-02T10:15:30Z"));
         queryService.setSelectedMessages(List.of(container));
@@ -100,7 +100,7 @@ class ConsumerTest {
 
     @Test
     void poolAndProcessFailsMessageWhenRetryPolicyStopsRetrying() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var container = CoreTestSupport.messageContainer("payload", 3, Instant.parse("2026-04-02T10:15:30Z"));
         queryService.setSelectedMessages(List.of(container));
@@ -132,7 +132,7 @@ class ConsumerTest {
 
     @Test
     void poolAndProcessFailsMessageWhenExceptionIsNonRetryable() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var container = CoreTestSupport.messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
         queryService.setSelectedMessages(List.of(container));
@@ -161,7 +161,7 @@ class ConsumerTest {
 
     @Test
     void poolAndProcessLeavesMessagePendingWhenExceptionIsBlocking() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var container = CoreTestSupport.messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
         queryService.setSelectedMessages(List.of(container));
@@ -187,7 +187,7 @@ class ConsumerTest {
 
     @Test
     void poolAndProcessCompletesMessageWithHistoryWhenEnabled() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService(true, false);
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var container = CoreTestSupport.messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
         queryService.setSelectedMessages(List.of(container));
@@ -212,7 +212,7 @@ class ConsumerTest {
 
     @Test
     void poolAndProcessPassesSerializedByKeyFlagToQueryService() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService(false, true);
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var consumer = processor(
                 queryService,
@@ -236,7 +236,7 @@ class ConsumerTest {
 
     @Test
     void poolAndProcessRethrowsMessageSerializationExceptionFromHandler() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var container = messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
         queryService.setSelectedMessages(List.of(container));
@@ -264,7 +264,7 @@ class ConsumerTest {
 
     @Test
     void poolAndProcessRethrowsNonRetryablePersistenceExceptionFromHandler() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var container = messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
         queryService.setSelectedMessages(List.of(container));
@@ -292,7 +292,7 @@ class ConsumerTest {
 
     @Test
     void poolAndProcessRethrowsRetryablePersistenceExceptionFromHandler() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var container = messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
         queryService.setSelectedMessages(List.of(container));
@@ -320,7 +320,7 @@ class ConsumerTest {
 
     @Test
     void poolAndProcessRethrowsInterruptedExceptionFromHandler() {
-        var queryService = new CoreTestSupport.RecordingQueryService();
+        var queryService = newQueryService();
         var transactionService = new CoreTestSupport.DirectTransactionService();
         var container = messageContainer("payload", 0, Instant.parse("2026-04-02T10:15:30Z"));
         queryService.setSelectedMessages(List.of(container));
@@ -416,6 +416,18 @@ class ConsumerTest {
                 return pause;
             }
         };
+    }
+
+    private CoreTestSupport.RecordingQueryService newQueryService() {
+        return newQueryService(false, false);
+    }
+
+    private CoreTestSupport.RecordingQueryService newQueryService(boolean historyEnabled, boolean serializedByKey) {
+        return new CoreTestSupport.RecordingQueryService(
+                QUEUE_NAME,
+                SUBSCRIPTION_NAME,
+                historyEnabled,
+                serializedByKey);
     }
 
     @SuppressWarnings("unchecked")

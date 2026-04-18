@@ -48,8 +48,6 @@ public class BatchConsumer<T> extends AbstractConsumer<T> {
                 .toList();
         var acknowledger = new RecordingAcknowledger<>(
                 getQueryService(),
-                getSubscriptionId(),
-                isHistoryEnabled(),
                 messageContainersById);
 
         batchMessageHandler.handle(records, acknowledger);
