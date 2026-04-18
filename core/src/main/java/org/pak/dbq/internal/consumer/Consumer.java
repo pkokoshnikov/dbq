@@ -32,7 +32,7 @@ public class Consumer<T> extends AbstractConsumer<T> {
             @NonNull RetryablePolicy retryablePolicy,
             @NonNull NonRetryablePolicy nonRetryablePolicy,
             @NonNull BlockingPolicy blockingPolicy,
-            @NonNull QueryService queryService,
+            @NonNull ConsumerQueryService queryService,
             @NonNull TransactionService transactionService,
             @NonNull MessageContextPropagator messageContextPropagator,
             @NonNull MessageConsumerTelemetry messageConsumerTelemetry,

@@ -11,7 +11,7 @@ import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.spi.MessageConsumerTelemetry;
 import org.pak.dbq.spi.MessageContextPropagator;
 import org.pak.dbq.spi.MessageFactory;
-import org.pak.dbq.spi.QueryService;
+import org.pak.dbq.spi.ConsumerQueryService;
 import org.pak.dbq.spi.TransactionService;
 import org.pak.dbq.error.RetryableDbqException;
 import org.slf4j.Logger;
@@ -27,7 +27,7 @@ public abstract class AbstractConsumer<T> {
     protected final Logger log = LoggerFactory.getLogger(getClass());
 
     private final String id = UUID.randomUUID().toString();
-    private final QueryService queryService;
+    private final ConsumerQueryService queryService;
     private final QueueName queueName;
     private final SubscriptionId subscriptionId;
     private final TransactionService transactionService;
@@ -42,7 +42,7 @@ public abstract class AbstractConsumer<T> {
     protected AbstractConsumer(
             @NonNull QueueName queueName,
             @NonNull SubscriptionId subscriptionId,
-            @NonNull QueryService queryService,
+            @NonNull ConsumerQueryService queryService,
             @NonNull TransactionService transactionService,
             @NonNull MessageContextPropagator messageContextPropagator,
             @NonNull MessageConsumerTelemetry messageConsumerTelemetry,
@@ -147,7 +147,7 @@ public abstract class AbstractConsumer<T> {
                 messageContainer.getHeaders());
     }
 
-    protected QueryService getQueryService() {
+    protected ConsumerQueryService getQueryService() {
         return queryService;
     }
 

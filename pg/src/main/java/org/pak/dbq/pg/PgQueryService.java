@@ -14,8 +14,9 @@ import org.pak.dbq.error.NonRetryablePersistenceException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.jsonb.JsonbConverter;
+import org.pak.dbq.spi.ConsumerQueryService;
 import org.pak.dbq.spi.PersistenceService;
-import org.pak.dbq.spi.QueryService;
+import org.pak.dbq.spi.ProducerQueryService;
 import org.pak.dbq.spi.QueryServiceFactory;
 import org.postgresql.util.PGobject;
 
@@ -77,12 +78,12 @@ public class PgQueryService implements QueryServiceFactory {
     }
 
     @Override
-    public QueryService createProducerQueryService(ProducerConfig<?> producerConfig) {
+    public ProducerQueryService createProducerQueryService(ProducerConfig<?> producerConfig) {
         return new ProducerQueryService(producerConfig.getQueueName());
     }
 
     @Override
-    public QueryService createConsumerQueryService(ConsumerConfig<?> consumerConfig) {
+    public ConsumerQueryService createConsumerQueryService(ConsumerConfig<?> consumerConfig) {
         var properties = consumerConfig.getProperties();
         if (properties.isSerializedByKey()) {
             return new SerializedByKeyConsumerQueryService(
@@ -789,40 +790,7 @@ public class PgQueryService implements QueryServiceFactory {
         }
     }
 
-    private abstract class UnsupportedQueryService implements QueryService {
-        @Override
-        public <T> List<MessageContainer<T>> selectMessages() throws DbqException {
-            throw new UnsupportedOperationException("selectMessages is not supported by this query service");
-        }
-
-        @Override
-        public <T> void retryMessage(MessageContainer<T> messageContainer, Duration retryDuration, Exception e)
-                throws DbqException {
-            throw new UnsupportedOperationException("retryMessage is not supported by this query service");
-        }
-
-        @Override
-        public <T> void failMessage(MessageContainer<T> messageContainer, Exception e) throws DbqException {
-            throw new UnsupportedOperationException("failMessage is not supported by this query service");
-        }
-
-        @Override
-        public <T> void completeMessage(MessageContainer<T> messageContainer) throws DbqException {
-            throw new UnsupportedOperationException("completeMessage is not supported by this query service");
-        }
-
-        @Override
-        public <T> boolean insertMessage(Message<T> message) throws DbqException {
-            throw new UnsupportedOperationException("insertMessage is not supported by this query service");
-        }
-
-        @Override
-        public <T> List<Boolean> insertBatchMessage(List<Message<T>> messages) throws DbqException {
-            throw new UnsupportedOperationException("insertBatchMessage is not supported by this query service");
-        }
-    }
-
-    private final class ProducerQueryService extends UnsupportedQueryService {
+    private final class ProducerQueryService implements org.pak.dbq.spi.ProducerQueryService {
         private final QueueName queueName;
 
         private ProducerQueryService(QueueName queueName) {
@@ -840,7 +808,7 @@ public class PgQueryService implements QueryServiceFactory {
         }
     }
 
-    private abstract class AbstractConsumerQueryService extends UnsupportedQueryService {
+    private abstract class AbstractConsumerQueryService implements ConsumerQueryService {
         private final QueueName queueName;
         private final SubscriptionId subscriptionId;
         private final Integer maxPollRecords;

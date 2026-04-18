@@ -2,7 +2,6 @@ package org.pak.dbq.internal.consumer;
 
 import org.junit.jupiter.api.Test;
 import org.pak.dbq.api.ConsumerConfig;
-import org.pak.dbq.api.Message;
 import org.pak.dbq.error.DbqException;
 import org.pak.dbq.error.MessageDeserializationException;
 import org.pak.dbq.internal.CoreTestSupport;
@@ -10,7 +9,7 @@ import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.support.NoOpMessageConsumerTelemetry;
 import org.pak.dbq.internal.support.NoOpMessageContextPropagator;
 import org.pak.dbq.internal.support.SimpleMessageFactory;
-import org.pak.dbq.spi.QueryService;
+import org.pak.dbq.spi.ConsumerQueryService;
 
 import java.time.Duration;
 import java.util.List;
@@ -39,7 +38,7 @@ class AbstractConsumerPoolLoopTest {
     private static final class LoopTestConsumer extends AbstractConsumer<String> {
         private final CountDownLatch stopLatch;
 
-        private LoopTestConsumer(QueryService queryService, CountDownLatch stopLatch) {
+        private LoopTestConsumer(ConsumerQueryService queryService, CountDownLatch stopLatch) {
             super(
                     QUEUE_NAME,
                     SUBSCRIPTION_NAME,
@@ -67,7 +66,7 @@ class AbstractConsumerPoolLoopTest {
         }
     }
 
-    private static final class ThrowingQueryService implements QueryService {
+    private static final class ThrowingQueryService implements ConsumerQueryService {
         @Override
         public <T> List<MessageContainer<T>> selectMessages() throws DbqException {
             throw new MessageDeserializationException(new IllegalStateException("broken payload"));
@@ -86,14 +85,5 @@ class AbstractConsumerPoolLoopTest {
         public <T> void completeMessage(MessageContainer<T> messageContainer) throws DbqException {
         }
 
-        @Override
-        public <T> boolean insertMessage(Message<T> message) throws DbqException {
-            return true;
-        }
-
-        @Override
-        public <T> List<Boolean> insertBatchMessage(List<Message<T>> messages) throws DbqException {
-            return List.of();
-        }
     }
 }

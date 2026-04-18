@@ -4,7 +4,7 @@ import org.pak.dbq.api.ConsumerConfig;
 import org.pak.dbq.api.ProducerConfig;
 
 public interface QueryServiceFactory {
-    QueryService createProducerQueryService(ProducerConfig<?> producerConfig);
+    ProducerQueryService createProducerQueryService(ProducerConfig<?> producerConfig);
 
-    QueryService createConsumerQueryService(ConsumerConfig<?> consumerConfig);
+    ConsumerQueryService createConsumerQueryService(ConsumerConfig<?> consumerConfig);
 }

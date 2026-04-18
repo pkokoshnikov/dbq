@@ -18,7 +18,7 @@ public class BatchConsumer<T> extends AbstractConsumer<T> {
             @NonNull BatchMessageHandler<T> batchMessageHandler,
             @NonNull QueueName queueName,
             @NonNull SubscriptionId subscriptionId,
-            @NonNull QueryService queryService,
+            @NonNull ConsumerQueryService queryService,
             @NonNull TransactionService transactionService,
             @NonNull MessageContextPropagator messageContextPropagator,
             @NonNull MessageConsumerTelemetry messageConsumerTelemetry,

@@ -6,10 +6,11 @@ import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.api.Message;
 import org.pak.dbq.api.ProducerConfig;
+import org.pak.dbq.spi.ConsumerQueryService;
 import org.pak.dbq.error.DbqException;
 import org.pak.dbq.spi.MessageConsumerTelemetry;
 import org.pak.dbq.spi.MessageContextPropagator;
-import org.pak.dbq.spi.QueryService;
+import org.pak.dbq.spi.ProducerQueryService;
 import org.pak.dbq.spi.QueryServiceFactory;
 import org.pak.dbq.spi.TableManager;
 import org.pak.dbq.spi.TransactionService;
@@ -243,7 +244,7 @@ public class CoreTestSupport {
         private boolean lastSerializedByKey;
     }
 
-    public static class RecordingQueryService implements QueryService {
+    public static class RecordingQueryService implements ProducerQueryService, ConsumerQueryService {
         private final RecordingQueryState state;
         private final QueueName queueName;
         private final SubscriptionId subscriptionId;
@@ -385,12 +386,12 @@ public class CoreTestSupport {
         private final RecordingQueryState state = new RecordingQueryState();
 
         @Override
-        public QueryService createProducerQueryService(ProducerConfig<?> producerConfig) {
+        public ProducerQueryService createProducerQueryService(ProducerConfig<?> producerConfig) {
             return new RecordingQueryService(state, producerConfig.getQueueName(), null, false, false);
         }
 
         @Override
-        public QueryService createConsumerQueryService(ConsumerConfig<?> consumerConfig) {
+        public ConsumerQueryService createConsumerQueryService(ConsumerConfig<?> consumerConfig) {
             return new RecordingQueryService(
                     state,
                     consumerConfig.getQueueName(),

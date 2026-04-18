@@ -10,7 +10,8 @@ import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.persistence.Status;
 import org.pak.dbq.pg.PgQueryService;
-import org.pak.dbq.spi.QueryService;
+import org.pak.dbq.spi.ConsumerQueryService;
+import org.pak.dbq.spi.ProducerQueryService;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;
@@ -688,14 +689,14 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
         }
     }
 
-    private QueryService producerQueryService() {
+    private ProducerQueryService producerQueryService() {
         return pgQueryService.createProducerQueryService(ProducerConfig.<TestMessage>builder()
                 .queueName(QUEUE_NAME)
                 .clazz(TestMessage.class)
                 .build());
     }
 
-    private QueryService consumerQueryService(
+    private ConsumerQueryService consumerQueryService(
             SubscriptionId subscriptionId,
             int maxPollRecords,
             boolean historyEnabled,

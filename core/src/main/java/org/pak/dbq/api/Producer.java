@@ -3,7 +3,7 @@ package org.pak.dbq.api;
 import lombok.extern.slf4j.Slf4j;
 import org.pak.dbq.spi.MessageContextPropagator;
 import org.pak.dbq.spi.MessageFactory;
-import org.pak.dbq.spi.QueryService;
+import org.pak.dbq.spi.ProducerQueryService;
 import org.pak.dbq.error.DbqException;
 
 import java.time.Instant;
@@ -12,13 +12,13 @@ import java.util.UUID;
 @Slf4j
 public class Producer<T> {
     private final QueueName queueName;
-    private final QueryService queryService;
+    private final ProducerQueryService queryService;
     private final MessageContextPropagator messageContextPropagator;
     private final MessageFactory messageFactory;
 
     public Producer(
             ProducerConfig<T> producerConfig,
-            QueryService queryService,
+            ProducerQueryService queryService,
             MessageFactory messageFactory
     ) {
         this.queueName = producerConfig.getQueueName();

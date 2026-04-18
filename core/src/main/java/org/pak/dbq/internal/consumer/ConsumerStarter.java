@@ -3,8 +3,8 @@ package org.pak.dbq.internal.consumer;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.pak.dbq.api.ConsumerConfig;
+import org.pak.dbq.spi.ConsumerQueryService;
 import org.pak.dbq.spi.MessageFactory;
-import org.pak.dbq.spi.QueryService;
 import org.pak.dbq.spi.TransactionService;
 
 import java.util.List;
@@ -17,7 +17,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 @Slf4j
 public class ConsumerStarter<T> {
-    private final QueryService queryService;
+    private final ConsumerQueryService queryService;
     private final TransactionService transactionService;
     private final ConsumerConfig<T> consumerConfig;
     private final int concurrency;
@@ -28,7 +28,7 @@ public class ConsumerStarter<T> {
 
     public ConsumerStarter(
             ConsumerConfig<T> consumerConfig,
-            QueryService queryService,
+            ConsumerQueryService queryService,
             TransactionService transactionService,
             MessageFactory messageFactory
     ) {
