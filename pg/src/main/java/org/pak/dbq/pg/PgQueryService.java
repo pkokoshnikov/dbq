@@ -309,7 +309,7 @@ public class PgQueryService  {
     }
 
     @SuppressWarnings("unchecked")
-    <T> MessageContainer<T> mapMessageContainer(java.sql.ResultSet rs) {
+    public <T> MessageContainer<T> mapMessageContainer(java.sql.ResultSet rs) {
         try {
             return new MessageContainer<>(rs.getObject("id", BigInteger.class),
                     rs.getObject("message_id", BigInteger.class),
@@ -334,19 +334,19 @@ public class PgQueryService  {
         }
     }
 
-    static String queueTableName(QueueName queueName) {
+    public static String queueTableName(QueueName queueName) {
         return queueName.name().replace("-", "_");
     }
 
-    static String subscriptionTableName(SubscriptionId subscriptionId) {
+    public static String subscriptionTableName(SubscriptionId subscriptionId) {
         return subscriptionId.id().replace("-", "_");
     }
 
-    static String subscriptionHistoryTableName(SubscriptionId subscriptionId) {
+    public static String subscriptionHistoryTableName(SubscriptionId subscriptionId) {
         return subscriptionId.id().replace("-", "_") + "_history";
     }
 
-    static String subscriptionKeyLockTableName(SubscriptionId subscriptionId) {
+    public static String subscriptionKeyLockTableName(SubscriptionId subscriptionId) {
         return subscriptionId.id().replace("-", "_") + "_key_lock";
     }
 
@@ -366,60 +366,15 @@ public class PgQueryService  {
         return subscriptionKeyLockTableName(subscriptionId);
     }
 
-    void cleanupKeyLock(SubscriptionId subscriptionId, String key) throws DbqException {
-        if (key == null || !hasKeyLockTable(subscriptionId)) {
-            return;
-        }
-
-        var query = queryCache.computeIfAbsent("cleanupKeyLock|" + subscriptionId.id(), k -> formatter.execute("""
-                        DELETE FROM ${schema}.${subscriptionKeyLockTable}
-                        WHERE key = ?
-                            AND NOT EXISTS (
-                                SELECT 1
-                                FROM ${schema}.${subscriptionTable}
-                                WHERE key = ?
-                            )""",
-                Map.of("schema", schemaName.value(),
-                        "subscriptionTable", subscriptionTable(subscriptionId),
-                        "subscriptionKeyLockTable", subscriptionKeyLockTable(subscriptionId))));
-        persistenceService.update(query, key, key);
-    }
-
-    boolean hasKeyLockTable(SubscriptionId subscriptionId) throws DbqException {
-        var cached = keyLockTableExistsCache.get(subscriptionId.id());
-        if (cached != null) {
-            return cached;
-        }
-
-        var query = formatter.execute("""
-                SELECT to_regclass('${schema}.${subscriptionKeyLockTable}') IS NOT NULL AS exists
-                """, Map.of(
-                "schema", schemaName.value(),
-                "subscriptionKeyLockTable", subscriptionKeyLockTable(subscriptionId)
-        ));
-
-        var result = persistenceService.query(query, rs -> {
-            try {
-                return rs.getBoolean("exists");
-            } catch (SQLException e) {
-                return sneakyThrow(new NonRetryablePersistenceException(e, e.getCause()));
-            }
-        });
-
-        var exists = !result.isEmpty() && Boolean.TRUE.equals(result.get(0));
-        var previous = keyLockTableExistsCache.putIfAbsent(subscriptionId.id(), exists);
-        return previous != null ? previous : exists;
-    }
-
     private String partitionName(String table, LocalDate partition) {
         return table + "_" + dateFormatter.format(partition);
     }
 
-    void ensureQueuePartitionExists(QueueName queueName, Instant originatedTime) throws DbqException {
+    public void ensureQueuePartitionExists(QueueName queueName, Instant originatedTime) throws DbqException {
         ensurePartitionExists(queueTable(queueName), originatedTime);
     }
 
-    void ensureQueuePartitionsExist(QueueName queueName, List<Instant> originatedTimes) throws DbqException {
+    public void ensureQueuePartitionsExist(QueueName queueName, List<Instant> originatedTimes) throws DbqException {
         var table = queueTable(queueName);
         var partitionDates = originatedTimes.stream()
                 .map(originatedTime -> originatedTime.atOffset(ZoneOffset.UTC).toLocalDate())
@@ -429,7 +384,7 @@ public class PgQueryService  {
         }
     }
 
-    void ensureHistoryPartitionExists(SubscriptionId subscriptionId, Instant originatedTime)
+    public void ensureHistoryPartitionExists(SubscriptionId subscriptionId, Instant originatedTime)
             throws DbqException {
         ensurePartitionExists(subscriptionHistoryTable(subscriptionId), originatedTime);
     }
@@ -578,21 +533,21 @@ public class PgQueryService  {
         return OffsetDateTime.parse(normalized, partitionValueFormatter).toInstant();
     }
 
-    void assertNonEmptyUpdate(int updated, String query) {
+    public void assertNonEmptyUpdate(int updated, String query) {
         if (updated == 0) {
             log.warn("No records were updated by query '{}'", query);
         }
     }
 
-    PersistenceService persistenceService() {
+    public PersistenceService persistenceService() {
         return persistenceService;
     }
 
-    SchemaName schemaName() {
+    public SchemaName schemaName() {
         return schemaName;
     }
 
-    JsonbConverter jsonbConverter() {
+    public JsonbConverter jsonbConverter() {
         return jsonbConverter;
     }
 

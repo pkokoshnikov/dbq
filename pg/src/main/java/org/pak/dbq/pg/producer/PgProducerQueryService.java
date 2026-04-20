@@ -1,9 +1,10 @@
-package org.pak.dbq.pg;
+package org.pak.dbq.pg.producer;
 
 import org.pak.dbq.api.Message;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.support.StringFormatter;
+import org.pak.dbq.pg.PgQueryService;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -12,13 +13,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-final class PgProducerQueryService implements org.pak.dbq.spi.ProducerQueryService {
+public final class PgProducerQueryService implements org.pak.dbq.spi.ProducerQueryService {
     private final PgQueryService pgQueryService;
     private final QueueName queueName;
     private final StringFormatter formatter = new StringFormatter();
     private final Map<String, String> queryCache = new ConcurrentHashMap<>();
 
-    PgProducerQueryService(PgQueryService pgQueryService, QueueName queueName) {
+    public PgProducerQueryService(PgQueryService pgQueryService, QueueName queueName) {
         this.pgQueryService = pgQueryService;
         this.queueName = queueName;
     }

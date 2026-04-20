@@ -2,6 +2,8 @@ package org.pak.dbq.pg;
 
 import org.pak.dbq.api.ConsumerConfig;
 import org.pak.dbq.api.ProducerConfig;
+import org.pak.dbq.pg.consumer.*;
+import org.pak.dbq.pg.producer.PgProducerQueryService;
 import org.pak.dbq.spi.ConsumerQueryService;
 import org.pak.dbq.spi.ProducerQueryService;
 import org.pak.dbq.spi.QueryServiceFactory;
@@ -21,21 +23,31 @@ public class PgQueryServiceFactory implements QueryServiceFactory {
     @Override
     public ConsumerQueryService createConsumerQueryService(ConsumerConfig<?> consumerConfig) {
         var properties = consumerConfig.getProperties();
+        var schemaName = pgQueryService.schemaName();
+        var subscriptionId = consumerConfig.getSubscriptionId();
         var context = new ConsumerQueryContext(
                 pgQueryService,
                 consumerConfig.getQueueName(),
-                consumerConfig.getSubscriptionId(),
+                subscriptionId,
                 properties.getMaxPollRecords(),
                 properties.isHistoryEnabled());
         return new PgConsumerQueryService(
                 context,
                 properties.isSerializedByKey()
-                        ? new SerializedByKeySelectMessagesStrategy()
-                        : new DefaultSelectMessagesStrategy(),
-                new DefaultRetryMessageStrategy(),
-                properties.isHistoryEnabled()
-                        ? new HistoryFailMessageStrategy()
-                        : new DefaultFailMessageStrategy(),
-                new DefaultCompleteMessageStrategy());
+                        ? new SerializedByKeySelectMessagesStrategy(schemaName, subscriptionId)
+                        : new DefaultSelectMessagesStrategy(schemaName, subscriptionId),
+                new DefaultRetryMessageStrategy(schemaName, subscriptionId),
+                new CleanupKeyLockFailMessageStrategy(
+                        subscriptionId,
+                        properties.isHistoryEnabled()
+                                ? new HistoryFailMessageStrategy(schemaName, subscriptionId)
+                                : new DefaultFailMessageStrategy(schemaName, subscriptionId),
+                        schemaName),
+                new CleanupKeyLockCompleteMessageStrategy(
+                        subscriptionId,
+                        properties.isHistoryEnabled()
+                                ? new HistoryCompleteMessageStrategy(schemaName, subscriptionId)
+                                : new DefaultCompleteMessageStrategy(schemaName, subscriptionId),
+                        schemaName));
     }
 }
