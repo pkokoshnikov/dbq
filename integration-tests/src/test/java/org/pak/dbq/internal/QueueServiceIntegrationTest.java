@@ -40,7 +40,7 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
         jdbcTemplate = setupJdbcTemplate(dataSource);
         persistenceService = setupPersistenceService(jdbcTemplate);
         jsonbConverter = setupJsonbConverter();
-        pgQueryService = setupQueryService(persistenceService);
+        pgQueryService = setupQueueService(persistenceService);
     }
 
     @AfterEach

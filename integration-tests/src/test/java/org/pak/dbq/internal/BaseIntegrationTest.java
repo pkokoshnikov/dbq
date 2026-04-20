@@ -113,7 +113,7 @@ public class BaseIntegrationTest {
         return new SpringPersistenceService(jdbcTemplate);
     }
 
-    protected static QueueTableService setupQueryService(
+    protected static QueueTableService setupQueueService(
             SpringPersistenceService persistenceService
     ) {
         return new QueueTableService(persistenceService, TEST_SCHEMA);

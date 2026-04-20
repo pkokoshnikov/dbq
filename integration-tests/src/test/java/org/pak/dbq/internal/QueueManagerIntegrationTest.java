@@ -38,7 +38,7 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
         jdbcTemplate = setupJdbcTemplate(dataSource);
         persistenceService = setupPersistenceService(jdbcTemplate);
         jsonbConverter = setupJsonbConverter();
-        pgQueryService = setupQueryService(persistenceService);
+        pgQueryService = setupQueueService(persistenceService);
         tableManager = setupTableManager(persistenceService);
         producerFactory = setupProducerFactory(persistenceService, jsonbConverter);
         consumerFactoryBuilder = setupQueueProcessorFactory(
