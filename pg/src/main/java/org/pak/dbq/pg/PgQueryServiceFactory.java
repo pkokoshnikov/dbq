@@ -58,7 +58,8 @@ public class PgQueryServiceFactory implements QueryServiceFactory {
             failMessageStrategy = new CleanupKeyLockFailMessageStrategy(
                     subscriptionId,
                     failMessageStrategy,
-                    schemaName);
+                    schemaName,
+                    persistenceService);
         }
 
         var completeMessageStrategy = properties.isHistoryEnabled()

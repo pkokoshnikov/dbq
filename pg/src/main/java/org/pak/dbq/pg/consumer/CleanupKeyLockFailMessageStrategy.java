@@ -6,15 +6,23 @@ import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.SchemaName;
 import org.pak.dbq.pg.TableNames;
+import org.pak.dbq.spi.PersistenceService;
 
 import java.util.Map;
 
 public final class CleanupKeyLockFailMessageStrategy implements FailMessageStrategy {
     private final FailMessageStrategy delegate;
+    private final PersistenceService persistenceService;
     private final String query;
 
-    public CleanupKeyLockFailMessageStrategy(SubscriptionId subscriptionId, FailMessageStrategy delegate, SchemaName schemaName) {
+    public CleanupKeyLockFailMessageStrategy(
+            SubscriptionId subscriptionId,
+            FailMessageStrategy delegate,
+            SchemaName schemaName,
+            PersistenceService persistenceService
+    ) {
         this.delegate = delegate;
+        this.persistenceService = persistenceService;
         this.query = new StringFormatter().execute("""
                         DELETE FROM ${schema}.${subscriptionKeyLockTable}
                         WHERE key = ?
@@ -31,5 +39,6 @@ public final class CleanupKeyLockFailMessageStrategy implements FailMessageStrat
     @Override
     public <T> void failMessage(MessageContainer<T> messageContainer, Exception e) throws DbqException {
         delegate.failMessage(messageContainer, e);
+        persistenceService.update(query, messageContainer.getKey(), messageContainer.getKey());
     }
 }
