@@ -2,12 +2,11 @@ package org.pak.dbq.pg;
 
 import org.junit.jupiter.api.Test;
 import org.pak.dbq.spi.PersistenceService;
+import org.pak.dbq.spi.ResultSetMapper;
 
-import java.sql.ResultSet;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -52,7 +51,7 @@ class QueueServiceTest {
         }
 
         @Override
-        public <R> List<R> query(String query, Function<ResultSet, R> resultSetMapper) {
+        public <R> List<R> query(String query, ResultSetMapper<R> resultSetMapper) {
             throw new UnsupportedOperationException();
         }
     }

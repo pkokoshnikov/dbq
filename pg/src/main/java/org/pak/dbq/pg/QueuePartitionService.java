@@ -6,7 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.error.DbqException;
-import org.pak.dbq.error.NonRetryablePersistenceException;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.spi.PersistenceService;
 
@@ -135,13 +134,8 @@ public final class QueuePartitionService {
                         FROM   pg_catalog.pg_inherits
                         WHERE  inhparent = '${schema}.${table}'::regclass;""",
                 Map.of("schema", schemaName.value(), "table", tableName));
-        return persistenceService.query(query, rs -> {
-            try {
-                return LocalDate.parse(rs.getString("partition").replace(tableName + "_", ""), DATE_FORMATTER);
-            } catch (SQLException e) {
-                return sneakyThrow(new NonRetryablePersistenceException(e, e.getCause()));
-            }
-        });
+        return persistenceService.query(query,
+                rs -> LocalDate.parse(rs.getString("partition").replace(tableName + "_", ""), DATE_FORMATTER));
     }
 
     private void ensurePartitionExists(String table, Instant originatedTime) throws DbqException {
@@ -203,13 +197,7 @@ public final class QueuePartitionService {
                 WHERE n.nspname = '${schema}' AND c.relname = '${partition}'
                 """, Map.of("schema", schemaName.value(), "partition", partition));
 
-        var bounds = persistenceService.query(query, rs -> {
-            try {
-                return parsePartitionBounds(rs.getString("partition_bound"));
-            } catch (SQLException e) {
-                return sneakyThrow(new NonRetryablePersistenceException(e, e.getCause()));
-            }
-        });
+        var bounds = persistenceService.query(query, rs -> parsePartitionBounds(rs.getString("partition_bound")));
 
         if (bounds.isEmpty()) {
             throw new IllegalStateException("Ensured partition %s was not found after creation".formatted(partition));
@@ -288,8 +276,4 @@ public final class QueuePartitionService {
                 .orElse(null);
     }
 
-    @SuppressWarnings("unchecked")
-    private static <T, E extends Throwable> T sneakyThrow(Throwable throwable) throws E {
-        throw (E) throwable;
-    }
 }

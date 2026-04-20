@@ -4,6 +4,7 @@ import org.pak.dbq.error.DbqException;
 import org.pak.dbq.error.MessageDeserializationException;
 import org.pak.dbq.error.MessageSerializationException;
 import org.pak.dbq.spi.PersistenceService;
+import org.pak.dbq.spi.ResultSetMapper;
 import org.pak.dbq.error.NonRetryablePersistenceException;
 import org.pak.dbq.error.RetryablePersistenceException;
 import org.springframework.dao.RecoverableDataAccessException;
@@ -13,9 +14,7 @@ import org.springframework.jdbc.core.ArgumentPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementCallback;
 
-import java.sql.ResultSet;
 import java.util.List;
-import java.util.function.Function;
 
 public class SpringPersistenceService implements PersistenceService {
     private final JdbcTemplate jdbcTemplate;
@@ -84,12 +83,33 @@ public class SpringPersistenceService implements PersistenceService {
     }
 
     @Override
-    public <R> List<R> query(String query, Function<ResultSet, R> mapper) throws DbqException {
+    public <R> List<R> query(String query, ResultSetMapper<R> mapper) throws DbqException {
         try {
-            return jdbcTemplate.query(query, (rs, rowNum) -> mapper.apply(rs));
+            return jdbcTemplate.query(query, (rs, rowNum) -> {
+                try {
+                    return mapper.map(rs);
+                } catch (Exception e) {
+                    throw new UncheckedResultSetMappingException(e);
+                }
+            });
         } catch (Exception e) {
-            classifyException(e);
+            classifyException(unwrapUncheckedResultSetMappingException(e));
             return null;
+        }
+    }
+
+    private Exception unwrapUncheckedResultSetMappingException(Exception exception) {
+        if (exception instanceof UncheckedResultSetMappingException queryMappingException
+                && queryMappingException.getCause() instanceof Exception cause) {
+            return cause;
+        }
+        return exception;
+    }
+
+    //Only for wrapping checked exception from ResultSetMapper
+    private static final class UncheckedResultSetMappingException extends RuntimeException {
+        private UncheckedResultSetMappingException(Exception cause) {
+            super(cause);
         }
     }
 }

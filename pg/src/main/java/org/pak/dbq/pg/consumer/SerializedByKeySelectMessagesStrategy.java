@@ -1,7 +1,6 @@
 package org.pak.dbq.pg.consumer;
 
 import org.pak.dbq.error.DbqException;
-import org.pak.dbq.error.NonRetryablePersistenceException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.SchemaName;
@@ -9,12 +8,9 @@ import org.pak.dbq.pg.TableNames;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.spi.PersistenceService;
 
-import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-
-import static lombok.Lombok.sneakyThrow;
 
 public final class SerializedByKeySelectMessagesStrategy implements SelectMessagesStrategy {
     private final SubscriptionId subscriptionId;
@@ -75,13 +71,7 @@ public final class SerializedByKeySelectMessagesStrategy implements SelectMessag
             return cached;
         }
 
-        var result = persistenceService.query(hasKeyLockTableQuery, rs -> {
-            try {
-                return rs.getBoolean("exists");
-            } catch (SQLException e) {
-                return sneakyThrow(new NonRetryablePersistenceException(e, e.getCause()));
-            }
-        });
+        var result = persistenceService.query(hasKeyLockTableQuery, rs -> rs.getBoolean("exists"));
 
         var exists = !result.isEmpty() && Boolean.TRUE.equals(result.get(0));
         hasKeyLockTableCache.putIfAbsent(subscriptionId.id(), exists);
