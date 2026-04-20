@@ -1,37 +1,21 @@
 package org.pak.dbq.pg;
 
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.error.DbqException;
-import org.pak.dbq.error.NonRetryablePersistenceException;
-import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.jsonb.JsonbConverter;
 import org.pak.dbq.spi.PersistenceService;
-import org.postgresql.util.PGobject;
 
-import java.math.BigInteger;
-import java.sql.SQLException;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeFormatterBuilder;
-import java.time.temporal.ChronoField;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-
-import static java.util.Optional.ofNullable;
 
 @Slf4j
 public class PgQueryService  {
     private static final StringFormatter STATIC_FORMATTER = new StringFormatter();
-    private record PartitionBounds(Instant from, Instant to) {
-    }
 
     public enum DropPartitionResult {
         DROPPED,
@@ -40,28 +24,13 @@ public class PgQueryService  {
     }
 
     private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy_MM_dd");
-    private static final DateTimeFormatter partitionBoundaryFormatter = DateTimeFormatter.ISO_INSTANT;
-    private static final DateTimeFormatter partitionValueFormatter = new DateTimeFormatterBuilder()
-            .appendPattern("yyyy-MM-dd['T'][' ']HH:mm:ss")
-            .optionalStart()
-            .appendFraction(ChronoField.NANO_OF_SECOND, 0, 6, true)
-            .optionalEnd()
-            .appendOffset("+HH:MM", "Z")
-            .toFormatter();
-    private static final Pattern partitionBoundsPattern = Pattern.compile("FOR VALUES FROM \\('([^']+)'\\) TO \\('([^']+)'\\)");
-    private static final String PARTITION_HAS_REFERENCES_CODE = "23503";
-    private static final String UNDEFINED_TABLE_CODE = "42P01";
-    private static final String UNDEFINED_OBJECT_CODE = "42704";
-    private static final long ENSURED_PARTITIONS_CACHE_SIZE = 10_000;
     private final PersistenceService persistenceService;
     private final SchemaName schemaName;
     private final JsonbConverter jsonbConverter;
+    private final PartitionManager partitionManager;
     private final StringFormatter formatter = new StringFormatter();
     private final Map<String, String> queryCache = new ConcurrentHashMap<>();
     private final Map<String, Boolean> keyLockTableExistsCache = new ConcurrentHashMap<>();
-    private final Cache<String, Boolean> ensuredPartitions = CacheBuilder.newBuilder()
-            .maximumSize(ENSURED_PARTITIONS_CACHE_SIZE)
-            .build();
 
     public PgQueryService(
             PersistenceService persistenceService, SchemaName schemaName, JsonbConverter jsonbConverter
@@ -69,6 +38,7 @@ public class PgQueryService  {
         this.persistenceService = persistenceService;
         this.schemaName = schemaName;
         this.jsonbConverter = jsonbConverter;
+        this.partitionManager = new PartitionManager(schemaName, persistenceService);
     }
 
     public void createQueueTable(QueueName queueName) throws DbqException {
@@ -243,95 +213,33 @@ public class PgQueryService  {
     }
 
     public void createPartition(String table, Instant dateTime) throws DbqException {
-        var partition = partitionName(table, dateTime.atOffset(ZoneOffset.UTC).toLocalDate());
-        log.info("Create partition {}", partition);
-
-        var date = dateTime.atOffset(ZoneOffset.UTC).toLocalDate();
-        var from = date.atStartOfDay().toInstant(ZoneOffset.UTC);
-        var to = date.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
-        var query = formatter.execute("""
-                CREATE TABLE IF NOT EXISTS ${schema}.${partition}
-                PARTITION OF ${schema}.${table} FOR VALUES FROM ('${from}') TO ('${to}');
-                """, Map.of(
-                "schema", schemaName.value(),
-                "table", table,
-                "partition", partition,
-                "from", partitionBoundaryFormatter.format(from),
-                "to", partitionBoundaryFormatter.format(to)
-        ));
-
-        persistenceService.execute(query);
+        partitionManager.createPartition(table, dateTime);
     }
 
     public DropPartitionResult dropQueuePartition(QueueName queueName, LocalDate partition) throws DbqException {
-        var table = queueTable(queueName);
-        var partitionName = partitionName(table, partition);
-        return dropPartition(table, partitionName, true);
+        return partitionManager.dropQueuePartition(queueName, partition);
     }
 
     public DropPartitionResult dropHistoryPartition(SubscriptionId subscriptionId, LocalDate partition)
             throws DbqException {
-        var table = subscriptionHistoryTable(subscriptionId);
-        var partitionName = partitionName(table, partition);
-        return dropPartition(table, partitionName, false);
+        return partitionManager.dropHistoryPartition(subscriptionId, partition);
     }
 
     public void createQueuePartition(QueueName queueName, Instant includeDateTime) throws DbqException {
-        createPartition(queueTable(queueName), includeDateTime);
+        partitionManager.createQueuePartition(queueName, includeDateTime);
     }
 
     public void createHistoryPartition(SubscriptionId subscriptionId, Instant includeDateTime)
             throws DbqException {
-        createPartition(subscriptionHistoryTable(subscriptionId), includeDateTime);
+        partitionManager.createHistoryPartition(subscriptionId, includeDateTime);
     }
 
     public List<LocalDate> getAllQueuePartitions(QueueName queueName) throws DbqException {
-        return getAllPartitions(queueTable(queueName));
+        return partitionManager.getAllQueuePartitions(queueName);
     }
 
     public List<LocalDate> getAllHistoryPartitions(SubscriptionId subscriptionId) throws DbqException {
-        return getAllPartitions(subscriptionHistoryTable(subscriptionId));
-    }
-
-    private List<LocalDate> getAllPartitions(String tableName) throws DbqException {
-        var query = formatter.execute("""
-                        SELECT inhrelid::regclass AS partition
-                        FROM   pg_catalog.pg_inherits
-                        WHERE  inhparent = '${schema}.${table}'::regclass;""",
-                Map.of("schema", schemaName.value(), "table", tableName));
-        return persistenceService.query(query, rs -> {
-            try {
-                return LocalDate.parse(rs.getString("partition").replace(tableName + "_", ""), dateFormatter);
-            } catch (SQLException e) {
-                return sneakyThrow(new NonRetryablePersistenceException(e, e.getCause()));
-            }
-        });
-    }
-
-    @SuppressWarnings("unchecked")
-    public <T> MessageContainer<T> mapMessageContainer(java.sql.ResultSet rs) {
-        try {
-            return new MessageContainer<>(rs.getObject("id", BigInteger.class),
-                    rs.getObject("message_id", BigInteger.class),
-                    rs.getString("key"),
-                    rs.getInt("attempt"),
-                    ofNullable(rs.getObject("execute_after", OffsetDateTime.class)).map(OffsetDateTime::toInstant)
-                            .orElse(null),
-                    ofNullable(rs.getObject("created_at", OffsetDateTime.class)).map(OffsetDateTime::toInstant)
-                            .orElse(null),
-                    ofNullable(rs.getObject("updated_at", OffsetDateTime.class)).map(OffsetDateTime::toInstant)
-                            .orElse(null),
-                    ofNullable(rs.getObject("originated_at", OffsetDateTime.class)).map(OffsetDateTime::toInstant)
-                            .orElse(null),
-                    jsonbConverter.fromPGobject(rs.getObject("payload", PGobject.class)),
-                    jsonbConverter.fromPGHeaders(rs.getObject("headers", PGobject.class)),
-                    rs.getString("error_message"),
-                    rs.getString("stack_trace"));
-        } catch (SQLException e) {
-            return sneakyThrow(new NonRetryablePersistenceException(e, e.getCause()));
-        } catch (DbqException e) {
-            return sneakyThrow(e);
-        }
+        return partitionManager.getAllHistoryPartitions(subscriptionId);
     }
 
     public static String queueTableName(QueueName queueName) {
@@ -348,195 +256,6 @@ public class PgQueryService  {
 
     public static String subscriptionKeyLockTableName(SubscriptionId subscriptionId) {
         return subscriptionId.id().replace("-", "_") + "_key_lock";
-    }
-
-    private String queueTable(QueueName queueName) {
-        return queueTableName(queueName);
-    }
-
-    private String subscriptionTable(SubscriptionId subscriptionId) {
-        return subscriptionTableName(subscriptionId);
-    }
-
-    private String subscriptionHistoryTable(SubscriptionId subscriptionId) {
-        return subscriptionHistoryTableName(subscriptionId);
-    }
-
-    private String subscriptionKeyLockTable(SubscriptionId subscriptionId) {
-        return subscriptionKeyLockTableName(subscriptionId);
-    }
-
-    private String partitionName(String table, LocalDate partition) {
-        return table + "_" + dateFormatter.format(partition);
-    }
-
-    public void ensureQueuePartitionExists(QueueName queueName, Instant originatedTime) throws DbqException {
-        ensurePartitionExists(queueTable(queueName), originatedTime);
-    }
-
-    public void ensureQueuePartitionsExist(QueueName queueName, List<Instant> originatedTimes) throws DbqException {
-        var table = queueTable(queueName);
-        var partitionDates = originatedTimes.stream()
-                .map(originatedTime -> originatedTime.atOffset(ZoneOffset.UTC).toLocalDate())
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        for (var partitionDate : partitionDates) {
-            ensurePartitionExists(table, partitionDate.atStartOfDay().toInstant(ZoneOffset.UTC));
-        }
-    }
-
-    public void ensureHistoryPartitionExists(SubscriptionId subscriptionId, Instant originatedTime)
-            throws DbqException {
-        ensurePartitionExists(subscriptionHistoryTable(subscriptionId), originatedTime);
-    }
-
-    private void ensurePartitionExists(String table, Instant originatedTime) throws DbqException {
-        var partitionDate = originatedTime.atOffset(ZoneOffset.UTC).toLocalDate();
-        var partition = partitionName(table, partitionDate);
-        var from = partitionDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-        var to = partitionDate.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
-        if (ensuredPartitions.getIfPresent(partition) != null) {
-            return;
-        }
-
-        acquirePartitionLock(partition);
-        createPartition(table, from);
-        validatePartitionBounds(partition, from, to);
-        ensuredPartitions.put(partition, Boolean.TRUE);
-    }
-
-    private void acquirePartitionLock(String partition) throws DbqException {
-        persistenceService.execute("SELECT pg_advisory_xact_lock(hashtext(?))", partition);
-    }
-
-    private void validatePartitionBounds(String partition, Instant expectedFrom, Instant expectedTo)
-            throws DbqException {
-        var query = formatter.execute("""
-                SELECT pg_get_expr(c.relpartbound, c.oid) AS partition_bound
-                FROM pg_class c
-                JOIN pg_namespace n ON n.oid = c.relnamespace
-                WHERE n.nspname = '${schema}' AND c.relname = '${partition}'
-                """, Map.of("schema", schemaName.value(), "partition", partition));
-
-        var bounds = persistenceService.query(query, rs -> {
-            try {
-                return parsePartitionBounds(rs.getString("partition_bound"));
-            } catch (SQLException e) {
-                return sneakyThrow(new NonRetryablePersistenceException(e, e.getCause()));
-            }
-        });
-
-        if (bounds.isEmpty()) {
-            throw new IllegalStateException("Ensured partition %s was not found after creation".formatted(partition));
-        }
-
-        var actualBounds = bounds.getFirst();
-        if (!expectedFrom.equals(actualBounds.from()) || !expectedTo.equals(actualBounds.to())) {
-            throw new IllegalStateException(
-                    "Unexpected partition bounds for %s. Expected [%s, %s), actual [%s, %s)"
-                            .formatted(partition, expectedFrom, expectedTo, actualBounds.from(), actualBounds.to()));
-        }
-    }
-
-    private DropPartitionResult dropPartition(String table, String partition, boolean failOnReferences)
-            throws DbqException {
-        var alreadyAbsent = false;
-        try {
-            persistenceService.execute(detachPartitionSql(table, partition));
-        } catch (DbqException e) {
-            if (failOnReferences && hasPartitionReferences(e)) {
-                return DropPartitionResult.HAS_REFERENCES;
-            }
-            if (!isIgnorableDetachException(e)) {
-                throw e;
-            }
-            alreadyAbsent = true;
-            log.debug("Partition {} is already absent or detached from {}, continue cleanup", partition, table);
-        }
-
-        try {
-            persistenceService.execute(dropPartitionTableSql(partition));
-        } catch (DbqException e) {
-            if (!isIgnorableMissingPartitionException(e)) {
-                throw e;
-            }
-            alreadyAbsent = true;
-            log.debug("Partition {} is already removed, skip drop", partition);
-        }
-
-        ensuredPartitions.invalidate(partition);
-        return alreadyAbsent ? DropPartitionResult.ALREADY_ABSENT : DropPartitionResult.DROPPED;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static <T, E extends Throwable> T sneakyThrow(Throwable throwable) throws E {
-        throw (E) throwable;
-    }
-
-    private String detachPartitionSql(String table, String partition) {
-        return formatter.execute("""
-                ALTER TABLE ${schema}.${table} DETACH PARTITION ${schema}.${partition} CONCURRENTLY;
-                """, Map.of("schema", schemaName.value(), "table", table, "partition", partition));
-    }
-
-    private String dropPartitionTableSql(String partition) {
-        return formatter.execute("""
-                DROP TABLE IF EXISTS ${schema}.${partition};
-                """, Map.of("schema", schemaName.value(), "partition", partition));
-    }
-
-    private boolean hasPartitionReferences(DbqException exception) {
-        var sqlException = findSqlException(exception);
-        return sqlException != null && PARTITION_HAS_REFERENCES_CODE.equals(sqlException.getSQLState());
-    }
-
-    private boolean isIgnorableDetachException(DbqException exception) {
-        var sqlException = findSqlException(exception);
-        if (sqlException == null) {
-            return false;
-        }
-
-        var message = ofNullable(sqlException.getMessage()).orElse("").toLowerCase(Locale.ROOT);
-        return UNDEFINED_TABLE_CODE.equals(sqlException.getSQLState())
-                || UNDEFINED_OBJECT_CODE.equals(sqlException.getSQLState())
-                || message.contains("is not a partition of relation");
-    }
-
-    private boolean isIgnorableMissingPartitionException(DbqException exception) {
-        var sqlException = findSqlException(exception);
-        if (sqlException == null) {
-            return false;
-        }
-
-        return UNDEFINED_TABLE_CODE.equals(sqlException.getSQLState())
-                || UNDEFINED_OBJECT_CODE.equals(sqlException.getSQLState());
-    }
-
-    private SQLException findSqlException(DbqException exception) {
-        return ExceptionUtils.getThrowableList(exception).stream()
-                .filter(SQLException.class::isInstance)
-                .map(SQLException.class::cast)
-                .findFirst()
-                .orElse(null);
-    }
-
-    private PartitionBounds parsePartitionBounds(String partitionBound) {
-        var matcher = partitionBoundsPattern.matcher(partitionBound);
-        if (!matcher.matches()) {
-            throw new IllegalStateException("Unexpected partition bound expression: " + partitionBound);
-        }
-
-        return new PartitionBounds(parsePartitionBoundary(matcher.group(1)), parsePartitionBoundary(matcher.group(2)));
-    }
-
-    private Instant parsePartitionBoundary(String value) {
-        var normalized = value.replace(' ', 'T').replaceAll("([+-]\\d{2})$", "$1:00");
-        return OffsetDateTime.parse(normalized, partitionValueFormatter).toInstant();
-    }
-
-    public void assertNonEmptyUpdate(int updated, String query) {
-        if (updated == 0) {
-            log.warn("No records were updated by query '{}'", query);
-        }
     }
 
     public PersistenceService persistenceService() {

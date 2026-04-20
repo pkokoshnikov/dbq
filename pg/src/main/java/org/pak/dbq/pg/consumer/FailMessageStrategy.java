@@ -4,6 +4,5 @@ import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 
 public interface FailMessageStrategy {
-    <T> void failMessage(ConsumerQueryContext context, MessageContainer<T> messageContainer, Exception e)
-            throws DbqException;
+    <T> void failMessage(MessageContainer<T> messageContainer, Exception e) throws DbqException;
 }

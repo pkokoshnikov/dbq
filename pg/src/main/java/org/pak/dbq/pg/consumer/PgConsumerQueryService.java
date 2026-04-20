@@ -8,20 +8,17 @@ import java.time.Duration;
 import java.util.List;
 
 public final class PgConsumerQueryService implements ConsumerQueryService {
-    private final ConsumerQueryContext context;
     private final SelectMessagesStrategy selectMessagesStrategy;
     private final RetryMessageStrategy retryMessageStrategy;
     private final FailMessageStrategy failMessageStrategy;
     private final CompleteMessageStrategy completeMessageStrategy;
 
     public PgConsumerQueryService(
-            ConsumerQueryContext context,
             SelectMessagesStrategy selectMessagesStrategy,
             RetryMessageStrategy retryMessageStrategy,
             FailMessageStrategy failMessageStrategy,
             CompleteMessageStrategy completeMessageStrategy
     ) {
-        this.context = context;
         this.selectMessagesStrategy = selectMessagesStrategy;
         this.retryMessageStrategy = retryMessageStrategy;
         this.failMessageStrategy = failMessageStrategy;
@@ -30,22 +27,22 @@ public final class PgConsumerQueryService implements ConsumerQueryService {
 
     @Override
     public <T> List<MessageContainer<T>> selectMessages() throws DbqException {
-        return selectMessagesStrategy.selectMessages(context);
+        return selectMessagesStrategy.selectMessages();
     }
 
     @Override
     public <T> void retryMessage(MessageContainer<T> messageContainer, Duration retryDuration, Exception e)
             throws DbqException {
-        retryMessageStrategy.retryMessage(context, messageContainer, retryDuration, e);
+        retryMessageStrategy.retryMessage(messageContainer, retryDuration, e);
     }
 
     @Override
     public <T> void failMessage(MessageContainer<T> messageContainer, Exception e) throws DbqException {
-        failMessageStrategy.failMessage(context, messageContainer, e);
+        failMessageStrategy.failMessage(messageContainer, e);
     }
 
     @Override
     public <T> void completeMessage(MessageContainer<T> messageContainer) throws DbqException {
-        completeMessageStrategy.completeMessage(context, messageContainer);
+        completeMessageStrategy.completeMessage(messageContainer);
     }
 }

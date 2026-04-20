@@ -4,7 +4,6 @@ import org.pak.dbq.error.DbqException;
 import org.pak.dbq.error.NonRetryablePersistenceException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.support.StringFormatter;
-import org.pak.dbq.pg.PgQueryService;
 import org.pak.dbq.pg.SchemaName;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.spi.PersistenceService;
@@ -17,27 +16,27 @@ import java.util.concurrent.ConcurrentHashMap;
 import static lombok.Lombok.sneakyThrow;
 
 public final class SerializedByKeySelectMessagesStrategy implements SelectMessagesStrategy {
-    private final SchemaName schemaName;
     private final SubscriptionId subscriptionId;
-    private final StringFormatter formatter = new StringFormatter();
-    private final Map<String, String> queryCache = new ConcurrentHashMap<>();
+    private final String subscriptionKeyLockTableName;
     private final Map<String, Boolean> hasKeyLockTableCache = new ConcurrentHashMap<>();
     private final PersistenceService persistenceService;
+    private final MessageContainerMapper messageContainerMapper;
+    private final String selectMessagesQuery;
+    private final String hasKeyLockTableQuery;
 
-    public SerializedByKeySelectMessagesStrategy(SchemaName schemaName, SubscriptionId subscriptionId, PersistenceService persistenceService) {
-        this.schemaName = schemaName;
+    public SerializedByKeySelectMessagesStrategy(
+            SchemaName schemaName,
+            SubscriptionId subscriptionId,
+            String queueTableName,
+            Integer maxPollRecords,
+            PersistenceService persistenceService,
+            MessageContainerMapper messageContainerMapper
+    ) {
         this.subscriptionId = subscriptionId;
+        this.subscriptionKeyLockTableName = ConsumerTableNames.subscriptionKeyLockTableName(subscriptionId);
         this.persistenceService = persistenceService;
-    }
-
-    @Override
-    public <T> List<MessageContainer<T>> selectMessages(ConsumerQueryContext context) throws DbqException {
-        if (!hasKeyLockTable(subscriptionId)) {
-            throw new IllegalStateException("Subscription %s was created without serializedByKey support"
-                    .formatted(subscriptionId.id()));
-        }
-
-        var query = queryCache.computeIfAbsent("selectMessages|" + subscriptionId.id(), k -> formatter.execute("""
+        this.messageContainerMapper = messageContainerMapper;
+        this.selectMessagesQuery = new StringFormatter().execute("""
                         SELECT s.id, s.message_id, s.attempt, s.error_message, s.stack_trace, s.created_at, s.updated_at,
                             s.execute_after, m.originated_at, s.key, m.headers, m.payload
                         FROM ${schema}.${subscriptionTable} s
@@ -49,28 +48,35 @@ public final class SerializedByKeySelectMessagesStrategy implements SelectMessag
                         LIMIT ${maxPollRecords}
                         FOR UPDATE OF k, s SKIP LOCKED""",
                 Map.of("schema", schemaName.value(),
-                        "subscriptionTable", PgQueryService.subscriptionTableName(subscriptionId),
-                        "queueTable", PgQueryService.queueTableName(context.queueName()),
-                        "subscriptionKeyLockTable", PgQueryService.subscriptionKeyLockTableName(subscriptionId),
-                        "maxPollRecords", context.maxPollRecords().toString())));
-
-        return context.pgQueryService().persistenceService().query(query, context.pgQueryService()::mapMessageContainer);
+                        "subscriptionTable", ConsumerTableNames.subscriptionTableName(subscriptionId),
+                        "queueTable", queueTableName,
+                        "subscriptionKeyLockTable", subscriptionKeyLockTableName,
+                        "maxPollRecords", maxPollRecords.toString()));
+        this.hasKeyLockTableQuery = new StringFormatter().execute("""
+                SELECT to_regclass('${schema}.${subscriptionKeyLockTable}') IS NOT NULL AS exists
+                """, Map.of(
+                "schema", schemaName.value(),
+                "subscriptionKeyLockTable", subscriptionKeyLockTableName
+        ));
     }
 
-    public boolean hasKeyLockTable(SubscriptionId subscriptionId) throws DbqException {
+    @Override
+    public <T> List<MessageContainer<T>> selectMessages() throws DbqException {
+        if (!hasKeyLockTable()) {
+            throw new IllegalStateException("Subscription %s was created without serializedByKey support"
+                    .formatted(subscriptionId.id()));
+        }
+
+        return persistenceService.query(selectMessagesQuery, messageContainerMapper::map);
+    }
+
+    public boolean hasKeyLockTable() throws DbqException {
         var cached = hasKeyLockTableCache.get(subscriptionId.id());
         if (cached != null) {
             return cached;
         }
 
-        var query = queryCache.computeIfAbsent("hasKeyLockTable|" + subscriptionId.id(), ignored -> formatter.execute("""
-                SELECT to_regclass('${schema}.${subscriptionKeyLockTable}') IS NOT NULL AS exists
-                """, Map.of(
-                "schema", schemaName.value(),
-                "subscriptionKeyLockTable", PgQueryService.subscriptionKeyLockTableName(subscriptionId)
-        )));
-
-        var result = persistenceService.query(query, rs -> {
+        var result = persistenceService.query(hasKeyLockTableQuery, rs -> {
             try {
                 return rs.getBoolean("exists");
             } catch (SQLException e) {

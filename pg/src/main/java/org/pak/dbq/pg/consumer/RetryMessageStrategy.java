@@ -7,7 +7,6 @@ import java.time.Duration;
 
 public interface RetryMessageStrategy {
     <T> void retryMessage(
-            ConsumerQueryContext context,
             MessageContainer<T> messageContainer,
             Duration retryDuration,
             Exception e

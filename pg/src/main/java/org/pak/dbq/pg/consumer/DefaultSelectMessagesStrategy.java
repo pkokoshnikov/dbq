@@ -3,28 +3,29 @@ package org.pak.dbq.pg.consumer;
 import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.support.StringFormatter;
-import org.pak.dbq.pg.PgQueryService;
 import org.pak.dbq.pg.SchemaName;
 import org.pak.dbq.api.SubscriptionId;
+import org.pak.dbq.spi.PersistenceService;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 public final class DefaultSelectMessagesStrategy implements SelectMessagesStrategy {
-    private final SchemaName schemaName;
-    private final SubscriptionId subscriptionId;
-    private final StringFormatter formatter = new StringFormatter();
-    private final Map<String, String> queryCache = new ConcurrentHashMap<>();
+    private final PersistenceService persistenceService;
+    private final MessageContainerMapper messageContainerMapper;
+    private final String query;
 
-    public DefaultSelectMessagesStrategy(SchemaName schemaName, SubscriptionId subscriptionId) {
-        this.schemaName = schemaName;
-        this.subscriptionId = subscriptionId;
-    }
-
-    @Override
-    public <T> List<MessageContainer<T>> selectMessages(ConsumerQueryContext context) throws DbqException {
-        var query = queryCache.computeIfAbsent("selectMessages|" + subscriptionId.id(), k -> formatter.execute("""
+    public DefaultSelectMessagesStrategy(
+            SchemaName schemaName,
+            SubscriptionId subscriptionId,
+            String queueTableName,
+            Integer maxPollRecords,
+            PersistenceService persistenceService,
+            MessageContainerMapper messageContainerMapper
+    ) {
+        this.persistenceService = persistenceService;
+        this.messageContainerMapper = messageContainerMapper;
+        this.query = new StringFormatter().execute("""
                         SELECT s.id, s.message_id, s.attempt, s.error_message, s.stack_trace, s.created_at, s.updated_at,
                             s.execute_after, m.originated_at, m.key, m.headers, m.payload
                         FROM ${schema}.${subscriptionTable} s JOIN ${schema}.${queueTable} m ON s.message_id = m.id
@@ -33,10 +34,13 @@ public final class DefaultSelectMessagesStrategy implements SelectMessagesStrate
                         ORDER BY s.execute_after ASC, s.id ASC
                         LIMIT ${maxPollRecords} FOR UPDATE OF s SKIP LOCKED""",
                 Map.of("schema", schemaName.value(),
-                        "subscriptionTable", PgQueryService.subscriptionTableName(subscriptionId),
-                        "queueTable", PgQueryService.queueTableName(context.queueName()),
-                        "maxPollRecords", context.maxPollRecords().toString())));
+                        "subscriptionTable", ConsumerTableNames.subscriptionTableName(subscriptionId),
+                        "queueTable", queueTableName,
+                        "maxPollRecords", maxPollRecords.toString()));
+    }
 
-        return context.pgQueryService().persistenceService().query(query, context.pgQueryService()::mapMessageContainer);
+    @Override
+    public <T> List<MessageContainer<T>> selectMessages() throws DbqException {
+        return persistenceService.query(query, messageContainerMapper::map);
     }
 }

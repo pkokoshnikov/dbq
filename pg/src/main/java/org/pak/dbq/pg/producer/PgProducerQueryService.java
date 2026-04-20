@@ -4,6 +4,7 @@ import org.pak.dbq.api.Message;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.support.StringFormatter;
+import org.pak.dbq.pg.PartitionManager;
 import org.pak.dbq.pg.PgQueryService;
 
 import java.time.OffsetDateTime;
@@ -15,18 +16,24 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class PgProducerQueryService implements org.pak.dbq.spi.ProducerQueryService {
     private final PgQueryService pgQueryService;
+    private final PartitionManager partitionManager;
     private final QueueName queueName;
     private final StringFormatter formatter = new StringFormatter();
     private final Map<String, String> queryCache = new ConcurrentHashMap<>();
 
-    public PgProducerQueryService(PgQueryService pgQueryService, QueueName queueName) {
+    public PgProducerQueryService(
+            PgQueryService pgQueryService,
+            QueueName queueName,
+            PartitionManager partitionManager
+    ) {
         this.pgQueryService = pgQueryService;
+        this.partitionManager = partitionManager;
         this.queueName = queueName;
     }
 
     @Override
     public <T> boolean insertMessage(Message<T> message) throws DbqException {
-        pgQueryService.ensureQueuePartitionExists(queueName, message.originatedTime());
+        partitionManager.ensureQueuePartitionExists(queueName, message.originatedTime());
 
         var query = queryCache.computeIfAbsent("insertMessage", k -> formatter.execute("""
                         INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, headers, payload)
@@ -44,7 +51,7 @@ public final class PgProducerQueryService implements org.pak.dbq.spi.ProducerQue
 
     @Override
     public <T> List<Boolean> insertBatchMessage(List<Message<T>> messages) throws DbqException {
-        pgQueryService.ensureQueuePartitionsExist(queueName, messages.stream()
+        partitionManager.ensureQueuePartitionsExist(queueName, messages.stream()
                 .map(Message::originatedTime)
                 .toList());
 

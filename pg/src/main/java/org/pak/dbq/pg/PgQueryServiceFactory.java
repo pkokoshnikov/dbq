@@ -17,7 +17,12 @@ public class PgQueryServiceFactory implements QueryServiceFactory {
 
     @Override
     public ProducerQueryService createProducerQueryService(ProducerConfig<?> producerConfig) {
-        return new PgProducerQueryService(pgQueryService, producerConfig.getQueueName());
+        return new PgProducerQueryService(
+                pgQueryService,
+                producerConfig.getQueueName(),
+                new PartitionManager(
+                        pgQueryService.schemaName(),
+                        pgQueryService.persistenceService()));
     }
 
     @Override
@@ -25,29 +30,50 @@ public class PgQueryServiceFactory implements QueryServiceFactory {
         var properties = consumerConfig.getProperties();
         var schemaName = pgQueryService.schemaName();
         var subscriptionId = consumerConfig.getSubscriptionId();
-        var context = new ConsumerQueryContext(
-                pgQueryService,
-                consumerConfig.getQueueName(),
+        var queueTableName = ConsumerTableNames.queueTableName(consumerConfig.getQueueName());
+        var persistenceService = pgQueryService.persistenceService();
+        var messageContainerMapper = new MessageContainerMapper(pgQueryService.jsonbConverter());
+        var partitionManager = new PartitionManager(
+                schemaName,
                 subscriptionId,
-                properties.getMaxPollRecords(),
-                properties.isHistoryEnabled());
+                persistenceService);
         return new PgConsumerQueryService(
-                context,
                 properties.isSerializedByKey()
-                        ? new SerializedByKeySelectMessagesStrategy(schemaName, subscriptionId)
-                        : new DefaultSelectMessagesStrategy(schemaName, subscriptionId),
-                new DefaultRetryMessageStrategy(schemaName, subscriptionId),
+                        ? new SerializedByKeySelectMessagesStrategy(
+                                schemaName,
+                                subscriptionId,
+                                queueTableName,
+                                properties.getMaxPollRecords(),
+                                persistenceService,
+                                messageContainerMapper)
+                        : new DefaultSelectMessagesStrategy(
+                                schemaName,
+                                subscriptionId,
+                                queueTableName,
+                                properties.getMaxPollRecords(),
+                                persistenceService,
+                                messageContainerMapper),
+                new DefaultRetryMessageStrategy(schemaName, subscriptionId, persistenceService),
                 new CleanupKeyLockFailMessageStrategy(
                         subscriptionId,
                         properties.isHistoryEnabled()
-                                ? new HistoryFailMessageStrategy(schemaName, subscriptionId)
-                                : new DefaultFailMessageStrategy(schemaName, subscriptionId),
+                                ? new HistoryFailMessageStrategy(
+                                        schemaName,
+                                        subscriptionId,
+                                        persistenceService,
+                                        partitionManager)
+                                : new DefaultFailMessageStrategy(schemaName, subscriptionId, persistenceService),
                         schemaName),
                 new CleanupKeyLockCompleteMessageStrategy(
                         subscriptionId,
                         properties.isHistoryEnabled()
-                                ? new HistoryCompleteMessageStrategy(schemaName, subscriptionId)
-                                : new DefaultCompleteMessageStrategy(schemaName, subscriptionId),
-                        schemaName));
+                                ? new HistoryCompleteMessageStrategy(
+                                        schemaName,
+                                        subscriptionId,
+                                        persistenceService,
+                                        partitionManager)
+                                : new DefaultCompleteMessageStrategy(schemaName, subscriptionId, persistenceService),
+                        schemaName,
+                        persistenceService));
     }
 }
