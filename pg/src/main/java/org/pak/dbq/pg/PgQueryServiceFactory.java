@@ -11,18 +11,15 @@ import org.pak.dbq.spi.ProducerQueryService;
 import org.pak.dbq.spi.QueryServiceFactory;
 
 public class PgQueryServiceFactory implements QueryServiceFactory {
-    private final QueueTableService queueTableService;
     private final PersistenceService persistenceService;
     private final SchemaName schemaName;
     private final JsonbConverter jsonbConverter;
 
     public PgQueryServiceFactory(
-            QueueTableService queueTableService,
             PersistenceService persistenceService,
             SchemaName schemaName,
             JsonbConverter jsonbConverter
     ) {
-        this.queueTableService = queueTableService;
         this.persistenceService = persistenceService;
         this.schemaName = schemaName;
         this.jsonbConverter = jsonbConverter;
@@ -47,13 +44,37 @@ public class PgQueryServiceFactory implements QueryServiceFactory {
         var partitionManager = new QueuePartitionService(
                 schemaName,
                 persistenceService);
+
+        var selectMessagesStrategy = properties.isSerializedByKey()
+                ?
+                new SerializedByKeySelectMessagesStrategy(
+                        schemaName,
+                        subscriptionId,
+                        queueTableName,
+                        properties.getMaxPollRecords(),
+                        persistenceService,
+                        messageContainerMapper)
+                :
+                new DefaultSelectMessagesStrategy(
+                        schemaName,
+                        subscriptionId,
+                        queueTableName,
+                        properties.getMaxPollRecords(),
+                        persistenceService,
+                        messageContainerMapper);
+
+        var retryMessageStrategy =
+                new DefaultRetryMessageStrategy(schemaName, subscriptionId, persistenceService);
+
         var failMessageStrategy = properties.isHistoryEnabled()
-                ? new HistoryFailMessageStrategy(
+                ?
+                new HistoryFailMessageStrategy(
                         schemaName,
                         subscriptionId,
                         persistenceService,
                         partitionManager)
-                : new DefaultFailMessageStrategy(schemaName, subscriptionId, persistenceService);
+                :
+                new DefaultFailMessageStrategy(schemaName, subscriptionId, persistenceService);
         if (properties.isSerializedByKey()) {
             failMessageStrategy = new CleanupKeyLockFailMessageStrategy(
                     subscriptionId,
@@ -63,12 +84,14 @@ public class PgQueryServiceFactory implements QueryServiceFactory {
         }
 
         var completeMessageStrategy = properties.isHistoryEnabled()
-                ? new HistoryCompleteMessageStrategy(
+                ?
+                new HistoryCompleteMessageStrategy(
                         schemaName,
                         subscriptionId,
                         persistenceService,
                         partitionManager)
-                : new DefaultCompleteMessageStrategy(schemaName, subscriptionId, persistenceService);
+                :
+                new DefaultCompleteMessageStrategy(schemaName, subscriptionId, persistenceService);
         if (properties.isSerializedByKey()) {
             completeMessageStrategy = new CleanupKeyLockCompleteMessageStrategy(
                     subscriptionId,
@@ -78,22 +101,8 @@ public class PgQueryServiceFactory implements QueryServiceFactory {
         }
 
         return new PgConsumerQueryService(
-                properties.isSerializedByKey()
-                        ? new SerializedByKeySelectMessagesStrategy(
-                                schemaName,
-                                subscriptionId,
-                                queueTableName,
-                                properties.getMaxPollRecords(),
-                                persistenceService,
-                                messageContainerMapper)
-                        : new DefaultSelectMessagesStrategy(
-                                schemaName,
-                                subscriptionId,
-                                queueTableName,
-                                properties.getMaxPollRecords(),
-                                persistenceService,
-                                messageContainerMapper),
-                new DefaultRetryMessageStrategy(schemaName, subscriptionId, persistenceService),
+                selectMessagesStrategy,
+                retryMessageStrategy,
                 failMessageStrategy,
                 completeMessageStrategy);
     }

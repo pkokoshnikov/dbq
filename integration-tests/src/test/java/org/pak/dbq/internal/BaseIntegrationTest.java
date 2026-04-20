@@ -114,8 +114,7 @@ public class BaseIntegrationTest {
     }
 
     protected static QueueTableService setupQueryService(
-            SpringPersistenceService persistenceService,
-            JsonbConverter jsonbConverter
+            SpringPersistenceService persistenceService
     ) {
         return new QueueTableService(persistenceService, TEST_SCHEMA);
     }
@@ -127,7 +126,6 @@ public class BaseIntegrationTest {
     }
 
     protected static ProducerFactory.ProducerFactoryBuilder<TestMessage> setupProducerFactory(
-            QueueTableService pgQueryService,
             SpringPersistenceService persistenceService,
             JsonbConverter jsonbConverter
     ) {
@@ -138,11 +136,10 @@ public class BaseIntegrationTest {
                         .messageContextPropagator(new NoOpMessageContextPropagator())
                         .build())
                 .messageFactory(new SimpleMessageFactory())
-                .queryServiceFactory(new PgQueryServiceFactory(pgQueryService, persistenceService, TEST_SCHEMA, jsonbConverter));
+                .queryServiceFactory(new PgQueryServiceFactory(persistenceService, TEST_SCHEMA, jsonbConverter));
     }
 
     protected static ConsumerFactory.ConsumerFactoryBuilder<TestMessage> setupQueueProcessorFactory(
-            QueueTableService pgQueryService,
             SpringTransactionService springTransactionService,
             SpringPersistenceService persistenceService,
             JsonbConverter jsonbConverter
@@ -154,7 +151,7 @@ public class BaseIntegrationTest {
                 .retryablePolicy(new SimpleRetryablePolicy())
                 .blockingPolicy(new SimpleBlockingPolicy())
                 .nonRetryablePolicy(new SimpleNonRetryablePolicy())
-                .queryServiceFactory(new PgQueryServiceFactory(pgQueryService, persistenceService, TEST_SCHEMA, jsonbConverter))
+                .queryServiceFactory(new PgQueryServiceFactory(persistenceService, TEST_SCHEMA, jsonbConverter))
                 .queueName(QUEUE_NAME)
                 .subscriptionId(SUBSCRIPTION_NAME_1)
                 .messageContextPropagator(new NoOpMessageContextPropagator())
@@ -178,7 +175,7 @@ public class BaseIntegrationTest {
     }
 
     protected PgQueryServiceFactory queryServiceFactory() {
-        return new PgQueryServiceFactory(pgQueryService, persistenceService, TEST_SCHEMA, jsonbConverter);
+        return new PgQueryServiceFactory(persistenceService, TEST_SCHEMA, jsonbConverter);
     }
 
     protected void createQueueTable() throws Exception {

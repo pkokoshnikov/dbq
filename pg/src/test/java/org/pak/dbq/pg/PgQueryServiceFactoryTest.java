@@ -88,7 +88,6 @@ class PgQueryServiceFactoryTest {
 
     private static PgQueryServiceFactory createFactory(PersistenceService persistenceService) {
         return new PgQueryServiceFactory(
-                new QueueTableService(persistenceService, new SchemaName("public")),
                 persistenceService,
                 new SchemaName("public"),
                 new JsonbConverter());

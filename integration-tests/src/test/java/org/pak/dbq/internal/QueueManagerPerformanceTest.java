@@ -10,7 +10,6 @@ import org.pak.dbq.api.QueueConfig;
 import org.pak.dbq.api.QueueManager;
 import org.pak.dbq.internal.support.SimpleMessageFactory;
 import org.pak.dbq.pg.PgQueryServiceFactory;
-import org.pak.dbq.pg.QueueTableService;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.vibur.dbcp.ViburDBCPDataSource;
 
@@ -41,14 +40,13 @@ class QueueManagerPerformanceTest extends BaseIntegrationTest {
         jdbcTemplate = setupJdbcTemplate(dataSource);
         persistenceService = setupPersistenceService(jdbcTemplate);
         jsonbConverter = setupJsonbConverter();
-        pgQueryService = setupQueryService(persistenceService, jsonbConverter);
+        pgQueryService = setupQueryService(persistenceService);
         tableManager = setupTableManager(persistenceService);
 
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1);
 
         queueManager = new QueueManager(new PgQueryServiceFactory(
-                new QueueTableService(persistenceService, TEST_SCHEMA),
                 persistenceService,
                 TEST_SCHEMA,
                 jsonbConverter),
