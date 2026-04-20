@@ -4,9 +4,6 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.pak.dbq.api.ConsumerConfig;
-import org.pak.dbq.api.Message;
-import org.pak.dbq.api.ProducerConfig;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.error.DbqException;
@@ -14,10 +11,7 @@ import org.pak.dbq.error.NonRetryablePersistenceException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.jsonb.JsonbConverter;
-import org.pak.dbq.spi.ConsumerQueryService;
 import org.pak.dbq.spi.PersistenceService;
-import org.pak.dbq.spi.ProducerQueryService;
-import org.pak.dbq.spi.QueryServiceFactory;
 import org.postgresql.util.PGobject;
 
 import java.math.BigInteger;
@@ -34,7 +28,7 @@ import java.util.stream.Collectors;
 import static java.util.Optional.ofNullable;
 
 @Slf4j
-public class PgQueryService implements QueryServiceFactory {
+public class PgQueryService  {
     private static final StringFormatter STATIC_FORMATTER = new StringFormatter();
     private record PartitionBounds(Instant from, Instant to) {
     }
@@ -75,28 +69,6 @@ public class PgQueryService implements QueryServiceFactory {
         this.persistenceService = persistenceService;
         this.schemaName = schemaName;
         this.jsonbConverter = jsonbConverter;
-    }
-
-    @Override
-    public ProducerQueryService createProducerQueryService(ProducerConfig<?> producerConfig) {
-        return new ProducerQueryService(producerConfig.getQueueName());
-    }
-
-    @Override
-    public ConsumerQueryService createConsumerQueryService(ConsumerConfig<?> consumerConfig) {
-        var properties = consumerConfig.getProperties();
-        if (properties.isSerializedByKey()) {
-            return new SerializedByKeyConsumerQueryService(
-                    consumerConfig.getQueueName(),
-                    consumerConfig.getSubscriptionId(),
-                    properties.getMaxPollRecords(),
-                    properties.isHistoryEnabled());
-        }
-        return new DefaultConsumerQueryService(
-                consumerConfig.getQueueName(),
-                consumerConfig.getSubscriptionId(),
-                properties.getMaxPollRecords(),
-                properties.isHistoryEnabled());
     }
 
     public void createQueueTable(QueueName queueName) throws DbqException {
@@ -336,95 +308,8 @@ public class PgQueryService implements QueryServiceFactory {
         });
     }
 
-    private <T> boolean insertMessage(QueueName queueName, Message<T> message) throws DbqException {
-        ensureQueuePartitionExists(queueName, message.originatedTime());
-
-        var query = queryCache.computeIfAbsent("insertMessage|" + queueName.name(), k -> formatter.execute("""
-                        INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, headers, payload)
-                        VALUES (CURRENT_TIMESTAMP,CURRENT_TIMESTAMP, ?, ?, ?, ?)
-                        ON CONFLICT (key, originated_at) DO NOTHING""",
-                Map.of("schema", schemaName.value(), "queueTable", queueTable(queueName))));
-
-        return persistenceService.insert(query,
-                message.key(),
-                OffsetDateTime.ofInstant(message.originatedTime(), ZoneId.systemDefault()),
-                jsonbConverter.toPGObject(message.headers()),
-                jsonbConverter.toPGObject(message.payload())) > 0;
-    }
-
-    private <T> List<Boolean> insertBatchMessage(QueueName queueName, List<Message<T>> messages)
-            throws DbqException {
-        ensureQueuePartitionsExist(queueName, messages.stream()
-                .map(Message::originatedTime)
-                .toList());
-
-        var query = queryCache.computeIfAbsent("insertBatchMessage|" + queueName.name(), k -> formatter.execute("""
-                        INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, headers, payload)
-                        VALUES (CURRENT_TIMESTAMP,CURRENT_TIMESTAMP, ?, ?, ?, ?) ON CONFLICT (key, originated_at) DO NOTHING""",
-                Map.of("schema", schemaName.value(), "queueTable", queueTable(queueName))));
-
-        var args = new java.util.ArrayList<Object[]>(messages.size());
-        for (var message : messages) {
-            args.add(new Object[]{
-                    message.key(),
-                    OffsetDateTime.ofInstant(message.originatedTime(), ZoneId.systemDefault()),
-                    jsonbConverter.toPGObject(message.headers()),
-                    jsonbConverter.toPGObject(message.payload())
-            });
-        }
-
-        var result = persistenceService.batchInsert(query, args);
-
-        return Arrays.stream(result).mapToObj(i -> i > 0).toList();
-    }
-
-    private <T> List<MessageContainer<T>> selectMessages(
-            QueueName queueName,
-            SubscriptionId subscriptionId,
-            Integer maxPollRecords,
-            boolean serializedByKey
-    ) throws DbqException {
-        if (serializedByKey && !hasKeyLockTable(subscriptionId)) {
-            throw new IllegalStateException("Subscription %s was created without serializedByKey support"
-                    .formatted(subscriptionId.id()));
-        }
-
-        var cacheKey = "selectMessages|" + subscriptionId.id() + "|" + serializedByKey;
-        var query = queryCache.computeIfAbsent(cacheKey, k -> serializedByKey
-                ? formatter.execute("""
-                        SELECT s.id, s.message_id, s.attempt, s.error_message, s.stack_trace, s.created_at, s.updated_at,
-                            s.execute_after, m.originated_at, s.key, m.headers, m.payload
-                        FROM ${schema}.${subscriptionTable} s
-                        JOIN ${schema}.${queueTable} m ON s.message_id = m.id
-                            AND s.originated_at = m.originated_at
-                        JOIN ${schema}.${subscriptionKeyLockTable} k ON k.key = s.key
-                        WHERE s.execute_after < CURRENT_TIMESTAMP
-                        ORDER BY s.execute_after ASC, s.id ASC
-                        LIMIT ${maxPollRecords}
-                        FOR UPDATE OF k, s SKIP LOCKED""",
-                        Map.of("schema", schemaName.value(),
-                                "subscriptionTable", subscriptionTable(subscriptionId),
-                                "queueTable", queueTable(queueName),
-                                "subscriptionKeyLockTable", subscriptionKeyLockTable(subscriptionId),
-                                "maxPollRecords", maxPollRecords.toString()))
-                : formatter.execute("""
-                        SELECT s.id, s.message_id, s.attempt, s.error_message, s.stack_trace, s.created_at, s.updated_at,
-                            s.execute_after, m.originated_at, m.key, m.headers, m.payload
-                        FROM ${schema}.${subscriptionTable} s JOIN ${schema}.${queueTable} m ON s.message_id = m.id
-                            AND s.originated_at = m.originated_at
-                        WHERE s.execute_after < CURRENT_TIMESTAMP
-                        ORDER BY s.execute_after ASC, s.id ASC
-                        LIMIT ${maxPollRecords} FOR UPDATE OF s SKIP LOCKED""",
-                        Map.of("schema", schemaName.value(),
-                                "subscriptionTable", subscriptionTable(subscriptionId),
-                                "queueTable", queueTable(queueName),
-                                "maxPollRecords", maxPollRecords.toString())));
-
-        return persistenceService.query(query, this::mapMessageContainer);
-    }
-
     @SuppressWarnings("unchecked")
-    private <T> MessageContainer<T> mapMessageContainer(java.sql.ResultSet rs) {
+    <T> MessageContainer<T> mapMessageContainer(java.sql.ResultSet rs) {
         try {
             return new MessageContainer<>(rs.getObject("id", BigInteger.class),
                     rs.getObject("message_id", BigInteger.class),
@@ -449,110 +334,19 @@ public class PgQueryService implements QueryServiceFactory {
         }
     }
 
-    private <T> void retryMessage(
-            SubscriptionId subscriptionId, MessageContainer<T> messageContainer, Duration retryDuration, Exception e
-    ) throws DbqException {
-        var query = queryCache.computeIfAbsent("retryMessage|" + subscriptionId.id(), k -> formatter.execute("""
-                        UPDATE ${schema}.${subscriptionTable} SET updated_at = CURRENT_TIMESTAMP,
-                            execute_after = CURRENT_TIMESTAMP + (? * INTERVAL '1 second'), attempt = attempt + 1,
-                            error_message = ?, stack_trace = ?
-                        WHERE id = ?""",
-                Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionId))));
-
-        var updated = persistenceService.update(query, retryDuration.getSeconds(), e.getMessage(),
-                ExceptionUtils.getStackTrace(e),
-                messageContainer.getId());
-
-        assertNonEmptyUpdate(updated, query);
-    }
-
-    private <T> void failMessage(
-            SubscriptionId subscriptionId,
-            MessageContainer<T> messageContainer,
-            Exception e,
-            boolean historyEnabled
-    ) throws DbqException {
-        if (!historyEnabled) {
-            var query = queryCache.computeIfAbsent("deleteFailedMessage|" + subscriptionId.id(), k -> formatter.execute("""
-                            DELETE FROM ${schema}.${subscriptionTable} WHERE id = ?""",
-                    Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionId))));
-
-            var updated = persistenceService.update(query, messageContainer.getId());
-            assertNonEmptyUpdate(updated, query);
-            cleanupKeyLock(subscriptionId, messageContainer.getKey());
-            return;
-        }
-
-        ensureHistoryPartitionExists(subscriptionId, messageContainer.getOriginatedTime());
-
-        var query = queryCache.computeIfAbsent("failMessage|" + subscriptionId.id(), k -> formatter.execute("""
-                        WITH deleted AS (
-                            DELETE FROM ${schema}.${subscriptionTable}
-                            WHERE id = ?
-                            RETURNING *
-                        )
-                        INSERT INTO ${schema}.${subscriptionHistoryTable}
-                            (id, message_id, originated_at, attempt, status, error_message, stack_trace)
-                            SELECT id, message_id, originated_at, attempt, 'FAILED' as status, ?, ? FROM deleted""",
-                Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionId),
-                        "subscriptionHistoryTable", subscriptionHistoryTable(subscriptionId))));
-
-        var updated = persistenceService.update(query, messageContainer.getId(), e.getMessage(),
-                ExceptionUtils.getStackTrace(e));
-
-        assertNonEmptyUpdate(updated, query);
-        cleanupKeyLock(subscriptionId, messageContainer.getKey());
-    }
-
-    private <T> void completeMessage(
-            SubscriptionId subscriptionId,
-            MessageContainer<T> messageContainer,
-            boolean historyEnabled
-    ) throws DbqException {
-        if (!historyEnabled) {
-            var query = queryCache.computeIfAbsent("deleteCompletedMessage|" + subscriptionId.id(), k -> formatter.execute("""
-                            DELETE FROM ${schema}.${subscriptionTable} WHERE id = ?""",
-                    Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionId))));
-
-            var updated = persistenceService.update(query, messageContainer.getId());
-            assertNonEmptyUpdate(updated, query);
-            cleanupKeyLock(subscriptionId, messageContainer.getKey());
-            return;
-        }
-
-        ensureHistoryPartitionExists(subscriptionId, messageContainer.getOriginatedTime());
-
-        var query = queryCache.computeIfAbsent("completeMessage|" + subscriptionId.id(), k -> formatter.execute("""
-                        WITH deleted AS (
-                            DELETE FROM ${schema}.${subscriptionTable}
-                            WHERE id = ?
-                            RETURNING *
-                        )
-                        INSERT INTO ${schema}.${subscriptionHistoryTable}
-                            (id, message_id, originated_at, attempt, status, error_message, stack_trace)
-                            SELECT id, message_id, originated_at, attempt, 'PROCESSED' as status, error_message, stack_trace FROM deleted""",
-                Map.of("schema", schemaName.value(), "subscriptionTable", subscriptionTable(subscriptionId),
-                        "subscriptionHistoryTable", subscriptionHistoryTable(subscriptionId))));
-
-        var updated = persistenceService.update(query, messageContainer.getId());
-
-        assertNonEmptyUpdate(updated, query);
-        cleanupKeyLock(subscriptionId, messageContainer.getKey());
-    }
-
-    private static String queueTableName(QueueName queueName) {
+    static String queueTableName(QueueName queueName) {
         return queueName.name().replace("-", "_");
     }
 
-    private static String subscriptionTableName(SubscriptionId subscriptionId) {
+    static String subscriptionTableName(SubscriptionId subscriptionId) {
         return subscriptionId.id().replace("-", "_");
     }
 
-    private static String subscriptionHistoryTableName(SubscriptionId subscriptionId) {
+    static String subscriptionHistoryTableName(SubscriptionId subscriptionId) {
         return subscriptionId.id().replace("-", "_") + "_history";
     }
 
-    private static String subscriptionKeyLockTableName(SubscriptionId subscriptionId) {
+    static String subscriptionKeyLockTableName(SubscriptionId subscriptionId) {
         return subscriptionId.id().replace("-", "_") + "_key_lock";
     }
 
@@ -572,7 +366,7 @@ public class PgQueryService implements QueryServiceFactory {
         return subscriptionKeyLockTableName(subscriptionId);
     }
 
-    private void cleanupKeyLock(SubscriptionId subscriptionId, String key) throws DbqException {
+    void cleanupKeyLock(SubscriptionId subscriptionId, String key) throws DbqException {
         if (key == null || !hasKeyLockTable(subscriptionId)) {
             return;
         }
@@ -591,7 +385,7 @@ public class PgQueryService implements QueryServiceFactory {
         persistenceService.update(query, key, key);
     }
 
-    private boolean hasKeyLockTable(SubscriptionId subscriptionId) throws DbqException {
+    boolean hasKeyLockTable(SubscriptionId subscriptionId) throws DbqException {
         var cached = keyLockTableExistsCache.get(subscriptionId.id());
         if (cached != null) {
             return cached;
@@ -621,11 +415,11 @@ public class PgQueryService implements QueryServiceFactory {
         return table + "_" + dateFormatter.format(partition);
     }
 
-    private void ensureQueuePartitionExists(QueueName queueName, Instant originatedTime) throws DbqException {
+    void ensureQueuePartitionExists(QueueName queueName, Instant originatedTime) throws DbqException {
         ensurePartitionExists(queueTable(queueName), originatedTime);
     }
 
-    private void ensureQueuePartitionsExist(QueueName queueName, List<Instant> originatedTimes) throws DbqException {
+    void ensureQueuePartitionsExist(QueueName queueName, List<Instant> originatedTimes) throws DbqException {
         var table = queueTable(queueName);
         var partitionDates = originatedTimes.stream()
                 .map(originatedTime -> originatedTime.atOffset(ZoneOffset.UTC).toLocalDate())
@@ -635,7 +429,7 @@ public class PgQueryService implements QueryServiceFactory {
         }
     }
 
-    private void ensureHistoryPartitionExists(SubscriptionId subscriptionId, Instant originatedTime)
+    void ensureHistoryPartitionExists(SubscriptionId subscriptionId, Instant originatedTime)
             throws DbqException {
         ensurePartitionExists(subscriptionHistoryTable(subscriptionId), originatedTime);
     }
@@ -784,101 +578,22 @@ public class PgQueryService implements QueryServiceFactory {
         return OffsetDateTime.parse(normalized, partitionValueFormatter).toInstant();
     }
 
-    private void assertNonEmptyUpdate(int updated, String query) {
+    void assertNonEmptyUpdate(int updated, String query) {
         if (updated == 0) {
             log.warn("No records were updated by query '{}'", query);
         }
     }
 
-    private final class ProducerQueryService implements org.pak.dbq.spi.ProducerQueryService {
-        private final QueueName queueName;
-
-        private ProducerQueryService(QueueName queueName) {
-            this.queueName = queueName;
-        }
-
-        @Override
-        public <T> boolean insertMessage(Message<T> message) throws DbqException {
-            return PgQueryService.this.insertMessage(queueName, message);
-        }
-
-        @Override
-        public <T> List<Boolean> insertBatchMessage(List<Message<T>> messages) throws DbqException {
-            return PgQueryService.this.insertBatchMessage(queueName, messages);
-        }
+    PersistenceService persistenceService() {
+        return persistenceService;
     }
 
-    private abstract class AbstractConsumerQueryService implements ConsumerQueryService {
-        private final QueueName queueName;
-        private final SubscriptionId subscriptionId;
-        private final Integer maxPollRecords;
-        private final boolean historyEnabled;
-
-        private AbstractConsumerQueryService(
-                QueueName queueName,
-                SubscriptionId subscriptionId,
-                Integer maxPollRecords,
-                boolean historyEnabled
-        ) {
-            this.queueName = queueName;
-            this.subscriptionId = subscriptionId;
-            this.maxPollRecords = maxPollRecords;
-            this.historyEnabled = historyEnabled;
-        }
-
-        protected abstract boolean serializedByKey();
-
-        @Override
-        public <T> List<MessageContainer<T>> selectMessages() throws DbqException {
-            return PgQueryService.this.selectMessages(queueName, subscriptionId, maxPollRecords, serializedByKey());
-        }
-
-        @Override
-        public <T> void retryMessage(MessageContainer<T> messageContainer, Duration retryDuration, Exception e)
-                throws DbqException {
-            PgQueryService.this.retryMessage(subscriptionId, messageContainer, retryDuration, e);
-        }
-
-        @Override
-        public <T> void failMessage(MessageContainer<T> messageContainer, Exception e) throws DbqException {
-            PgQueryService.this.failMessage(subscriptionId, messageContainer, e, historyEnabled);
-        }
-
-        @Override
-        public <T> void completeMessage(MessageContainer<T> messageContainer) throws DbqException {
-            PgQueryService.this.completeMessage(subscriptionId, messageContainer, historyEnabled);
-        }
+    SchemaName schemaName() {
+        return schemaName;
     }
 
-    private final class DefaultConsumerQueryService extends AbstractConsumerQueryService {
-        private DefaultConsumerQueryService(
-                QueueName queueName,
-                SubscriptionId subscriptionId,
-                Integer maxPollRecords,
-                boolean historyEnabled
-        ) {
-            super(queueName, subscriptionId, maxPollRecords, historyEnabled);
-        }
-
-        @Override
-        protected boolean serializedByKey() {
-            return false;
-        }
+    JsonbConverter jsonbConverter() {
+        return jsonbConverter;
     }
 
-    private final class SerializedByKeyConsumerQueryService extends AbstractConsumerQueryService {
-        private SerializedByKeyConsumerQueryService(
-                QueueName queueName,
-                SubscriptionId subscriptionId,
-                Integer maxPollRecords,
-                boolean historyEnabled
-        ) {
-            super(queueName, subscriptionId, maxPollRecords, historyEnabled);
-        }
-
-        @Override
-        protected boolean serializedByKey() {
-            return true;
-        }
-    }
 }
