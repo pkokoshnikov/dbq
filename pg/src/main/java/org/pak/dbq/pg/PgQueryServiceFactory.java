@@ -21,19 +21,21 @@ public class PgQueryServiceFactory implements QueryServiceFactory {
     @Override
     public ConsumerQueryService createConsumerQueryService(ConsumerConfig<?> consumerConfig) {
         var properties = consumerConfig.getProperties();
-        if (properties.isSerializedByKey()) {
-            return new SerializedByKeyConsumerQueryService(
-                    pgQueryService,
-                    consumerConfig.getQueueName(),
-                    consumerConfig.getSubscriptionId(),
-                    properties.getMaxPollRecords(),
-                    properties.isHistoryEnabled());
-        }
-        return new DefaultConsumerQueryService(
+        var context = new ConsumerQueryContext(
                 pgQueryService,
                 consumerConfig.getQueueName(),
                 consumerConfig.getSubscriptionId(),
                 properties.getMaxPollRecords(),
                 properties.isHistoryEnabled());
+        return new PgConsumerQueryService(
+                context,
+                properties.isSerializedByKey()
+                        ? new SerializedByKeySelectMessagesStrategy()
+                        : new DefaultSelectMessagesStrategy(),
+                new DefaultRetryMessageStrategy(),
+                properties.isHistoryEnabled()
+                        ? new HistoryFailMessageStrategy()
+                        : new DefaultFailMessageStrategy(),
+                new DefaultCompleteMessageStrategy());
     }
 }
