@@ -3,7 +3,7 @@ package org.pak.dbq.pg.consumer;
 import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.support.StringFormatter;
-import org.pak.dbq.pg.PartitionService;
+import org.pak.dbq.pg.QueuePartitionService;
 import org.pak.dbq.pg.SchemaName;
 import org.pak.dbq.pg.TableNames;
 import org.pak.dbq.api.SubscriptionId;
@@ -16,18 +16,18 @@ import java.util.Map;
 public final class HistoryCompleteMessageStrategy implements CompleteMessageStrategy {
     private final SubscriptionId subscriptionId;
     private final PersistenceService persistenceService;
-    private final PartitionService partitionService;
+    private final QueuePartitionService queuePartitionService;
     private final String query;
 
     public HistoryCompleteMessageStrategy(
             SchemaName schemaName,
             SubscriptionId subscriptionId,
             PersistenceService persistenceService,
-            PartitionService partitionService
+            QueuePartitionService queuePartitionService
     ) {
         this.subscriptionId = subscriptionId;
         this.persistenceService = persistenceService;
-        this.partitionService = partitionService;
+        this.queuePartitionService = queuePartitionService;
         this.query = new StringFormatter().execute("""
                                 WITH deleted AS (
                                     DELETE FROM ${schema}.${subscriptionTable}
@@ -44,7 +44,7 @@ public final class HistoryCompleteMessageStrategy implements CompleteMessageStra
 
     @Override
     public <T> void completeMessage(MessageContainer<T> messageContainer) throws DbqException {
-        partitionService.ensureHistoryPartitionExists(messageContainer.getOriginatedTime(), subscriptionId);
+        queuePartitionService.ensureHistoryPartitionExists(messageContainer.getOriginatedTime(), subscriptionId);
 
         var updated = persistenceService.update(query, messageContainer.getId());
 

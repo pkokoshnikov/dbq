@@ -4,7 +4,7 @@ import org.pak.dbq.api.Message;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.support.StringFormatter;
-import org.pak.dbq.pg.PartitionService;
+import org.pak.dbq.pg.QueuePartitionService;
 import org.pak.dbq.pg.QueueTableService;
 import org.pak.dbq.pg.TableNames;
 
@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class PgProducerQueryService implements org.pak.dbq.spi.ProducerQueryService {
     private final QueueTableService pgQueryService;
-    private final PartitionService partitionService;
+    private final QueuePartitionService queuePartitionService;
     private final QueueName queueName;
     private final StringFormatter formatter = new StringFormatter();
     private final Map<String, String> queryCache = new ConcurrentHashMap<>();
@@ -25,16 +25,16 @@ public final class PgProducerQueryService implements org.pak.dbq.spi.ProducerQue
     public PgProducerQueryService(
             QueueTableService pgQueryService,
             QueueName queueName,
-            PartitionService partitionService
+            QueuePartitionService queuePartitionService
     ) {
         this.pgQueryService = pgQueryService;
-        this.partitionService = partitionService;
+        this.queuePartitionService = queuePartitionService;
         this.queueName = queueName;
     }
 
     @Override
     public <T> boolean insertMessage(Message<T> message) throws DbqException {
-        partitionService.ensureQueuePartitionExists(queueName, message.originatedTime());
+        queuePartitionService.ensureQueuePartitionExists(queueName, message.originatedTime());
 
         var query = queryCache.computeIfAbsent("insertMessage", k -> formatter.execute("""
                         INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, headers, payload)
@@ -52,7 +52,7 @@ public final class PgProducerQueryService implements org.pak.dbq.spi.ProducerQue
 
     @Override
     public <T> List<Boolean> insertBatchMessage(List<Message<T>> messages) throws DbqException {
-        partitionService.ensureQueuePartitionsExist(queueName, messages.stream()
+        queuePartitionService.ensureQueuePartitionsExist(queueName, messages.stream()
                 .map(Message::originatedTime)
                 .toList());
 

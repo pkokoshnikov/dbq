@@ -54,32 +54,32 @@ public class QueueTableService {
     }
 
     public void createPartition(String table, Instant dateTime) throws DbqException {
-        new PartitionService(schemaName, persistenceService).createPartition(table, dateTime);
+        new QueuePartitionService(schemaName, persistenceService).createPartition(table, dateTime);
     }
 
     public void createQueuePartition(QueueName queueName, Instant dateTime) throws DbqException {
-        new PartitionService(schemaName, persistenceService).createQueuePartition(queueName, dateTime);
+        new QueuePartitionService(schemaName, persistenceService).createQueuePartition(queueName, dateTime);
     }
 
     public void createHistoryPartition(SubscriptionId subscriptionId, Instant dateTime) throws DbqException {
-        new PartitionService(schemaName, persistenceService).createHistoryPartition(subscriptionId, dateTime);
+        new QueuePartitionService(schemaName, persistenceService).createHistoryPartition(subscriptionId, dateTime);
     }
 
     public List<LocalDate> getAllQueuePartitions(QueueName queueName) throws DbqException {
-        return new PartitionService(schemaName, persistenceService).getAllQueuePartitions(queueName);
+        return new QueuePartitionService(schemaName, persistenceService).getAllQueuePartitions(queueName);
     }
 
     public List<LocalDate> getAllHistoryPartitions(SubscriptionId subscriptionId) throws DbqException {
-        return new PartitionService(schemaName, persistenceService).getAllHistoryPartitions(subscriptionId);
+        return new QueuePartitionService(schemaName, persistenceService).getAllHistoryPartitions(subscriptionId);
     }
 
     public DropPartitionResult dropQueuePartition(QueueName queueName, LocalDate partition) throws DbqException {
-        return new PartitionService(schemaName, persistenceService).dropQueuePartition(queueName, partition);
+        return new QueuePartitionService(schemaName, persistenceService).dropQueuePartition(queueName, partition);
     }
 
     public DropPartitionResult dropHistoryPartition(SubscriptionId subscriptionId, LocalDate partition)
             throws DbqException {
-        return new PartitionService(schemaName, persistenceService).dropHistoryPartition(subscriptionId, partition);
+        return new QueuePartitionService(schemaName, persistenceService).dropHistoryPartition(subscriptionId, partition);
     }
 
     public ProducerQueryService createProducerQueryService(ProducerConfig<?> producerConfig) {

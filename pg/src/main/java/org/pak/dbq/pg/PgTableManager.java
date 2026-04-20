@@ -24,7 +24,7 @@ public class PgTableManager implements TableManager {
 
     private final PersistenceService persistenceService;
     private final SchemaName schemaName;
-    private final PartitionService partitionService;
+    private final QueuePartitionService queuePartitionService;
     private final String cronCreatePartitions;
     private final String cronDropPartitions;
     private final Clock clock;
@@ -37,7 +37,7 @@ public class PgTableManager implements TableManager {
         this(
                 pgQueryService.persistenceService(),
                 pgQueryService.schemaName(),
-                new PartitionService(pgQueryService.schemaName(), pgQueryService.persistenceService()),
+                new QueuePartitionService(pgQueryService.schemaName(), pgQueryService.persistenceService()),
                 cronCreatePartitions,
                 cronDropPartitions,
                 Clock.systemUTC());
@@ -52,7 +52,7 @@ public class PgTableManager implements TableManager {
         this(
                 pgQueryService.persistenceService(),
                 pgQueryService.schemaName(),
-                new PartitionService(pgQueryService.schemaName(), pgQueryService.persistenceService()),
+                new QueuePartitionService(pgQueryService.schemaName(), pgQueryService.persistenceService()),
                 cronCreatePartitions,
                 cronDropPartitions,
                 clock);
@@ -61,24 +61,24 @@ public class PgTableManager implements TableManager {
     public PgTableManager(
             PersistenceService persistenceService,
             SchemaName schemaName,
-            PartitionService partitionService,
+            QueuePartitionService queuePartitionService,
             String cronCreatePartitions,
             String cronDropPartitions
     ) {
-        this(persistenceService, schemaName, partitionService, cronCreatePartitions, cronDropPartitions, Clock.systemUTC());
+        this(persistenceService, schemaName, queuePartitionService, cronCreatePartitions, cronDropPartitions, Clock.systemUTC());
     }
 
     public PgTableManager(
             PersistenceService persistenceService,
             SchemaName schemaName,
-            PartitionService partitionService,
+            QueuePartitionService queuePartitionService,
             String cronCreatePartitions,
             String cronDropPartitions,
             Clock clock
     ) {
         this.persistenceService = persistenceService;
         this.schemaName = schemaName;
-        this.partitionService = partitionService;
+        this.queuePartitionService = queuePartitionService;
         this.cronCreatePartitions = cronCreatePartitions;
         this.cronDropPartitions = cronDropPartitions;
         this.clock = clock.withZone(ZoneOffset.UTC);
@@ -91,8 +91,8 @@ public class PgTableManager implements TableManager {
             persistenceService.execute(QueueTableService.createQueueTableSql(schemaName, queueName));
         }
         var now = Instant.now(clock);
-        partitionService.createQueuePartition(queueName, now);
-        partitionService.createQueuePartition(queueName, now.plus(1, ChronoUnit.DAYS));
+        queuePartitionService.createQueuePartition(queueName, now);
+        queuePartitionService.createQueuePartition(queueName, now.plus(1, ChronoUnit.DAYS));
         registerRetention(queueRetentionDays, queueName, retentionDays, "queue");
     }
 
@@ -114,8 +114,8 @@ public class PgTableManager implements TableManager {
         if (historyEnabled) {
             var retentionDays = requireQueueRetention(queueName);
             var now = Instant.now(clock);
-            partitionService.createHistoryPartition(subscriptionId, now);
-            partitionService.createHistoryPartition(subscriptionId, now.plus(1, ChronoUnit.DAYS));
+            queuePartitionService.createHistoryPartition(subscriptionId, now);
+            queuePartitionService.createHistoryPartition(subscriptionId, now.plus(1, ChronoUnit.DAYS));
             registerRetention(historyRetentionDays, subscriptionId, retentionDays, "history");
         }
     }
@@ -154,10 +154,10 @@ public class PgTableManager implements TableManager {
         var date = Instant.now(clock).plus(Duration.ofDays(1));
 
         for (var queueName : queueRetentionDays.keySet()) {
-            partitionService.createQueuePartition(queueName, date);
+            queuePartitionService.createQueuePartition(queueName, date);
         }
         for (var subscriptionId : historyRetentionDays.keySet()) {
-            partitionService.createHistoryPartition(subscriptionId, date);
+            queuePartitionService.createHistoryPartition(subscriptionId, date);
         }
     }
 
@@ -167,13 +167,13 @@ public class PgTableManager implements TableManager {
         for (var entry : historyRetentionDays.entrySet()) {
             var subscriptionId = entry.getKey();
             var retentionDays = entry.getValue();
-            var partitions = partitionService.getAllHistoryPartitions(subscriptionId);
+            var partitions = queuePartitionService.getAllHistoryPartitions(subscriptionId);
             for (var partition : partitions) {
                 if (!partition.isBefore(todayUtc.minusDays(retentionDays))) {
                     continue;
                 }
                 log.info("Dropping history subscription partition {} for {}", partition, subscriptionId.id());
-                var result = partitionService.dropHistoryPartition(subscriptionId, partition);
+                var result = queuePartitionService.dropHistoryPartition(subscriptionId, partition);
                 if (result == DropPartitionResult.HAS_REFERENCES) {
                     log.warn("Partition {} for history {} still has references, skipping", partition,
                             subscriptionId.id());
@@ -184,13 +184,13 @@ public class PgTableManager implements TableManager {
         for (var entry : queueRetentionDays.entrySet()) {
             var queueName = entry.getKey();
             var retentionDays = entry.getValue();
-            var partitions = partitionService.getAllQueuePartitions(queueName);
+            var partitions = queuePartitionService.getAllQueuePartitions(queueName);
             for (var partition : partitions) {
                 if (!partition.isBefore(todayUtc.minusDays(retentionDays))) {
                     continue;
                 }
                 log.info("Dropping message partition {} for {}", partition, queueName.name());
-                var result = partitionService.dropQueuePartition(queueName, partition);
+                var result = queuePartitionService.dropQueuePartition(queueName, partition);
                 if (result == DropPartitionResult.HAS_REFERENCES) {
                     log.warn("Partition {} for queue {} still has references, skipping", partition,
                             queueName.name());

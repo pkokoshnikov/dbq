@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
-public final class PartitionService {
+public final class QueuePartitionService {
     private record PartitionBounds(Instant from, Instant to) {
     }
 
@@ -52,7 +52,7 @@ public final class PartitionService {
             .build();
     private final SchemaName schemaName;
 
-    public PartitionService(SchemaName schemaName, PersistenceService persistenceService) {
+    public QueuePartitionService(SchemaName schemaName, PersistenceService persistenceService) {
         this.schemaName = schemaName;
         this.persistenceService = persistenceService;
     }
