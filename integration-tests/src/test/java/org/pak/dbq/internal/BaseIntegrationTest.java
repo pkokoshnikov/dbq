@@ -326,6 +326,11 @@ public class BaseIntegrationTest {
         return jdbcTemplate.query(query, (rs, rowNum) -> rs.getString("partition"));
     }
 
+    protected boolean tableExists(String tableName) {
+        return jdbcTemplate.queryForObject("SELECT to_regclass(?)", String.class,
+                TEST_SCHEMA.value() + "." + tableName) != null;
+    }
+
     @SuppressWarnings("unchecked")
     private static <T, E extends Throwable> T sneakyThrow(Throwable throwable) throws E {
         throw (E) throwable;

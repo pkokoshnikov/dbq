@@ -40,7 +40,7 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
         jdbcTemplate = setupJdbcTemplate(dataSource);
         persistenceService = setupPersistenceService(jdbcTemplate);
         jsonbConverter = setupJsonbConverter();
-        pgQueryService = setupQueryService(persistenceService, jsonbConverter);
+        pgQueryService = setupQueryService(persistenceService);
     }
 
     @AfterEach
@@ -88,6 +88,36 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("SELECT to_regclass(?)", String.class,
                 TEST_SCHEMA.value() + "." + SUBSCRIPTION_TABLE_1_KEY_LOCK))
                 .isEqualTo(SUBSCRIPTION_TABLE_1_KEY_LOCK);
+    }
+
+    @Test
+    void clearTablesDropsQueueTable() throws Exception {
+        createQueueTable();
+        partitionService().createQueuePartition(QUEUE_NAME, Instant.now());
+
+        assertThat(tableExists(QUEUE_TABLE)).isTrue();
+
+        clearTables();
+
+        assertThat(tableExists(QUEUE_TABLE)).isFalse();
+    }
+
+    @Test
+    void clearTablesDropsSubscriptionTablesIncludingHistoryAndKeyLock() throws Exception {
+        createQueueTable();
+        createSubscriptionTable(SUBSCRIPTION_NAME_1, true, true);
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_1, Instant.now());
+
+        assertThat(tableExists(SUBSCRIPTION_TABLE_1)).isTrue();
+        assertThat(tableExists(SUBSCRIPTION_TABLE_1_HISTORY)).isTrue();
+        assertThat(tableExists(SUBSCRIPTION_TABLE_1_KEY_LOCK)).isTrue();
+
+        clearTables();
+
+        assertThat(tableExists(SUBSCRIPTION_TABLE_1)).isFalse();
+        assertThat(tableExists(SUBSCRIPTION_TABLE_1_HISTORY)).isFalse();
+        assertThat(tableExists(SUBSCRIPTION_TABLE_1_KEY_LOCK)).isFalse();
+        assertThat(tableExists(QUEUE_TABLE)).isFalse();
     }
 
     @Test
