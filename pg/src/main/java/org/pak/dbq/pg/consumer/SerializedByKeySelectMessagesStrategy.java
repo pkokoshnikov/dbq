@@ -5,6 +5,7 @@ import org.pak.dbq.error.NonRetryablePersistenceException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.SchemaName;
+import org.pak.dbq.pg.TableNames;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.spi.PersistenceService;
 
@@ -17,7 +18,6 @@ import static lombok.Lombok.sneakyThrow;
 
 public final class SerializedByKeySelectMessagesStrategy implements SelectMessagesStrategy {
     private final SubscriptionId subscriptionId;
-    private final String subscriptionKeyLockTableName;
     private final Map<String, Boolean> hasKeyLockTableCache = new ConcurrentHashMap<>();
     private final PersistenceService persistenceService;
     private final MessageContainerMapper messageContainerMapper;
@@ -33,7 +33,6 @@ public final class SerializedByKeySelectMessagesStrategy implements SelectMessag
             MessageContainerMapper messageContainerMapper
     ) {
         this.subscriptionId = subscriptionId;
-        this.subscriptionKeyLockTableName = ConsumerTableNames.subscriptionKeyLockTableName(subscriptionId);
         this.persistenceService = persistenceService;
         this.messageContainerMapper = messageContainerMapper;
         this.selectMessagesQuery = new StringFormatter().execute("""
@@ -48,15 +47,15 @@ public final class SerializedByKeySelectMessagesStrategy implements SelectMessag
                         LIMIT ${maxPollRecords}
                         FOR UPDATE OF k, s SKIP LOCKED""",
                 Map.of("schema", schemaName.value(),
-                        "subscriptionTable", ConsumerTableNames.subscriptionTableName(subscriptionId),
+                        "subscriptionTable", TableNames.subscriptionTableName(subscriptionId),
                         "queueTable", queueTableName,
-                        "subscriptionKeyLockTable", subscriptionKeyLockTableName,
+                        "subscriptionKeyLockTable", TableNames.subscriptionKeyLockTableName(subscriptionId),
                         "maxPollRecords", maxPollRecords.toString()));
         this.hasKeyLockTableQuery = new StringFormatter().execute("""
                 SELECT to_regclass('${schema}.${subscriptionKeyLockTable}') IS NOT NULL AS exists
                 """, Map.of(
                 "schema", schemaName.value(),
-                "subscriptionKeyLockTable", subscriptionKeyLockTableName
+                "subscriptionKeyLockTable", TableNames.subscriptionKeyLockTableName(subscriptionId)
         ));
     }
 

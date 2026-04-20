@@ -2,6 +2,7 @@ package org.pak.dbq.pg;
 
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
+
 public class PgSchemaSqlGenerator {
     private final SchemaName schemaName;
 
@@ -10,7 +11,7 @@ public class PgSchemaSqlGenerator {
     }
 
     public String createQueueTable(QueueName queueName) {
-        return PgQueryService.createQueueTableSql(schemaName, queueName);
+        return QueueTableService.createQueueTableSql(schemaName, queueName);
     }
 
     public String createSubscriptionTable(QueueName queueName, SubscriptionId subscriptionId) {
@@ -27,7 +28,7 @@ public class PgSchemaSqlGenerator {
             boolean historyEnabled,
             boolean serializedByKey
     ) {
-        return PgQueryService.createSubscriptionTableSql(
+        return QueueTableService.createSubscriptionTableSql(
                 schemaName,
                 queueName,
                 subscriptionId,

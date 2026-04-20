@@ -4,6 +4,7 @@ import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.SchemaName;
+import org.pak.dbq.pg.TableNames;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.spi.PersistenceService;
 
@@ -34,7 +35,7 @@ public final class DefaultSelectMessagesStrategy implements SelectMessagesStrate
                         ORDER BY s.execute_after ASC, s.id ASC
                         LIMIT ${maxPollRecords} FOR UPDATE OF s SKIP LOCKED""",
                 Map.of("schema", schemaName.value(),
-                        "subscriptionTable", ConsumerTableNames.subscriptionTableName(subscriptionId),
+                        "subscriptionTable", TableNames.subscriptionTableName(subscriptionId),
                         "queueTable", queueTableName,
                         "maxPollRecords", maxPollRecords.toString()));
     }

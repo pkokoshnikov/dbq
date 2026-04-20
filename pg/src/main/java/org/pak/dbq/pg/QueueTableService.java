@@ -2,29 +2,104 @@ package org.pak.dbq.pg;
 
 import lombok.extern.slf4j.Slf4j;
 import org.pak.dbq.api.QueueName;
+import org.pak.dbq.api.ConsumerConfig;
+import org.pak.dbq.api.ProducerConfig;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.support.StringFormatter;
+import org.pak.dbq.pg.jsonb.JsonbConverter;
+import org.pak.dbq.spi.ConsumerQueryService;
 import org.pak.dbq.spi.PersistenceService;
+import org.pak.dbq.spi.ProducerQueryService;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
-public class PgQueryService  {
+public class QueueTableService {
     private static final StringFormatter STATIC_FORMATTER = new StringFormatter();
 
     private final PersistenceService persistenceService;
     private final SchemaName schemaName;
+    private final JsonbConverter jsonbConverter;
 
-    public PgQueryService(
-            PersistenceService persistenceService, SchemaName schemaName
+    public QueueTableService(
+            PersistenceService persistenceService,
+            SchemaName schemaName,
+            JsonbConverter jsonbConverter
     ) {
         this.persistenceService = persistenceService;
         this.schemaName = schemaName;
+        this.jsonbConverter = jsonbConverter;
     }
 
     public void createQueueTable(QueueName queueName) throws DbqException {
         persistenceService.execute(createQueueTableSql(schemaName, queueName));
+    }
+
+    public void createSubscriptionTable(
+            QueueName queueName,
+            SubscriptionId subscriptionId,
+            boolean historyEnabled,
+            boolean serializedByKey
+    ) throws DbqException {
+        persistenceService.execute(createSubscriptionTableSql(
+                schemaName,
+                queueName,
+                subscriptionId,
+                historyEnabled,
+                serializedByKey));
+    }
+
+    public void createPartition(String table, Instant dateTime) throws DbqException {
+        new PartitionService(schemaName, persistenceService).createPartition(table, dateTime);
+    }
+
+    public void createQueuePartition(QueueName queueName, Instant dateTime) throws DbqException {
+        new PartitionService(schemaName, persistenceService).createQueuePartition(queueName, dateTime);
+    }
+
+    public void createHistoryPartition(SubscriptionId subscriptionId, Instant dateTime) throws DbqException {
+        new PartitionService(schemaName, persistenceService).createHistoryPartition(subscriptionId, dateTime);
+    }
+
+    public List<LocalDate> getAllQueuePartitions(QueueName queueName) throws DbqException {
+        return new PartitionService(schemaName, persistenceService).getAllQueuePartitions(queueName);
+    }
+
+    public List<LocalDate> getAllHistoryPartitions(SubscriptionId subscriptionId) throws DbqException {
+        return new PartitionService(schemaName, persistenceService).getAllHistoryPartitions(subscriptionId);
+    }
+
+    public DropPartitionResult dropQueuePartition(QueueName queueName, LocalDate partition) throws DbqException {
+        return new PartitionService(schemaName, persistenceService).dropQueuePartition(queueName, partition);
+    }
+
+    public DropPartitionResult dropHistoryPartition(SubscriptionId subscriptionId, LocalDate partition)
+            throws DbqException {
+        return new PartitionService(schemaName, persistenceService).dropHistoryPartition(subscriptionId, partition);
+    }
+
+    public ProducerQueryService createProducerQueryService(ProducerConfig<?> producerConfig) {
+        return new PgQueryServiceFactory(this).createProducerQueryService(producerConfig);
+    }
+
+    public ConsumerQueryService createConsumerQueryService(ConsumerConfig<?> consumerConfig) {
+        return new PgQueryServiceFactory(this).createConsumerQueryService(consumerConfig);
+    }
+
+    public PersistenceService persistenceService() {
+        return persistenceService;
+    }
+
+    public SchemaName schemaName() {
+        return schemaName;
+    }
+
+    public JsonbConverter jsonbConverter() {
+        return jsonbConverter;
     }
 
     public static String createQueueTableSql(SchemaName schemaName, QueueName queueName) {
@@ -43,7 +118,7 @@ public class PgQueryService  {
                 CREATE UNIQUE INDEX IF NOT EXISTS ${queueTable}_message_key_idx ON ${schema}.${queueTable}(originated_at, key);
                 """, Map.of(
                 "schema", schemaName.value(),
-                "queueTable", queueTableName(queueName))
+                "queueTable", TableNames.queueTableName(queueName))
         );
     }
 
@@ -56,13 +131,13 @@ public class PgQueryService  {
     ) {
         var params = Map.of(
                 "schema", schemaName.value(),
-                "queueTable", queueTableName(queueName),
-                "subscriptionTable", subscriptionTableName(subscriptionId),
-                "subscriptionHistoryTable", subscriptionHistoryTableName(subscriptionId),
-                "subscriptionKeyLockTable", subscriptionKeyLockTableName(subscriptionId),
-                "insertTrigger", subscriptionTableName(subscriptionId) + "_insert_trigger",
-                "insertFunction", subscriptionTableName(subscriptionId) + "_insert_function()",
-                "subscriptionKeyIndex", subscriptionTableName(subscriptionId) + "_key_idx");
+                "queueTable", TableNames.queueTableName(queueName),
+                "subscriptionTable", TableNames.subscriptionTableName(subscriptionId),
+                "subscriptionHistoryTable", TableNames.subscriptionHistoryTableName(subscriptionId),
+                "subscriptionKeyLockTable", TableNames.subscriptionKeyLockTableName(subscriptionId),
+                "insertTrigger", TableNames.subscriptionTableName(subscriptionId) + "_insert_trigger",
+                "insertFunction", TableNames.subscriptionTableName(subscriptionId) + "_insert_function()",
+                "subscriptionKeyIndex", TableNames.subscriptionTableName(subscriptionId) + "_key_idx");
 
         var sql = new StringBuilder();
         sql.append(STATIC_FORMATTER.execute("""
@@ -164,29 +239,4 @@ public class PgQueryService  {
 
         return sql.toString();
     }
-
-    public static String queueTableName(QueueName queueName) {
-        return queueName.name().replace("-", "_");
-    }
-
-    public static String subscriptionTableName(SubscriptionId subscriptionId) {
-        return subscriptionId.id().replace("-", "_");
-    }
-
-    public static String subscriptionHistoryTableName(SubscriptionId subscriptionId) {
-        return subscriptionId.id().replace("-", "_") + "_history";
-    }
-
-    public static String subscriptionKeyLockTableName(SubscriptionId subscriptionId) {
-        return subscriptionId.id().replace("-", "_") + "_key_lock";
-    }
-
-    public PersistenceService persistenceService() {
-        return persistenceService;
-    }
-
-    public SchemaName schemaName() {
-        return schemaName;
-    }
-
 }

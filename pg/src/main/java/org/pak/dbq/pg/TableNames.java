@@ -1,10 +1,10 @@
-package org.pak.dbq.pg.consumer;
+package org.pak.dbq.pg;
 
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
 
-public final class ConsumerTableNames {
-    private ConsumerTableNames() {
+public final class TableNames {
+    private TableNames() {
     }
 
     public static String queueTableName(QueueName queueName) {
@@ -16,10 +16,10 @@ public final class ConsumerTableNames {
     }
 
     public static String subscriptionHistoryTableName(SubscriptionId subscriptionId) {
-        return subscriptionId.id().replace("-", "_") + "_history";
+        return subscriptionTableName(subscriptionId) + "_history";
     }
 
     public static String subscriptionKeyLockTableName(SubscriptionId subscriptionId) {
-        return subscriptionId.id().replace("-", "_") + "_key_lock";
+        return subscriptionTableName(subscriptionId) + "_key_lock";
     }
 }

@@ -9,9 +9,9 @@ import org.pak.dbq.spi.ProducerQueryService;
 import org.pak.dbq.spi.QueryServiceFactory;
 
 public class PgQueryServiceFactory implements QueryServiceFactory {
-    private final PgQueryService pgQueryService;
+    private final QueueTableService pgQueryService;
 
-    public PgQueryServiceFactory(PgQueryService pgQueryService) {
+    public PgQueryServiceFactory(QueueTableService pgQueryService) {
         this.pgQueryService = pgQueryService;
     }
 
@@ -20,7 +20,7 @@ public class PgQueryServiceFactory implements QueryServiceFactory {
         return new PgProducerQueryService(
                 pgQueryService,
                 producerConfig.getQueueName(),
-                new PartitionManager(pgQueryService.schemaName(), pgQueryService.persistenceService()));
+                new PartitionService(pgQueryService.schemaName(), pgQueryService.persistenceService()));
     }
 
     @Override
@@ -28,10 +28,10 @@ public class PgQueryServiceFactory implements QueryServiceFactory {
         var properties = consumerConfig.getProperties();
         var schemaName = pgQueryService.schemaName();
         var subscriptionId = consumerConfig.getSubscriptionId();
-        var queueTableName = ConsumerTableNames.queueTableName(consumerConfig.getQueueName());
+        var queueTableName = TableNames.queueTableName(consumerConfig.getQueueName());
         var persistenceService = pgQueryService.persistenceService();
         var messageContainerMapper = new MessageContainerMapper(pgQueryService.jsonbConverter());
-        var partitionManager = new PartitionManager(
+        var partitionManager = new PartitionService(
                 schemaName,
                 persistenceService);
         return new PgConsumerQueryService(

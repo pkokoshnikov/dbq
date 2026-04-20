@@ -12,12 +12,12 @@ import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class PgQueryServiceTest {
+class QueueServiceTest {
 
     @Test
     void createPartitionUsesUtcBoundariesForRange() throws Exception {
         var persistenceService = new CapturingPersistenceService();
-        var queryService = new PgQueryService(persistenceService, new SchemaName("public"), new JsonbConverter());
+        var queryService = new QueueTableService(persistenceService, new SchemaName("public"), new JsonbConverter());
 
         queryService.createPartition("test_message", Instant.parse("2026-04-03T23:30:00Z"));
 

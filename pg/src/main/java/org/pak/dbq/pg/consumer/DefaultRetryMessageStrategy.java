@@ -5,6 +5,7 @@ import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.SchemaName;
+import org.pak.dbq.pg.TableNames;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.spi.PersistenceService;
 
@@ -29,7 +30,7 @@ public final class DefaultRetryMessageStrategy implements RetryMessageStrategy {
                             error_message = ?, stack_trace = ?
                         WHERE id = ?""",
                 Map.of("schema", schemaName.value(),
-                        "subscriptionTable", ConsumerTableNames.subscriptionTableName(subscriptionId)));
+                        "subscriptionTable", TableNames.subscriptionTableName(subscriptionId)));
     }
 
     @Override

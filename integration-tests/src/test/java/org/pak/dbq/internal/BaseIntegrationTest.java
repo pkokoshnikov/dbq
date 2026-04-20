@@ -17,7 +17,8 @@ import org.pak.dbq.internal.support.NoOpMessageConsumerTelemetry;
 import org.pak.dbq.internal.support.NoOpMessageContextPropagator;
 import org.pak.dbq.internal.support.SimpleMessageFactory;
 import org.pak.dbq.internal.support.StringFormatter;
-import org.pak.dbq.pg.PgQueryService;
+import org.pak.dbq.pg.PgQueryServiceFactory;
+import org.pak.dbq.pg.QueueTableService;
 import org.pak.dbq.pg.PgTableManager;
 import org.pak.dbq.pg.SchemaName;
 import org.pak.dbq.pg.jsonb.JsonbConverter;
@@ -59,7 +60,7 @@ public class BaseIntegrationTest {
     protected static final SchemaName TEST_SCHEMA = new SchemaName("public");
     protected static final String TEST_VALUE = "test-value";
     protected static final String TEST_EXCEPTION_MESSAGE = "test-exception-payload";
-    protected PgQueryService pgQueryService;
+    protected QueueTableService pgQueryService;
     protected PgTableManager tableManager;
     protected static final StringFormatter formatter = new StringFormatter();
     protected static final Network network = Network.newNetwork();
@@ -111,11 +112,11 @@ public class BaseIntegrationTest {
         return new SpringPersistenceService(jdbcTemplate);
     }
 
-    protected static PgQueryService setupQueryService(
+    protected static QueueTableService setupQueryService(
             SpringPersistenceService persistenceService,
             JsonbConverter jsonbConverter
     ) {
-        return new PgQueryService(persistenceService, TEST_SCHEMA, jsonbConverter);
+        return new QueueTableService(persistenceService, TEST_SCHEMA, jsonbConverter);
     }
 
     protected static JsonbConverter setupJsonbConverter() {
@@ -125,7 +126,7 @@ public class BaseIntegrationTest {
     }
 
     protected static ProducerFactory.ProducerFactoryBuilder<TestMessage> setupProducerFactory(
-            PgQueryService pgQueryService
+            QueueTableService pgQueryService
     ) {
         return ProducerFactory.<TestMessage>builder()
                 .producerConfig(ProducerConfig.<TestMessage>builder()
@@ -134,21 +135,21 @@ public class BaseIntegrationTest {
                         .messageContextPropagator(new NoOpMessageContextPropagator())
                         .build())
                 .messageFactory(new SimpleMessageFactory())
-                .queryServiceFactory(pgQueryService);
+                .queryServiceFactory(new PgQueryServiceFactory(pgQueryService));
     }
 
     protected static ConsumerFactory.ConsumerFactoryBuilder<TestMessage> setupQueueProcessorFactory(
-            PgQueryService pgQueryService,
+            QueueTableService pgQueryService,
             SpringTransactionService springTransactionService
     ) {
         return ConsumerFactory.<TestMessage>builder()
                 .messageFactory(new SimpleMessageFactory())
                 .messageHandler(testMessage -> {})
-                .queryServiceFactory(pgQueryService)
                 .transactionService(springTransactionService)
                 .retryablePolicy(new SimpleRetryablePolicy())
                 .blockingPolicy(new SimpleBlockingPolicy())
                 .nonRetryablePolicy(new SimpleNonRetryablePolicy())
+                .queryServiceFactory(new PgQueryServiceFactory(pgQueryService))
                 .queueName(QUEUE_NAME)
                 .subscriptionId(SUBSCRIPTION_NAME_1)
                 .messageContextPropagator(new NoOpMessageContextPropagator())
@@ -158,7 +159,7 @@ public class BaseIntegrationTest {
                         .build());
     }
 
-    protected static PgTableManager setupTableManager(PgQueryService pgQueryService) {
+    protected static PgTableManager setupTableManager(QueueTableService pgQueryService) {
         return new PgTableManager(pgQueryService, "* * * * * ?", "* * * * * ?");
     }
 

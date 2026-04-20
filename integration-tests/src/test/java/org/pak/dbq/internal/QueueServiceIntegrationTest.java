@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.pak.dbq.internal.TestMessage.QUEUE_NAME;
 
 @Testcontainers
-public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
+public class QueueServiceIntegrationTest extends BaseIntegrationTest {
 
 
     @BeforeEach

@@ -5,6 +5,7 @@ import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.SchemaName;
+import org.pak.dbq.pg.TableNames;
 import org.pak.dbq.spi.PersistenceService;
 
 import java.util.Map;
@@ -27,8 +28,8 @@ public final class CleanupKeyLockCompleteMessageStrategy implements CompleteMess
                                 WHERE key = ?
                             )""",
                 Map.of("schema", schemaName.value(),
-                        "subscriptionTable", ConsumerTableNames.subscriptionTableName(subscriptionId),
-                        "subscriptionKeyLockTable", ConsumerTableNames.subscriptionKeyLockTableName(subscriptionId)));
+                        "subscriptionTable", TableNames.subscriptionTableName(subscriptionId),
+                        "subscriptionKeyLockTable", TableNames.subscriptionKeyLockTableName(subscriptionId)));
         this.persistenceServicee = persistenceServicee;
     }
 

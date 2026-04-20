@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
-public final class PartitionManager {
+public final class PartitionService {
     private record PartitionBounds(Instant from, Instant to) {
     }
 
@@ -52,7 +52,7 @@ public final class PartitionManager {
             .build();
     private final SchemaName schemaName;
 
-    public PartitionManager(SchemaName schemaName, PersistenceService persistenceService) {
+    public PartitionService(SchemaName schemaName, PersistenceService persistenceService) {
         this.schemaName = schemaName;
         this.persistenceService = persistenceService;
     }
@@ -80,41 +80,41 @@ public final class PartitionManager {
 
     public DropPartitionResult dropQueuePartition(QueueName queueName, LocalDate partition)
             throws DbqException {
-        var table = PgQueryService.queueTableName(queueName);
+        var table = TableNames.queueTableName(queueName);
         var partitionName = partitionName(table, partition);
         return dropPartition(table, partitionName, true);
     }
 
     public DropPartitionResult dropHistoryPartition(SubscriptionId subscriptionId, LocalDate partition)
             throws DbqException {
-        var table = PgQueryService.subscriptionHistoryTableName(subscriptionId);
+        var table = TableNames.subscriptionHistoryTableName(subscriptionId);
         var partitionName = partitionName(table, partition);
         return dropPartition(table, partitionName, false);
     }
 
     public void createQueuePartition(QueueName queueName, Instant includeDateTime) throws DbqException {
-        createPartition(PgQueryService.queueTableName(queueName), includeDateTime);
+        createPartition(TableNames.queueTableName(queueName), includeDateTime);
     }
 
     public void createHistoryPartition(SubscriptionId subscriptionId, Instant includeDateTime)
             throws DbqException {
-        createPartition(PgQueryService.subscriptionHistoryTableName(subscriptionId), includeDateTime);
+        createPartition(TableNames.subscriptionHistoryTableName(subscriptionId), includeDateTime);
     }
 
     public List<LocalDate> getAllQueuePartitions(QueueName queueName) throws DbqException {
-        return getAllPartitions(PgQueryService.queueTableName(queueName));
+        return getAllPartitions(TableNames.queueTableName(queueName));
     }
 
     public List<LocalDate> getAllHistoryPartitions(SubscriptionId subscriptionId) throws DbqException {
-        return getAllPartitions(PgQueryService.subscriptionHistoryTableName(subscriptionId));
+        return getAllPartitions(TableNames.subscriptionHistoryTableName(subscriptionId));
     }
 
     public void ensureQueuePartitionExists(QueueName queueName, Instant originatedTime) throws DbqException {
-        ensurePartitionExists(PgQueryService.queueTableName(queueName), originatedTime);
+        ensurePartitionExists(TableNames.queueTableName(queueName), originatedTime);
     }
 
     public void ensureQueuePartitionsExist(QueueName queueName, List<Instant> originatedTimes) throws DbqException {
-        var table = PgQueryService.queueTableName(queueName);
+        var table = TableNames.queueTableName(queueName);
         var partitionDates = originatedTimes.stream()
                 .map(originatedTime -> originatedTime.atOffset(ZoneOffset.UTC).toLocalDate())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
@@ -125,7 +125,7 @@ public final class PartitionManager {
 
     public void ensureHistoryPartitionExists(Instant originatedTime, SubscriptionId subscriptionId) throws DbqException {
         ensurePartitionExists(
-                PgQueryService.subscriptionHistoryTableName(Objects.requireNonNull(subscriptionId)),
+                TableNames.subscriptionHistoryTableName(Objects.requireNonNull(subscriptionId)),
                 originatedTime);
     }
 

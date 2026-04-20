@@ -4,6 +4,7 @@ import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.SchemaName;
+import org.pak.dbq.pg.TableNames;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.spi.PersistenceService;
 
@@ -24,7 +25,7 @@ public final class DefaultCompleteMessageStrategy implements CompleteMessageStra
         this.query = new StringFormatter().execute("""
                         DELETE FROM ${schema}.${subscriptionTable} WHERE id = ?""",
                 Map.of("schema", schemaName.value(),
-                        "subscriptionTable", ConsumerTableNames.subscriptionTableName(subscriptionId)));
+                        "subscriptionTable", TableNames.subscriptionTableName(subscriptionId)));
     }
 
     @Override

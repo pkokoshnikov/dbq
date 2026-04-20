@@ -4,8 +4,9 @@ import org.pak.dbq.api.Message;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.support.StringFormatter;
-import org.pak.dbq.pg.PartitionManager;
-import org.pak.dbq.pg.PgQueryService;
+import org.pak.dbq.pg.PartitionService;
+import org.pak.dbq.pg.QueueTableService;
+import org.pak.dbq.pg.TableNames;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -15,32 +16,32 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class PgProducerQueryService implements org.pak.dbq.spi.ProducerQueryService {
-    private final PgQueryService pgQueryService;
-    private final PartitionManager partitionManager;
+    private final QueueTableService pgQueryService;
+    private final PartitionService partitionService;
     private final QueueName queueName;
     private final StringFormatter formatter = new StringFormatter();
     private final Map<String, String> queryCache = new ConcurrentHashMap<>();
 
     public PgProducerQueryService(
-            PgQueryService pgQueryService,
+            QueueTableService pgQueryService,
             QueueName queueName,
-            PartitionManager partitionManager
+            PartitionService partitionService
     ) {
         this.pgQueryService = pgQueryService;
-        this.partitionManager = partitionManager;
+        this.partitionService = partitionService;
         this.queueName = queueName;
     }
 
     @Override
     public <T> boolean insertMessage(Message<T> message) throws DbqException {
-        partitionManager.ensureQueuePartitionExists(queueName, message.originatedTime());
+        partitionService.ensureQueuePartitionExists(queueName, message.originatedTime());
 
         var query = queryCache.computeIfAbsent("insertMessage", k -> formatter.execute("""
                         INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, headers, payload)
                         VALUES (CURRENT_TIMESTAMP,CURRENT_TIMESTAMP, ?, ?, ?, ?)
                         ON CONFLICT (key, originated_at) DO NOTHING""",
                 Map.of("schema", pgQueryService.schemaName().value(),
-                        "queueTable", PgQueryService.queueTableName(queueName))));
+                        "queueTable", TableNames.queueTableName(queueName))));
 
         return pgQueryService.persistenceService().insert(query,
                 message.key(),
@@ -51,7 +52,7 @@ public final class PgProducerQueryService implements org.pak.dbq.spi.ProducerQue
 
     @Override
     public <T> List<Boolean> insertBatchMessage(List<Message<T>> messages) throws DbqException {
-        partitionManager.ensureQueuePartitionsExist(queueName, messages.stream()
+        partitionService.ensureQueuePartitionsExist(queueName, messages.stream()
                 .map(Message::originatedTime)
                 .toList());
 
@@ -59,7 +60,7 @@ public final class PgProducerQueryService implements org.pak.dbq.spi.ProducerQue
                         INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, headers, payload)
                         VALUES (CURRENT_TIMESTAMP,CURRENT_TIMESTAMP, ?, ?, ?, ?) ON CONFLICT (key, originated_at) DO NOTHING""",
                 Map.of("schema", pgQueryService.schemaName().value(),
-                        "queueTable", PgQueryService.queueTableName(queueName))));
+                        "queueTable", TableNames.queueTableName(queueName))));
 
         var args = new java.util.ArrayList<Object[]>(messages.size());
         for (var message : messages) {
