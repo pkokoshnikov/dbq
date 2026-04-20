@@ -3,37 +3,79 @@ package org.pak.dbq.pg;
 import org.pak.dbq.api.ConsumerConfig;
 import org.pak.dbq.api.ProducerConfig;
 import org.pak.dbq.pg.consumer.*;
+import org.pak.dbq.pg.jsonb.JsonbConverter;
 import org.pak.dbq.pg.producer.PgProducerQueryService;
+import org.pak.dbq.spi.PersistenceService;
 import org.pak.dbq.spi.ConsumerQueryService;
 import org.pak.dbq.spi.ProducerQueryService;
 import org.pak.dbq.spi.QueryServiceFactory;
 
 public class PgQueryServiceFactory implements QueryServiceFactory {
-    private final QueueTableService pgQueryService;
+    private final QueueTableService queueTableService;
+    private final PersistenceService persistenceService;
+    private final SchemaName schemaName;
+    private final JsonbConverter jsonbConverter;
 
-    public PgQueryServiceFactory(QueueTableService pgQueryService) {
-        this.pgQueryService = pgQueryService;
+    public PgQueryServiceFactory(
+            QueueTableService queueTableService,
+            PersistenceService persistenceService,
+            SchemaName schemaName,
+            JsonbConverter jsonbConverter
+    ) {
+        this.queueTableService = queueTableService;
+        this.persistenceService = persistenceService;
+        this.schemaName = schemaName;
+        this.jsonbConverter = jsonbConverter;
     }
 
     @Override
     public ProducerQueryService createProducerQueryService(ProducerConfig<?> producerConfig) {
         return new PgProducerQueryService(
-                pgQueryService,
+                persistenceService,
+                schemaName,
+                jsonbConverter,
                 producerConfig.getQueueName(),
-                new QueuePartitionService(pgQueryService.schemaName(), pgQueryService.persistenceService()));
+                new QueuePartitionService(schemaName, persistenceService));
     }
 
     @Override
     public ConsumerQueryService createConsumerQueryService(ConsumerConfig<?> consumerConfig) {
         var properties = consumerConfig.getProperties();
-        var schemaName = pgQueryService.schemaName();
         var subscriptionId = consumerConfig.getSubscriptionId();
         var queueTableName = TableNames.queueTableName(consumerConfig.getQueueName());
-        var persistenceService = pgQueryService.persistenceService();
-        var messageContainerMapper = new MessageContainerMapper(pgQueryService.jsonbConverter());
+        var messageContainerMapper = new MessageContainerMapper(jsonbConverter);
         var partitionManager = new QueuePartitionService(
                 schemaName,
                 persistenceService);
+        var failMessageStrategy = properties.isHistoryEnabled()
+                ? new HistoryFailMessageStrategy(
+                        schemaName,
+                        subscriptionId,
+                        persistenceService,
+                        partitionManager)
+                : new DefaultFailMessageStrategy(schemaName, subscriptionId, persistenceService);
+        if (properties.isSerializedByKey()) {
+            failMessageStrategy = new CleanupKeyLockFailMessageStrategy(
+                    subscriptionId,
+                    failMessageStrategy,
+                    schemaName);
+        }
+
+        var completeMessageStrategy = properties.isHistoryEnabled()
+                ? new HistoryCompleteMessageStrategy(
+                        schemaName,
+                        subscriptionId,
+                        persistenceService,
+                        partitionManager)
+                : new DefaultCompleteMessageStrategy(schemaName, subscriptionId, persistenceService);
+        if (properties.isSerializedByKey()) {
+            completeMessageStrategy = new CleanupKeyLockCompleteMessageStrategy(
+                    subscriptionId,
+                    completeMessageStrategy,
+                    schemaName,
+                    persistenceService);
+        }
+
         return new PgConsumerQueryService(
                 properties.isSerializedByKey()
                         ? new SerializedByKeySelectMessagesStrategy(
@@ -51,26 +93,7 @@ public class PgQueryServiceFactory implements QueryServiceFactory {
                                 persistenceService,
                                 messageContainerMapper),
                 new DefaultRetryMessageStrategy(schemaName, subscriptionId, persistenceService),
-                new CleanupKeyLockFailMessageStrategy(
-                        subscriptionId,
-                        properties.isHistoryEnabled()
-                                ? new HistoryFailMessageStrategy(
-                                        schemaName,
-                                        subscriptionId,
-                                        persistenceService,
-                                        partitionManager)
-                                : new DefaultFailMessageStrategy(schemaName, subscriptionId, persistenceService),
-                        schemaName),
-                new CleanupKeyLockCompleteMessageStrategy(
-                        subscriptionId,
-                        properties.isHistoryEnabled()
-                                ? new HistoryCompleteMessageStrategy(
-                                        schemaName,
-                                        subscriptionId,
-                                        persistenceService,
-                                        partitionManager)
-                                : new DefaultCompleteMessageStrategy(schemaName, subscriptionId, persistenceService),
-                        schemaName,
-                        persistenceService));
+                failMessageStrategy,
+                completeMessageStrategy);
     }
 }

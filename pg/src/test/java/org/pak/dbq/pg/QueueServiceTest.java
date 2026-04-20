@@ -1,7 +1,6 @@
 package org.pak.dbq.pg;
 
 import org.junit.jupiter.api.Test;
-import org.pak.dbq.pg.jsonb.JsonbConverter;
 import org.pak.dbq.spi.PersistenceService;
 
 import java.sql.ResultSet;
@@ -17,9 +16,9 @@ class QueueServiceTest {
     @Test
     void createPartitionUsesUtcBoundariesForRange() throws Exception {
         var persistenceService = new CapturingPersistenceService();
-        var queryService = new QueueTableService(persistenceService, new SchemaName("public"), new JsonbConverter());
+        var partitionService = new QueuePartitionService(new SchemaName("public"), persistenceService);
 
-        queryService.createPartition("test_message", Instant.parse("2026-04-03T23:30:00Z"));
+        partitionService.createPartition("test_message", Instant.parse("2026-04-03T23:30:00Z"));
 
         assertThat(persistenceService.executedQueries).singleElement().satisfies(query -> {
             assertThat(query).contains("FOR VALUES FROM ('2026-04-03T00:00:00Z')");

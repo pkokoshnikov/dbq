@@ -18,6 +18,7 @@ import org.pak.dbq.internal.support.NoOpMessageContextPropagator;
 import org.pak.dbq.internal.support.SimpleMessageFactory;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.PgQueryServiceFactory;
+import org.pak.dbq.pg.QueuePartitionService;
 import org.pak.dbq.pg.QueueTableService;
 import org.pak.dbq.pg.PgTableManager;
 import org.pak.dbq.pg.SchemaName;
@@ -116,7 +117,7 @@ public class BaseIntegrationTest {
             SpringPersistenceService persistenceService,
             JsonbConverter jsonbConverter
     ) {
-        return new QueueTableService(persistenceService, TEST_SCHEMA, jsonbConverter);
+        return new QueueTableService(persistenceService, TEST_SCHEMA);
     }
 
     protected static JsonbConverter setupJsonbConverter() {
@@ -126,7 +127,9 @@ public class BaseIntegrationTest {
     }
 
     protected static ProducerFactory.ProducerFactoryBuilder<TestMessage> setupProducerFactory(
-            QueueTableService pgQueryService
+            QueueTableService pgQueryService,
+            SpringPersistenceService persistenceService,
+            JsonbConverter jsonbConverter
     ) {
         return ProducerFactory.<TestMessage>builder()
                 .producerConfig(ProducerConfig.<TestMessage>builder()
@@ -135,12 +138,14 @@ public class BaseIntegrationTest {
                         .messageContextPropagator(new NoOpMessageContextPropagator())
                         .build())
                 .messageFactory(new SimpleMessageFactory())
-                .queryServiceFactory(new PgQueryServiceFactory(pgQueryService));
+                .queryServiceFactory(new PgQueryServiceFactory(pgQueryService, persistenceService, TEST_SCHEMA, jsonbConverter));
     }
 
     protected static ConsumerFactory.ConsumerFactoryBuilder<TestMessage> setupQueueProcessorFactory(
             QueueTableService pgQueryService,
-            SpringTransactionService springTransactionService
+            SpringTransactionService springTransactionService,
+            SpringPersistenceService persistenceService,
+            JsonbConverter jsonbConverter
     ) {
         return ConsumerFactory.<TestMessage>builder()
                 .messageFactory(new SimpleMessageFactory())
@@ -149,7 +154,7 @@ public class BaseIntegrationTest {
                 .retryablePolicy(new SimpleRetryablePolicy())
                 .blockingPolicy(new SimpleBlockingPolicy())
                 .nonRetryablePolicy(new SimpleNonRetryablePolicy())
-                .queryServiceFactory(new PgQueryServiceFactory(pgQueryService))
+                .queryServiceFactory(new PgQueryServiceFactory(pgQueryService, persistenceService, TEST_SCHEMA, jsonbConverter))
                 .queueName(QUEUE_NAME)
                 .subscriptionId(SUBSCRIPTION_NAME_1)
                 .messageContextPropagator(new NoOpMessageContextPropagator())
@@ -159,8 +164,21 @@ public class BaseIntegrationTest {
                         .build());
     }
 
-    protected static PgTableManager setupTableManager(QueueTableService pgQueryService) {
-        return new PgTableManager(pgQueryService, "* * * * * ?", "* * * * * ?");
+    protected static PgTableManager setupTableManager(SpringPersistenceService persistenceService) {
+        return new PgTableManager(
+                persistenceService,
+                TEST_SCHEMA,
+                new QueuePartitionService(TEST_SCHEMA, persistenceService),
+                "* * * * * ?",
+                "* * * * * ?");
+    }
+
+    protected QueuePartitionService partitionService() {
+        return new QueuePartitionService(TEST_SCHEMA, persistenceService);
+    }
+
+    protected PgQueryServiceFactory queryServiceFactory() {
+        return new PgQueryServiceFactory(pgQueryService, persistenceService, TEST_SCHEMA, jsonbConverter);
     }
 
     protected void createQueueTable() throws Exception {

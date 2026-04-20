@@ -40,16 +40,23 @@ class QueueManagerIntegrationTest extends BaseIntegrationTest {
         persistenceService = setupPersistenceService(jdbcTemplate);
         jsonbConverter = setupJsonbConverter();
         pgQueryService = setupQueryService(persistenceService, jsonbConverter);
-        tableManager = setupTableManager(pgQueryService);
-        producerFactory = setupProducerFactory(pgQueryService);
-        consumerFactoryBuilder = setupQueueProcessorFactory(pgQueryService, springTransactionService);
+        tableManager = setupTableManager(persistenceService);
+        producerFactory = setupProducerFactory(pgQueryService, persistenceService, jsonbConverter);
+        consumerFactoryBuilder = setupQueueProcessorFactory(
+                pgQueryService,
+                springTransactionService,
+                persistenceService,
+                jsonbConverter);
 
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         createSubscriptionTable(SUBSCRIPTION_NAME_2);
 
         queueManager = new QueueManager(new PgQueryServiceFactory(
-                new QueueTableService(persistenceService, TEST_SCHEMA, jsonbConverter)),
+                new QueueTableService(persistenceService, TEST_SCHEMA),
+                persistenceService,
+                TEST_SCHEMA,
+                jsonbConverter),
                 springTransactionService, new SimpleMessageFactory(), tableManager);
     }
 

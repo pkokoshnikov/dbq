@@ -42,9 +42,13 @@ class ConsumerIntegrationTest extends BaseIntegrationTest {
         persistenceService = setupPersistenceService(jdbcTemplate);
         jsonbConverter = setupJsonbConverter();
         pgQueryService = setupQueryService(persistenceService, jsonbConverter);
-        tableManager = setupTableManager(pgQueryService);
-        producerFactory = setupProducerFactory(pgQueryService);
-        consumerFactoryBuilder = setupQueueProcessorFactory(pgQueryService, springTransactionService);
+        tableManager = setupTableManager(persistenceService);
+        producerFactory = setupProducerFactory(pgQueryService, persistenceService, jsonbConverter);
+        consumerFactoryBuilder = setupQueueProcessorFactory(
+                pgQueryService,
+                springTransactionService,
+                persistenceService,
+                jsonbConverter);
 
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);

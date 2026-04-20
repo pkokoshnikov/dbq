@@ -2,19 +2,11 @@ package org.pak.dbq.pg;
 
 import lombok.extern.slf4j.Slf4j;
 import org.pak.dbq.api.QueueName;
-import org.pak.dbq.api.ConsumerConfig;
-import org.pak.dbq.api.ProducerConfig;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.support.StringFormatter;
-import org.pak.dbq.pg.jsonb.JsonbConverter;
-import org.pak.dbq.spi.ConsumerQueryService;
 import org.pak.dbq.spi.PersistenceService;
-import org.pak.dbq.spi.ProducerQueryService;
 
-import java.time.Instant;
-import java.time.LocalDate;
-import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -23,16 +15,10 @@ public class QueueTableService {
 
     private final PersistenceService persistenceService;
     private final SchemaName schemaName;
-    private final JsonbConverter jsonbConverter;
 
-    public QueueTableService(
-            PersistenceService persistenceService,
-            SchemaName schemaName,
-            JsonbConverter jsonbConverter
-    ) {
+    public QueueTableService(PersistenceService persistenceService, SchemaName schemaName) {
         this.persistenceService = persistenceService;
         this.schemaName = schemaName;
-        this.jsonbConverter = jsonbConverter;
     }
 
     public void createQueueTable(QueueName queueName) throws DbqException {
@@ -51,55 +37,6 @@ public class QueueTableService {
                 subscriptionId,
                 historyEnabled,
                 serializedByKey));
-    }
-
-    public void createPartition(String table, Instant dateTime) throws DbqException {
-        new QueuePartitionService(schemaName, persistenceService).createPartition(table, dateTime);
-    }
-
-    public void createQueuePartition(QueueName queueName, Instant dateTime) throws DbqException {
-        new QueuePartitionService(schemaName, persistenceService).createQueuePartition(queueName, dateTime);
-    }
-
-    public void createHistoryPartition(SubscriptionId subscriptionId, Instant dateTime) throws DbqException {
-        new QueuePartitionService(schemaName, persistenceService).createHistoryPartition(subscriptionId, dateTime);
-    }
-
-    public List<LocalDate> getAllQueuePartitions(QueueName queueName) throws DbqException {
-        return new QueuePartitionService(schemaName, persistenceService).getAllQueuePartitions(queueName);
-    }
-
-    public List<LocalDate> getAllHistoryPartitions(SubscriptionId subscriptionId) throws DbqException {
-        return new QueuePartitionService(schemaName, persistenceService).getAllHistoryPartitions(subscriptionId);
-    }
-
-    public DropPartitionResult dropQueuePartition(QueueName queueName, LocalDate partition) throws DbqException {
-        return new QueuePartitionService(schemaName, persistenceService).dropQueuePartition(queueName, partition);
-    }
-
-    public DropPartitionResult dropHistoryPartition(SubscriptionId subscriptionId, LocalDate partition)
-            throws DbqException {
-        return new QueuePartitionService(schemaName, persistenceService).dropHistoryPartition(subscriptionId, partition);
-    }
-
-    public ProducerQueryService createProducerQueryService(ProducerConfig<?> producerConfig) {
-        return new PgQueryServiceFactory(this).createProducerQueryService(producerConfig);
-    }
-
-    public ConsumerQueryService createConsumerQueryService(ConsumerConfig<?> consumerConfig) {
-        return new PgQueryServiceFactory(this).createConsumerQueryService(consumerConfig);
-    }
-
-    public PersistenceService persistenceService() {
-        return persistenceService;
-    }
-
-    public SchemaName schemaName() {
-        return schemaName;
-    }
-
-    public JsonbConverter jsonbConverter() {
-        return jsonbConverter;
     }
 
     public static String createQueueTableSql(SchemaName schemaName, QueueName queueName) {

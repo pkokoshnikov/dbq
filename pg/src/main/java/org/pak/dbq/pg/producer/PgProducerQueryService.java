@@ -5,8 +5,10 @@ import org.pak.dbq.api.QueueName;
 import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.support.StringFormatter;
 import org.pak.dbq.pg.QueuePartitionService;
-import org.pak.dbq.pg.QueueTableService;
+import org.pak.dbq.pg.SchemaName;
 import org.pak.dbq.pg.TableNames;
+import org.pak.dbq.pg.jsonb.JsonbConverter;
+import org.pak.dbq.spi.PersistenceService;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -16,18 +18,24 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class PgProducerQueryService implements org.pak.dbq.spi.ProducerQueryService {
-    private final QueueTableService pgQueryService;
+    private final PersistenceService persistenceService;
+    private final SchemaName schemaName;
+    private final JsonbConverter jsonbConverter;
     private final QueuePartitionService queuePartitionService;
     private final QueueName queueName;
     private final StringFormatter formatter = new StringFormatter();
     private final Map<String, String> queryCache = new ConcurrentHashMap<>();
 
     public PgProducerQueryService(
-            QueueTableService pgQueryService,
+            PersistenceService persistenceService,
+            SchemaName schemaName,
+            JsonbConverter jsonbConverter,
             QueueName queueName,
             QueuePartitionService queuePartitionService
     ) {
-        this.pgQueryService = pgQueryService;
+        this.persistenceService = persistenceService;
+        this.schemaName = schemaName;
+        this.jsonbConverter = jsonbConverter;
         this.queuePartitionService = queuePartitionService;
         this.queueName = queueName;
     }
@@ -37,17 +45,17 @@ public final class PgProducerQueryService implements org.pak.dbq.spi.ProducerQue
         queuePartitionService.ensureQueuePartitionExists(queueName, message.originatedTime());
 
         var query = queryCache.computeIfAbsent("insertMessage", k -> formatter.execute("""
-                        INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, headers, payload)
+                INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, headers, payload)
                         VALUES (CURRENT_TIMESTAMP,CURRENT_TIMESTAMP, ?, ?, ?, ?)
                         ON CONFLICT (key, originated_at) DO NOTHING""",
-                Map.of("schema", pgQueryService.schemaName().value(),
+                Map.of("schema", schemaName.value(),
                         "queueTable", TableNames.queueTableName(queueName))));
 
-        return pgQueryService.persistenceService().insert(query,
+        return persistenceService.insert(query,
                 message.key(),
                 OffsetDateTime.ofInstant(message.originatedTime(), ZoneId.systemDefault()),
-                pgQueryService.jsonbConverter().toPGObject(message.headers()),
-                pgQueryService.jsonbConverter().toPGObject(message.payload())) > 0;
+                jsonbConverter.toPGObject(message.headers()),
+                jsonbConverter.toPGObject(message.payload())) > 0;
     }
 
     @Override
@@ -57,9 +65,9 @@ public final class PgProducerQueryService implements org.pak.dbq.spi.ProducerQue
                 .toList());
 
         var query = queryCache.computeIfAbsent("insertBatchMessage", k -> formatter.execute("""
-                        INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, headers, payload)
+                INSERT INTO ${schema}.${queueTable} (created_at, execute_after, key, originated_at, headers, payload)
                         VALUES (CURRENT_TIMESTAMP,CURRENT_TIMESTAMP, ?, ?, ?, ?) ON CONFLICT (key, originated_at) DO NOTHING""",
-                Map.of("schema", pgQueryService.schemaName().value(),
+                Map.of("schema", schemaName.value(),
                         "queueTable", TableNames.queueTableName(queueName))));
 
         var args = new java.util.ArrayList<Object[]>(messages.size());
@@ -67,12 +75,12 @@ public final class PgProducerQueryService implements org.pak.dbq.spi.ProducerQue
             args.add(new Object[]{
                     message.key(),
                     OffsetDateTime.ofInstant(message.originatedTime(), ZoneId.systemDefault()),
-                    pgQueryService.jsonbConverter().toPGObject(message.headers()),
-                    pgQueryService.jsonbConverter().toPGObject(message.payload())
+                    jsonbConverter.toPGObject(message.headers()),
+                    jsonbConverter.toPGObject(message.payload())
             });
         }
 
-        var result = pgQueryService.persistenceService().batchInsert(query, args);
+        var result = persistenceService.batchInsert(query, args);
 
         return Arrays.stream(result).mapToObj(i -> i > 0).toList();
     }

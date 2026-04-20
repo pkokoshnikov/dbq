@@ -51,7 +51,7 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
     @Test
     void createQueuePartitionTest() throws Exception {
         createQueueTable();
-        pgQueryService.createQueuePartition(QUEUE_NAME, Instant.now());
+        partitionService().createQueuePartition(QUEUE_NAME, Instant.now());
         var partitions = selectPartitions(QUEUE_TABLE);
 
         assertThat(partitions).hasSize(1);
@@ -62,7 +62,7 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
     void createSubscriptionPartitionTest() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, Instant.now());
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_1, Instant.now());
         var partitions = selectPartitions(SUBSCRIPTION_TABLE_1_HISTORY);
 
         assertThat(partitions).hasSize(1);
@@ -103,12 +103,12 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
     @Test
     void dropQueuePartition() throws Exception {
         createQueueTable();
-        pgQueryService.createQueuePartition(QUEUE_NAME, Instant.now());
-        var partitions = pgQueryService.getAllQueuePartitions(QUEUE_NAME);
+        partitionService().createQueuePartition(QUEUE_NAME, Instant.now());
+        var partitions = partitionService().getAllQueuePartitions(QUEUE_NAME);
 
-        pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0));
+        partitionService().dropQueuePartition(QUEUE_NAME, partitions.get(0));
 
-        partitions = pgQueryService.getAllQueuePartitions(QUEUE_NAME);
+        partitions = partitionService().getAllQueuePartitions(QUEUE_NAME);
         assertThat(partitions).hasSize(0);
     }
 
@@ -116,20 +116,20 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
     void dropQueuePartitionIsIdempotent() throws Exception {
         createQueueTable();
         Instant originatedTime = Instant.now();
-        pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
+        partitionService().createQueuePartition(QUEUE_NAME, originatedTime);
         LocalDate partition = originatedTime.atOffset(java.time.ZoneOffset.UTC).toLocalDate();
 
-        pgQueryService.dropQueuePartition(QUEUE_NAME, partition);
-        pgQueryService.dropQueuePartition(QUEUE_NAME, partition);
+        partitionService().dropQueuePartition(QUEUE_NAME, partition);
+        partitionService().dropQueuePartition(QUEUE_NAME, partition);
 
-        assertThat(pgQueryService.getAllQueuePartitions(QUEUE_NAME)).isEmpty();
+        assertThat(partitionService().getAllQueuePartitions(QUEUE_NAME)).isEmpty();
     }
 
     @Test
     void dropQueuePartitionIgnoresAlreadyDetachedPartition() throws Exception {
         createQueueTable();
         Instant originatedTime = Instant.now();
-        pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
+        partitionService().createQueuePartition(QUEUE_NAME, originatedTime);
         LocalDate partition = originatedTime.atOffset(java.time.ZoneOffset.UTC).toLocalDate();
         String partitionName = QUEUE_TABLE + "_" + partition.format(java.time.format.DateTimeFormatter.ofPattern("yyyy_MM_dd"));
 
@@ -137,9 +137,9 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
                 ALTER TABLE ${schema}.${table} DETACH PARTITION ${schema}.${partition} CONCURRENTLY;
                 """, Map.of("schema", TEST_SCHEMA.value(), "table", QUEUE_TABLE, "partition", partitionName)));
 
-        pgQueryService.dropQueuePartition(QUEUE_NAME, partition);
+        partitionService().dropQueuePartition(QUEUE_NAME, partition);
 
-        assertThat(pgQueryService.getAllQueuePartitions(QUEUE_NAME)).isEmpty();
+        assertThat(partitionService().getAllQueuePartitions(QUEUE_NAME)).isEmpty();
         assertThat(jdbcTemplate.queryForObject("SELECT to_regclass(?)", String.class,
                 TEST_SCHEMA.value() + "." + partitionName)).isNull();
     }
@@ -149,25 +149,25 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
-        pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
+        partitionService().createQueuePartition(QUEUE_NAME, originatedTime);
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
 
         producerQueryService().insertMessage(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
 
-        var partitions = pgQueryService.getAllQueuePartitions(QUEUE_NAME);
-        assertThat(pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0)))
+        var partitions = partitionService().getAllQueuePartitions(QUEUE_NAME);
+        assertThat(partitionService().dropQueuePartition(QUEUE_NAME, partitions.get(0)))
                 .isEqualTo(DropPartitionResult.HAS_REFERENCES);
 
         var consumerQueryService = consumerQueryService(SUBSCRIPTION_NAME_1, 1, true, false);
         var messages = consumerQueryService.selectMessages();
         consumerQueryService.completeMessage(messages.get(0));
 
-        assertThat(pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0)))
+        assertThat(partitionService().dropQueuePartition(QUEUE_NAME, partitions.get(0)))
                 .isEqualTo(DropPartitionResult.HAS_REFERENCES);
 
-        pgQueryService.dropHistoryPartition(SUBSCRIPTION_NAME_1,
+        partitionService().dropHistoryPartition(SUBSCRIPTION_NAME_1,
                 partitions.get(0)); // history partition should be dropped first of all
-        assertThat(pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0)))
+        assertThat(partitionService().dropQueuePartition(QUEUE_NAME, partitions.get(0)))
                 .isEqualTo(DropPartitionResult.DROPPED);
     }
 
@@ -175,14 +175,14 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
     void dropSubscriptionPartition() throws Exception {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, Instant.now());
-        var partitions = pgQueryService.getAllHistoryPartitions(SUBSCRIPTION_NAME_1);
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_1, Instant.now());
+        var partitions = partitionService().getAllHistoryPartitions(SUBSCRIPTION_NAME_1);
 
         assertThat(partitions).hasSize(1);
 
-        pgQueryService.dropHistoryPartition(SUBSCRIPTION_NAME_1, partitions.get(0));
+        partitionService().dropHistoryPartition(SUBSCRIPTION_NAME_1, partitions.get(0));
 
-        partitions = pgQueryService.getAllHistoryPartitions(SUBSCRIPTION_NAME_1);
+        partitions = partitionService().getAllHistoryPartitions(SUBSCRIPTION_NAME_1);
         assertThat(partitions).hasSize(0);
     }
 
@@ -191,13 +191,13 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
         LocalDate partition = originatedTime.atOffset(java.time.ZoneOffset.UTC).toLocalDate();
 
-        pgQueryService.dropHistoryPartition(SUBSCRIPTION_NAME_1, partition);
-        pgQueryService.dropHistoryPartition(SUBSCRIPTION_NAME_1, partition);
+        partitionService().dropHistoryPartition(SUBSCRIPTION_NAME_1, partition);
+        partitionService().dropHistoryPartition(SUBSCRIPTION_NAME_1, partition);
 
-        assertThat(pgQueryService.getAllHistoryPartitions(SUBSCRIPTION_NAME_1)).isEmpty();
+        assertThat(partitionService().getAllHistoryPartitions(SUBSCRIPTION_NAME_1)).isEmpty();
     }
 
     @Test
@@ -209,7 +209,7 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
                 new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
 
         assertThat(inserted).isTrue();
-        assertThat(pgQueryService.getAllQueuePartitions(QUEUE_NAME)).isNotEmpty();
+        assertThat(partitionService().getAllQueuePartitions(QUEUE_NAME)).isNotEmpty();
     }
 
     @Test
@@ -266,7 +266,7 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
                                 new TestMessage("test"))));
 
         assertThat(inserted).containsExactly(true, true);
-        assertThat(pgQueryService.getAllQueuePartitions(QUEUE_NAME))
+        assertThat(partitionService().getAllQueuePartitions(QUEUE_NAME))
                 .contains(originatedTime_1.atOffset(java.time.ZoneOffset.UTC).toLocalDate(),
                         originatedTime_2.atOffset(java.time.ZoneOffset.UTC).toLocalDate());
     }
@@ -300,7 +300,7 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
         consumerQueryService.completeMessage(completeMessage);
         consumerQueryService.failMessage(failMessage, new RuntimeException("fail"));
 
-        assertThat(pgQueryService.getAllHistoryPartitions(SUBSCRIPTION_NAME_1))
+        assertThat(partitionService().getAllHistoryPartitions(SUBSCRIPTION_NAME_1))
                 .contains(originatedTimeComplete.atOffset(java.time.ZoneOffset.UTC).toLocalDate(),
                         originatedTimeFail.atOffset(java.time.ZoneOffset.UTC).toLocalDate());
 
@@ -347,9 +347,9 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         createSubscriptionTable(SUBSCRIPTION_NAME_2, true);
         Instant originatedTime = Instant.now();
-        pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_2, originatedTime);
+        partitionService().createQueuePartition(QUEUE_NAME, originatedTime);
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_2, originatedTime);
 
         var headers = java.util.Map.of("traceparent", "00-test-parent");
         producerQueryService().insertMessage(
@@ -370,9 +370,9 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         createSubscriptionTable(SUBSCRIPTION_NAME_2, true);
         Instant originatedTime = Instant.now();
-        pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_2, originatedTime);
+        partitionService().createQueuePartition(QUEUE_NAME, originatedTime);
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_2, originatedTime);
 
         producerQueryService().insertBatchMessage(
                 List.of(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")),
@@ -390,8 +390,8 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
-        pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
+        partitionService().createQueuePartition(QUEUE_NAME, originatedTime);
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
 
         String key = UUID.randomUUID().toString();
         producerQueryService().insertBatchMessage(
@@ -409,8 +409,8 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
-        pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
+        partitionService().createQueuePartition(QUEUE_NAME, originatedTime);
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
 
         producerQueryService().insertBatchMessage(
                 List.of(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")),
@@ -427,8 +427,8 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
-        pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
+        partitionService().createQueuePartition(QUEUE_NAME, originatedTime);
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
 
         producerQueryService().insertBatchMessage(
                 List.of(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")),
@@ -457,8 +457,8 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
-        pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
+        partitionService().createQueuePartition(QUEUE_NAME, originatedTime);
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
 
         producerQueryService().insertBatchMessage(
                 List.of(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")),
@@ -487,8 +487,8 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
-        pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
+        partitionService().createQueuePartition(QUEUE_NAME, originatedTime);
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
 
         producerQueryService().insertBatchMessage(
                 List.of(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")),
@@ -516,8 +516,8 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1, true);
         Instant originatedTime = Instant.now();
-        pgQueryService.createQueuePartition(QUEUE_NAME, originatedTime);
-        pgQueryService.createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
+        partitionService().createQueuePartition(QUEUE_NAME, originatedTime);
+        partitionService().createHistoryPartition(SUBSCRIPTION_NAME_1, originatedTime);
 
         producerQueryService().insertMessage(new Message<>(UUID.randomUUID().toString(), originatedTime, new TestMessage("test")));
 
@@ -690,7 +690,7 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     private ProducerQueryService producerQueryService() {
-        return pgQueryService.createProducerQueryService(ProducerConfig.<TestMessage>builder()
+        return queryServiceFactory().createProducerQueryService(ProducerConfig.<TestMessage>builder()
                 .queueName(QUEUE_NAME)
                 .clazz(TestMessage.class)
                 .build());
@@ -702,7 +702,7 @@ public class QueueServiceIntegrationTest extends BaseIntegrationTest {
             boolean historyEnabled,
             boolean serializedByKey
     ) {
-        return pgQueryService.createConsumerQueryService(ConsumerConfig.<TestMessage>builder()
+        return queryServiceFactory().createConsumerQueryService(ConsumerConfig.<TestMessage>builder()
                 .queueName(QUEUE_NAME)
                 .subscriptionId(subscriptionId)
                 .messageHandler(message -> {

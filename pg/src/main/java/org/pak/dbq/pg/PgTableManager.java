@@ -33,31 +33,6 @@ public class PgTableManager implements TableManager {
     private final Map<SubscriptionId, Integer> historyRetentionDays = new ConcurrentHashMap<>();
     private Scheduler scheduler;
 
-    public PgTableManager(QueueTableService pgQueryService, String cronCreatePartitions, String cronDropPartitions) {
-        this(
-                pgQueryService.persistenceService(),
-                pgQueryService.schemaName(),
-                new QueuePartitionService(pgQueryService.schemaName(), pgQueryService.persistenceService()),
-                cronCreatePartitions,
-                cronDropPartitions,
-                Clock.systemUTC());
-    }
-
-    public PgTableManager(
-            QueueTableService pgQueryService,
-            String cronCreatePartitions,
-            String cronDropPartitions,
-            Clock clock
-    ) {
-        this(
-                pgQueryService.persistenceService(),
-                pgQueryService.schemaName(),
-                new QueuePartitionService(pgQueryService.schemaName(), pgQueryService.persistenceService()),
-                cronCreatePartitions,
-                cronDropPartitions,
-                clock);
-    }
-
     public PgTableManager(
             PersistenceService persistenceService,
             SchemaName schemaName,

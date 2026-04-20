@@ -42,13 +42,16 @@ class QueueManagerPerformanceTest extends BaseIntegrationTest {
         persistenceService = setupPersistenceService(jdbcTemplate);
         jsonbConverter = setupJsonbConverter();
         pgQueryService = setupQueryService(persistenceService, jsonbConverter);
-        tableManager = setupTableManager(pgQueryService);
+        tableManager = setupTableManager(persistenceService);
 
         createQueueTable();
         createSubscriptionTable(SUBSCRIPTION_NAME_1);
 
         queueManager = new QueueManager(new PgQueryServiceFactory(
-                new QueueTableService(persistenceService, TEST_SCHEMA, jsonbConverter)),
+                new QueueTableService(persistenceService, TEST_SCHEMA),
+                persistenceService,
+                TEST_SCHEMA,
+                jsonbConverter),
                 springTransactionService, new SimpleMessageFactory(), tableManager);
     }
 
