@@ -141,32 +141,39 @@ public class QueueTableService {
                     """, params));
         }
 
-        sql.append('\n').append(STATIC_FORMATTER.execute("""
-                CREATE OR REPLACE FUNCTION ${schema}.${insertFunction}
-                  RETURNS trigger AS
-                $$
-                    BEGIN
-                    """, params));
-        sql.append('\n').append(STATIC_FORMATTER.execute(serializedByKey
-                ? """
-                    INSERT INTO ${schema}.${subscriptionTable}(message_id, key, created_at, execute_after, originated_at)
-                         VALUES(NEW.id, NEW.key, NEW.created_at, NEW.execute_after, NEW.originated_at);
+        if (serializedByKey) {
+            sql.append('\n').append(STATIC_FORMATTER.execute("""
+                    CREATE OR REPLACE FUNCTION ${schema}.${insertFunction}
+                      RETURNS trigger AS
+                    $$
+                        BEGIN
+                        INSERT INTO ${schema}.${subscriptionTable}(message_id, key, created_at, execute_after, originated_at)
+                             VALUES(NEW.id, NEW.key, NEW.created_at, NEW.execute_after, NEW.originated_at);
 
-                    INSERT INTO ${schema}.${subscriptionKeyLockTable}(key)
-                         VALUES(NEW.key)
-                    ON CONFLICT (key) DO NOTHING;
-                    """
-                : """
-                    INSERT INTO ${schema}.${subscriptionTable}(message_id, created_at, execute_after, originated_at)
-                         VALUES(NEW.id, NEW.created_at, NEW.execute_after, NEW.originated_at);
-                    """,
-                params));
-        sql.append('\n').append("""
-                    RETURN NEW;
-                    END;
-                $$
-                LANGUAGE 'plpgsql';
-                """);
+                        INSERT INTO ${schema}.${subscriptionKeyLockTable}(key)
+                             VALUES(NEW.key)
+                        ON CONFLICT (key) DO NOTHING;
+
+                        RETURN NEW;
+                        END;
+                    $$
+                    LANGUAGE 'plpgsql';
+                    """, params));
+        } else {
+            sql.append('\n').append(STATIC_FORMATTER.execute("""
+                    CREATE OR REPLACE FUNCTION ${schema}.${insertFunction}
+                      RETURNS trigger AS
+                    $$
+                        BEGIN
+                        INSERT INTO ${schema}.${subscriptionTable}(message_id, created_at, execute_after, originated_at)
+                             VALUES(NEW.id, NEW.created_at, NEW.execute_after, NEW.originated_at);
+
+                        RETURN NEW;
+                        END;
+                    $$
+                    LANGUAGE 'plpgsql';
+                    """, params));
+        }
         sql.append('\n').append(STATIC_FORMATTER.execute("""
                 CREATE OR REPLACE TRIGGER ${insertTrigger}
                     AFTER INSERT ON ${schema}.${queueTable}
