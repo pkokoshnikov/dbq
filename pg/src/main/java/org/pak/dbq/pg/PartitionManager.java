@@ -46,27 +46,14 @@ public final class PartitionManager {
     private static final Pattern PARTITION_BOUNDS_PATTERN =
             Pattern.compile("FOR VALUES FROM \\('([^']+)'\\) TO \\('([^']+)'\\)");
     private final StringFormatter formatter = new StringFormatter();
-    private final SchemaName schemaName;
-    private final SubscriptionId subscriptionId;
     private final PersistenceService persistenceService;
     private final Cache<String, Boolean> ensuredPartitions = CacheBuilder.newBuilder()
             .maximumSize(ENSURED_PARTITIONS_CACHE_SIZE)
             .build();
+    private final SchemaName schemaName;
 
-    public PartitionManager(
-            SchemaName schemaName,
-            PersistenceService persistenceService
-    ) {
-        this(schemaName, null, persistenceService);
-    }
-
-    public PartitionManager(
-            SchemaName schemaName,
-            SubscriptionId subscriptionId,
-            PersistenceService persistenceService
-    ) {
+    public PartitionManager(SchemaName schemaName, PersistenceService persistenceService) {
         this.schemaName = schemaName;
-        this.subscriptionId = subscriptionId;
         this.persistenceService = persistenceService;
     }
 
@@ -91,14 +78,14 @@ public final class PartitionManager {
         persistenceService.execute(query);
     }
 
-    public PgQueryService.DropPartitionResult dropQueuePartition(QueueName queueName, LocalDate partition)
+    public DropPartitionResult dropQueuePartition(QueueName queueName, LocalDate partition)
             throws DbqException {
         var table = PgQueryService.queueTableName(queueName);
         var partitionName = partitionName(table, partition);
         return dropPartition(table, partitionName, true);
     }
 
-    public PgQueryService.DropPartitionResult dropHistoryPartition(SubscriptionId subscriptionId, LocalDate partition)
+    public DropPartitionResult dropHistoryPartition(SubscriptionId subscriptionId, LocalDate partition)
             throws DbqException {
         var table = PgQueryService.subscriptionHistoryTableName(subscriptionId);
         var partitionName = partitionName(table, partition);
@@ -136,7 +123,7 @@ public final class PartitionManager {
         }
     }
 
-    public void ensureHistoryPartitionExists(Instant originatedTime) throws DbqException {
+    public void ensureHistoryPartitionExists(Instant originatedTime, SubscriptionId subscriptionId) throws DbqException {
         ensurePartitionExists(
                 PgQueryService.subscriptionHistoryTableName(Objects.requireNonNull(subscriptionId)),
                 originatedTime);
@@ -172,14 +159,14 @@ public final class PartitionManager {
         ensuredPartitions.put(partition, Boolean.TRUE);
     }
 
-    private PgQueryService.DropPartitionResult dropPartition(String table, String partition, boolean failOnReferences)
+    private DropPartitionResult dropPartition(String table, String partition, boolean failOnReferences)
             throws DbqException {
         var alreadyAbsent = false;
         try {
             persistenceService.execute(detachPartitionSql(table, partition));
         } catch (DbqException e) {
             if (failOnReferences && hasPartitionReferences(e)) {
-                return PgQueryService.DropPartitionResult.HAS_REFERENCES;
+                return DropPartitionResult.HAS_REFERENCES;
             }
             if (!isIgnorableDetachException(e)) {
                 throw e;
@@ -199,8 +186,8 @@ public final class PartitionManager {
         }
 
         ensuredPartitions.invalidate(partition);
-        return alreadyAbsent ? PgQueryService.DropPartitionResult.ALREADY_ABSENT
-                : PgQueryService.DropPartitionResult.DROPPED;
+        return alreadyAbsent ? DropPartitionResult.ALREADY_ABSENT
+                : DropPartitionResult.DROPPED;
     }
 
     private void acquirePartitionLock(String partition) throws DbqException {

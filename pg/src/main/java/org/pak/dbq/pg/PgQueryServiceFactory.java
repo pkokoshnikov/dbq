@@ -20,9 +20,7 @@ public class PgQueryServiceFactory implements QueryServiceFactory {
         return new PgProducerQueryService(
                 pgQueryService,
                 producerConfig.getQueueName(),
-                new PartitionManager(
-                        pgQueryService.schemaName(),
-                        pgQueryService.persistenceService()));
+                new PartitionManager(pgQueryService.schemaName(), pgQueryService.persistenceService()));
     }
 
     @Override
@@ -35,7 +33,6 @@ public class PgQueryServiceFactory implements QueryServiceFactory {
         var messageContainerMapper = new MessageContainerMapper(pgQueryService.jsonbConverter());
         var partitionManager = new PartitionManager(
                 schemaName,
-                subscriptionId,
                 persistenceService);
         return new PgConsumerQueryService(
                 properties.isSerializedByKey()

@@ -14,6 +14,7 @@ import java.util.Map;
 
 @Slf4j
 public final class HistoryFailMessageStrategy implements FailMessageStrategy {
+    private final SubscriptionId subscriptionId;
     private final PersistenceService persistenceService;
     private final PartitionManager partitionManager;
     private final String query;
@@ -24,6 +25,7 @@ public final class HistoryFailMessageStrategy implements FailMessageStrategy {
             PersistenceService persistenceService,
             PartitionManager partitionManager
     ) {
+        this.subscriptionId = subscriptionId;
         this.persistenceService = persistenceService;
         this.partitionManager = partitionManager;
         this.query = new StringFormatter().execute("""
@@ -42,7 +44,7 @@ public final class HistoryFailMessageStrategy implements FailMessageStrategy {
 
     @Override
     public <T> void failMessage(MessageContainer<T> messageContainer, Exception e) throws DbqException {
-        partitionManager.ensureHistoryPartitionExists(messageContainer.getOriginatedTime());
+        partitionManager.ensureHistoryPartitionExists(messageContainer.getOriginatedTime(), subscriptionId);
 
         var updated = persistenceService.update(query, messageContainer.getId(),
                 e.getMessage(), ExceptionUtils.getStackTrace(e));

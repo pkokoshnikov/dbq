@@ -9,7 +9,7 @@ import org.pak.dbq.api.ProducerConfig;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.internal.persistence.MessageContainer;
 import org.pak.dbq.internal.persistence.Status;
-import org.pak.dbq.pg.PgQueryService;
+import org.pak.dbq.pg.DropPartitionResult;
 import org.pak.dbq.spi.ConsumerQueryService;
 import org.pak.dbq.spi.ProducerQueryService;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -156,19 +156,19 @@ public class PgQueryServiceIntegrationTest extends BaseIntegrationTest {
 
         var partitions = pgQueryService.getAllQueuePartitions(QUEUE_NAME);
         assertThat(pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0)))
-                .isEqualTo(PgQueryService.DropPartitionResult.HAS_REFERENCES);
+                .isEqualTo(DropPartitionResult.HAS_REFERENCES);
 
         var consumerQueryService = consumerQueryService(SUBSCRIPTION_NAME_1, 1, true, false);
         var messages = consumerQueryService.selectMessages();
         consumerQueryService.completeMessage(messages.get(0));
 
         assertThat(pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0)))
-                .isEqualTo(PgQueryService.DropPartitionResult.HAS_REFERENCES);
+                .isEqualTo(DropPartitionResult.HAS_REFERENCES);
 
         pgQueryService.dropHistoryPartition(SUBSCRIPTION_NAME_1,
                 partitions.get(0)); // history partition should be dropped first of all
         assertThat(pgQueryService.dropQueuePartition(QUEUE_NAME, partitions.get(0)))
-                .isEqualTo(PgQueryService.DropPartitionResult.DROPPED);
+                .isEqualTo(DropPartitionResult.DROPPED);
     }
 
     @Test

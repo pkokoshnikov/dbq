@@ -5,8 +5,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.error.DbqException;
-import org.pak.dbq.spi.TableManager;
 import org.pak.dbq.error.RetryablePersistenceException;
+import org.pak.dbq.spi.PersistenceService;
+import org.pak.dbq.spi.TableManager;
 import org.quartz.*;
 import org.quartz.impl.StdSchedulerFactory;
 
@@ -21,7 +22,9 @@ public class PgTableManager implements TableManager {
     public static final String QUEUE_GROUP = "queue";
     static final Duration RETRYABLE_JOB_DELAY = Duration.ofSeconds(5);
 
-    private final PgQueryService pgQueryService;
+    private final PersistenceService persistenceService;
+    private final SchemaName schemaName;
+    private final PartitionManager partitionManager;
     private final String cronCreatePartitions;
     private final String cronDropPartitions;
     private final Clock clock;
@@ -31,7 +34,13 @@ public class PgTableManager implements TableManager {
     private Scheduler scheduler;
 
     public PgTableManager(PgQueryService pgQueryService, String cronCreatePartitions, String cronDropPartitions) {
-        this(pgQueryService, cronCreatePartitions, cronDropPartitions, Clock.systemUTC());
+        this(
+                pgQueryService.persistenceService(),
+                pgQueryService.schemaName(),
+                new PartitionManager(pgQueryService.schemaName(), pgQueryService.persistenceService()),
+                cronCreatePartitions,
+                cronDropPartitions,
+                Clock.systemUTC());
     }
 
     public PgTableManager(
@@ -40,7 +49,36 @@ public class PgTableManager implements TableManager {
             String cronDropPartitions,
             Clock clock
     ) {
-        this.pgQueryService = pgQueryService;
+        this(
+                pgQueryService.persistenceService(),
+                pgQueryService.schemaName(),
+                new PartitionManager(pgQueryService.schemaName(), pgQueryService.persistenceService()),
+                cronCreatePartitions,
+                cronDropPartitions,
+                clock);
+    }
+
+    public PgTableManager(
+            PersistenceService persistenceService,
+            SchemaName schemaName,
+            PartitionManager partitionManager,
+            String cronCreatePartitions,
+            String cronDropPartitions
+    ) {
+        this(persistenceService, schemaName, partitionManager, cronCreatePartitions, cronDropPartitions, Clock.systemUTC());
+    }
+
+    public PgTableManager(
+            PersistenceService persistenceService,
+            SchemaName schemaName,
+            PartitionManager partitionManager,
+            String cronCreatePartitions,
+            String cronDropPartitions,
+            Clock clock
+    ) {
+        this.persistenceService = persistenceService;
+        this.schemaName = schemaName;
+        this.partitionManager = partitionManager;
         this.cronCreatePartitions = cronCreatePartitions;
         this.cronDropPartitions = cronDropPartitions;
         this.clock = clock.withZone(ZoneOffset.UTC);
@@ -50,11 +88,11 @@ public class PgTableManager implements TableManager {
         validateRetentionDays(retentionDays);
         registerQueueAutoDdl(queueName, autoDdl);
         if (autoDdl) {
-            pgQueryService.createQueueTable(queueName);
+            persistenceService.execute(PgQueryService.createQueueTableSql(schemaName, queueName));
         }
         var now = Instant.now(clock);
-        pgQueryService.createQueuePartition(queueName, now);
-        pgQueryService.createQueuePartition(queueName, now.plus(1, ChronoUnit.DAYS));
+        partitionManager.createQueuePartition(queueName, now);
+        partitionManager.createQueuePartition(queueName, now.plus(1, ChronoUnit.DAYS));
         registerRetention(queueRetentionDays, queueName, retentionDays, "queue");
     }
 
@@ -65,14 +103,19 @@ public class PgTableManager implements TableManager {
             boolean serializedByKey
     ) throws DbqException {
         if (queueAutoDdl.getOrDefault(queueName, false)) {
-            pgQueryService.createSubscriptionTable(queueName, subscriptionId, historyEnabled, serializedByKey);
+            persistenceService.execute(PgQueryService.createSubscriptionTableSql(
+                    schemaName,
+                    queueName,
+                    subscriptionId,
+                    historyEnabled,
+                    serializedByKey));
         }
 
         if (historyEnabled) {
             var retentionDays = requireQueueRetention(queueName);
             var now = Instant.now(clock);
-            pgQueryService.createHistoryPartition(subscriptionId, now);
-            pgQueryService.createHistoryPartition(subscriptionId, now.plus(1, ChronoUnit.DAYS));
+            partitionManager.createHistoryPartition(subscriptionId, now);
+            partitionManager.createHistoryPartition(subscriptionId, now.plus(1, ChronoUnit.DAYS));
             registerRetention(historyRetentionDays, subscriptionId, retentionDays, "history");
         }
     }
@@ -111,10 +154,10 @@ public class PgTableManager implements TableManager {
         var date = Instant.now(clock).plus(Duration.ofDays(1));
 
         for (var queueName : queueRetentionDays.keySet()) {
-            pgQueryService.createQueuePartition(queueName, date);
+            partitionManager.createQueuePartition(queueName, date);
         }
         for (var subscriptionId : historyRetentionDays.keySet()) {
-            pgQueryService.createHistoryPartition(subscriptionId, date);
+            partitionManager.createHistoryPartition(subscriptionId, date);
         }
     }
 
@@ -124,14 +167,14 @@ public class PgTableManager implements TableManager {
         for (var entry : historyRetentionDays.entrySet()) {
             var subscriptionId = entry.getKey();
             var retentionDays = entry.getValue();
-            var partitions = pgQueryService.getAllHistoryPartitions(subscriptionId);
+            var partitions = partitionManager.getAllHistoryPartitions(subscriptionId);
             for (var partition : partitions) {
                 if (!partition.isBefore(todayUtc.minusDays(retentionDays))) {
                     continue;
                 }
                 log.info("Dropping history subscription partition {} for {}", partition, subscriptionId.id());
-                var result = pgQueryService.dropHistoryPartition(subscriptionId, partition);
-                if (result == PgQueryService.DropPartitionResult.HAS_REFERENCES) {
+                var result = partitionManager.dropHistoryPartition(subscriptionId, partition);
+                if (result == DropPartitionResult.HAS_REFERENCES) {
                     log.warn("Partition {} for history {} still has references, skipping", partition,
                             subscriptionId.id());
                 }
@@ -141,14 +184,14 @@ public class PgTableManager implements TableManager {
         for (var entry : queueRetentionDays.entrySet()) {
             var queueName = entry.getKey();
             var retentionDays = entry.getValue();
-            var partitions = pgQueryService.getAllQueuePartitions(queueName);
+            var partitions = partitionManager.getAllQueuePartitions(queueName);
             for (var partition : partitions) {
                 if (!partition.isBefore(todayUtc.minusDays(retentionDays))) {
                     continue;
                 }
                 log.info("Dropping message partition {} for {}", partition, queueName.name());
-                var result = pgQueryService.dropQueuePartition(queueName, partition);
-                if (result == PgQueryService.DropPartitionResult.HAS_REFERENCES) {
+                var result = partitionManager.dropQueuePartition(queueName, partition);
+                if (result == DropPartitionResult.HAS_REFERENCES) {
                     log.warn("Partition {} for queue {} still has references, skipping", partition,
                             queueName.name());
                 }

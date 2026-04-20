@@ -5,64 +5,26 @@ import org.pak.dbq.api.QueueName;
 import org.pak.dbq.api.SubscriptionId;
 import org.pak.dbq.error.DbqException;
 import org.pak.dbq.internal.support.StringFormatter;
-import org.pak.dbq.pg.jsonb.JsonbConverter;
 import org.pak.dbq.spi.PersistenceService;
 
-import java.time.*;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 
 @Slf4j
 public class PgQueryService  {
     private static final StringFormatter STATIC_FORMATTER = new StringFormatter();
 
-    public enum DropPartitionResult {
-        DROPPED,
-        ALREADY_ABSENT,
-        HAS_REFERENCES
-    }
-
-    private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy_MM_dd");
     private final PersistenceService persistenceService;
     private final SchemaName schemaName;
-    private final JsonbConverter jsonbConverter;
-    private final PartitionManager partitionManager;
-    private final StringFormatter formatter = new StringFormatter();
-    private final Map<String, String> queryCache = new ConcurrentHashMap<>();
-    private final Map<String, Boolean> keyLockTableExistsCache = new ConcurrentHashMap<>();
 
     public PgQueryService(
-            PersistenceService persistenceService, SchemaName schemaName, JsonbConverter jsonbConverter
+            PersistenceService persistenceService, SchemaName schemaName
     ) {
         this.persistenceService = persistenceService;
         this.schemaName = schemaName;
-        this.jsonbConverter = jsonbConverter;
-        this.partitionManager = new PartitionManager(schemaName, persistenceService);
     }
 
     public void createQueueTable(QueueName queueName) throws DbqException {
         persistenceService.execute(createQueueTableSql(schemaName, queueName));
-    }
-
-    public void createSubscriptionTable(QueueName queueName, SubscriptionId subscriptionId, boolean historyEnabled)
-            throws DbqException {
-        createSubscriptionTable(queueName, subscriptionId, historyEnabled, false);
-    }
-
-    public void createSubscriptionTable(
-            QueueName queueName,
-            SubscriptionId subscriptionId,
-            boolean historyEnabled,
-            boolean serializedByKey
-    ) throws DbqException {
-        persistenceService.execute(createSubscriptionTableSql(
-                schemaName,
-                queueName,
-                subscriptionId,
-                historyEnabled,
-                serializedByKey));
-        keyLockTableExistsCache.put(subscriptionId.id(), serializedByKey);
     }
 
     public static String createQueueTableSql(SchemaName schemaName, QueueName queueName) {
@@ -83,15 +45,6 @@ public class PgQueryService  {
                 "schema", schemaName.value(),
                 "queueTable", queueTableName(queueName))
         );
-    }
-
-    public static String createSubscriptionTableSql(
-            SchemaName schemaName,
-            QueueName queueName,
-            SubscriptionId subscriptionId,
-            boolean historyEnabled
-    ) {
-        return createSubscriptionTableSql(schemaName, queueName, subscriptionId, historyEnabled, false);
     }
 
     public static String createSubscriptionTableSql(
@@ -212,36 +165,6 @@ public class PgQueryService  {
         return sql.toString();
     }
 
-    public void createPartition(String table, Instant dateTime) throws DbqException {
-        partitionManager.createPartition(table, dateTime);
-    }
-
-    public DropPartitionResult dropQueuePartition(QueueName queueName, LocalDate partition) throws DbqException {
-        return partitionManager.dropQueuePartition(queueName, partition);
-    }
-
-    public DropPartitionResult dropHistoryPartition(SubscriptionId subscriptionId, LocalDate partition)
-            throws DbqException {
-        return partitionManager.dropHistoryPartition(subscriptionId, partition);
-    }
-
-    public void createQueuePartition(QueueName queueName, Instant includeDateTime) throws DbqException {
-        partitionManager.createQueuePartition(queueName, includeDateTime);
-    }
-
-    public void createHistoryPartition(SubscriptionId subscriptionId, Instant includeDateTime)
-            throws DbqException {
-        partitionManager.createHistoryPartition(subscriptionId, includeDateTime);
-    }
-
-    public List<LocalDate> getAllQueuePartitions(QueueName queueName) throws DbqException {
-        return partitionManager.getAllQueuePartitions(queueName);
-    }
-
-    public List<LocalDate> getAllHistoryPartitions(SubscriptionId subscriptionId) throws DbqException {
-        return partitionManager.getAllHistoryPartitions(subscriptionId);
-    }
-
     public static String queueTableName(QueueName queueName) {
         return queueName.name().replace("-", "_");
     }
@@ -264,10 +187,6 @@ public class PgQueryService  {
 
     public SchemaName schemaName() {
         return schemaName;
-    }
-
-    public JsonbConverter jsonbConverter() {
-        return jsonbConverter;
     }
 
 }
