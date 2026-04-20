@@ -7,7 +7,7 @@ The project is built around a simple idea: store messages in DB, let independent
 transactions, and keep the API small enough to embed into an application without bringing a full broker.
 
 Detailed architecture, table model, ER diagram, and producer/consumer interaction diagrams are documented in
-[`documentation.md`](DOCUMENTATION.MD).
+[`DOCUMENTATION.MD`](DOCUMENTATION.MD).
 
 ## What It Provides
 
@@ -21,7 +21,7 @@ Detailed architecture, table model, ER diagram, and producer/consumer interactio
 ## Modules
 
 - `core` - queue API, producer/consumer runtime, policies, message model
-- `pg` - PostgreSQL `QueryService`, JSONB conversion, DDL generator, partition manager
+- `pg` - PostgreSQL query service factory, JSONB conversion, DDL generator, partition manager
 - `spring` - Spring JDBC persistence adapter and Spring transaction adapter
 - `pg-cli` - standalone CLI for generating PostgreSQL DDL
 - `otel` - OpenTelemetry propagation and consumer tracing integration
@@ -46,7 +46,7 @@ Detailed architecture, table model, ER diagram, and producer/consumer interactio
   - `originatedTime`
   - `payload`
   - `headers`
-- `QueueManager` wires producers and consumers on top of `QueryService` and `TransactionService`
+- `QueueManager` wires producers and consumers on top of `QueryServiceFactory` and `TransactionService`
 
 Each subscription has its own state. If two subscriptions are registered for the same queue, both will receive the same message and track their progress independently.
 
@@ -140,13 +140,13 @@ JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
 SpringPersistenceService persistenceService =
         new SpringPersistenceService(jdbcTemplate);
 
-PgQueryService queryService =
-        new PgQueryService(persistenceService, new SchemaName("public"), jsonbConverter);
+PgQueryServiceFactory queryServiceFactory =
+        new PgQueryServiceFactory(persistenceService, new SchemaName("public"), jsonbConverter);
 
 SpringTransactionService transactionService =
         new SpringTransactionService(new TransactionTemplate(new JdbcTransactionManager(dataSource)));
 
-QueueManager queueManager = new QueueManager(queryService, transactionService);
+QueueManager queueManager = new QueueManager(queryServiceFactory, transactionService);
 ```
 
 ### 3. Create database tables
@@ -159,13 +159,13 @@ Programmatic generation:
 PgSchemaSqlGenerator sqlGenerator = new PgSchemaSqlGenerator(new SchemaName("public"));
 
 String queueSql = sqlGenerator.createQueueTable(queueName);
-String subscriptionSql = sqlGenerator.createSubscriptionTable(queueName, subscriptionId, true);
+String subscriptionSql = sqlGenerator.createSubscriptionTable(queueName, subscriptionId, true, false);
 ```
 
-The third argument controls history support for that subscription:
+The third and fourth arguments control subscription schema features:
 
-- `true` - create the history table and keep processed / failed records
-- `false` - create only the live subscription table; completed and failed messages are deleted from it
+- third argument: `historyEnabled`
+- fourth argument: `serializedByKey`
 
 CLI generation:
 
@@ -174,7 +174,7 @@ mvn -q -pl pg-cli -am -DskipTests package
 
 java -jar pg-cli/target/pg-cli-1.0.0.jar queue --schema public --queue orders
 java -jar pg-cli/target/pg-cli-1.0.0.jar subscription --schema public --queue orders --subscription billing --history-enabled
-java -jar pg-cli/target/pg-cli-1.0.0.jar all --schema public --queue orders --subscription billing --history-enabled
+java -jar pg-cli/target/pg-cli-1.0.0.jar all --schema public --queue orders --subscription billing --history-enabled --serialized-by-key
 ```
 
 Examples:
@@ -203,7 +203,8 @@ java -jar pg-cli/target/pg-cli-1.0.0.jar all \
   --schema public \
   --queue orders \
   --subscription billing \
-  --history-enabled > dbq-orders.sql
+  --history-enabled \
+  --serialized-by-key > dbq-orders.sql
 ```
 
 ### 4. Register the queue
@@ -232,6 +233,7 @@ Producer<OrderCreated> producer = queueManager.registerProducer(
 ```
 
 If you enable history in runtime, the subscription schema should also be created with history support.
+If you enable `serializedByKey` in runtime, the subscription schema should also be created with serialized-by-key support.
 
 ### 6. Register a consumer
 
@@ -503,12 +505,14 @@ If you want `QueueManager` registrations to automatically initialize partition r
 
 ```java
 PgTableManager pgTableManager = new PgTableManager(
-        queryService,
+        persistenceService,
+        new SchemaName("public"),
+        new QueuePartitionService(new SchemaName("public"), persistenceService),
         "0 0 1 * * ?",
         "0 0 2 * * ?"
 );
 
-QueueManager queueManager = new QueueManager(queryService, transactionService, pgTableManager);
+QueueManager queueManager = new QueueManager(queryServiceFactory, transactionService, pgTableManager);
 
 queueManager.registerQueue(
         QueueConfig.builder()
@@ -548,7 +552,7 @@ With this setup:
 
 The live subscription table is not cleaned by partition retention because it is not partitioned.
 
-Parent tables must already exist before you start the manager.
+Parent tables must already exist before you start the manager unless you enable `QueueManager.Properties.autoDdl`.
 
 ## Build and Test
 

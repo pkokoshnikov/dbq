@@ -2,112 +2,16 @@
 
 ## Logical Partitions
 
-Нужно добавить в DBQ механизм последовательной обработки сообщений по `key`, встроенный в текущую модель DBQ.
+Итог по этому вопросу вынесен в ADR:
 
-Фича должна дать:
+- [ADR 0001: Prefer `key_lock` Over Logical Partitions for Per-Key Serialization](adr/0001-key-lock-over-logical-partitions.md)
 
-- обработку одного `key` не более чем в одном потоке во всём кластере
-- синхронизацию между несколькими pod-ами через PostgreSQL
+Короткая версия решения:
 
-При этом фича должна как можно меньше ломать текущую архитектуру:
-
-- queue table остаётся общим источником сообщений
-- subscription live table остаётся источником данных для consumer polling
-- retry / fail / complete / history продолжают работать как сейчас
-
-### Альтернативные решения
-
-#### `lock by key` через advisory lock
-
-Идея: использовать `pg_try_advisory_xact_lock(subscription, hash(key))`.
-
-Почему не выбрали:
-
-- lock берётся на этапе обработки, а не на этапе упорядоченного `select`
-- неудобно вычитывать batch сообщений одного `key`
-- модель плохо описывает ordered stream processing, где `key` должен быть единицей scheduling
-
-#### `logical partitions`
-
-Идея: у queue фиксированное число partitions, сообщение маршрутизируется по `hash(key) % maxPartitions`, polling идёт по partition.
-
-Плюсы:
-
-- bounded concurrency
-- простая кластерная координация через advisory lock
-- хорошая аналогия с Kafka partitions
-
-Почему не выбрали:
-
-- порядок гарантируется только внутри partition, а не точно по `key`
-- нужен отдельный routing layer с `maxPartitions`
-- polling получается сложнее: нужно искать candidate partitions, а не просто ready messages
-- это более тяжёлое изменение модели DBQ, чем требуется для задачи per-key serialization
-
-### Вывод
-
-Сейчас предпочтительный вариант для DBQ: не `logical partitions`, а `key_lock` table для сериализации обработки по `key`.
-
-### Предпочтительный дизайн
-
-Нужна дополнительная таблица блокировок на уровне subscription, например `<subscription>_key_lock`.
-
-Эта таблица:
-
-- не хранит scheduler state
-- не участвует в выборе readiness
-- используется только как носитель row-level lock для `key`
-- имеет минимальную схему: один `primary key (key)` без дополнительных колонок
-
-`key` при этом хранится прямо в `subscription`, чтобы polling и cleanup не зависели от join в `queue` только ради получения ключа.
-
-Readiness по-прежнему определяется по `subscription.execute_after`.
-
-### Базовая идея
-
-1. `subscription` хранит собственную колонку `key`.
-2. Для каждого `key`, который есть в pending сообщениях subscription, существует row в `key_lock` table.
-3. При вставке нового сообщения делается `upsert` в `key_lock`.
-4. При вставке в `subscription` туда же записывается `key`.
-5. Во время polling запрос делает `join` с `key_lock` и использует `FOR UPDATE SKIP LOCKED`.
-6. Если другой consumer уже держит lock на этом `key`, сообщения этого `key` просто пропускаются.
-7. После `complete/fail` row из `key_lock` удаляется, если в subscription больше не осталось сообщений с таким `key`.
-
-### Пример polling flow
-
-```sql
-SELECT ...
-FROM subscription s
-JOIN queue q ON q.id = s.message_id
-    AND q.originated_at = s.originated_at
-JOIN subscription_key_lock k ON k.key = s.key
-WHERE s.execute_after < CURRENT_TIMESTAMP
-ORDER BY s.execute_after, s.id
-LIMIT :maxPollRecords
-FOR UPDATE OF k, s SKIP LOCKED
-```
-
-Смысл этого запроса:
-
-- `subscription` определяет, какие сообщения ready
-- `queue` даёт payload
-- `subscription` даёт `key`
-- `key_lock` не даёт двум consumer-ам одновременно взять один и тот же `key`
-
-### Что важно в этом варианте
-
-- не нужен fixed `maxPartitions`
-- сериализация идёт по реальному `key`, а не по coarse-grained partition
-- не нужен отдельный partition scheduler
-- `key_lock` table остаётся простой и используется только для coordination
-- клиент может контролировать длительность удержания lock через `maxPollRecords`
-
-### Ограничения и последствия
-
-- `key_lock` table сама по себе не ускоряет polling, а только даёт per-key mutual exclusion
+- `logical partitions` не выбраны для DBQ
+- предпочтён `key_lock` table на уровне subscription
+- сериализация должна идти по реальному `key`, а не по coarse-grained partition
 - readiness остаётся на `subscription.execute_after`
-- для длинных обработок безопасный baseline режим это `maxPollRecords = 1`
-- при `maxPollRecords > 1` клиент осознанно обменивает более долгие lock-и на throughput
 
 ### Batch handling
 

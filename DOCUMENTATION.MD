@@ -37,7 +37,7 @@ Logical stream of messages, identified by `QueueName`.
 
 - one queue has one main queue table
 - one queue may have many subscriptions
-- queue has retentio
+- queue has retention configuration used for queue partitions and optional history partitions
 
 ### Subscription
 
@@ -60,7 +60,7 @@ Public carrier object:
 
 High-level runtime facade over:
 
-- `QueryService`
+- `QueryServiceFactory`
 - `TransactionService`
 - `TableManager`
 - `MessageFactory`
@@ -222,7 +222,7 @@ This means deserialization and serialization failures are treated as terminal, w
 
 1. client calls `Producer.send(...)`
 2. `MessageContextPropagator` injects current transport context into headers
-3. `QueryService.insertMessage(...)` inserts row into queue table
+3. `ProducerQueryService.insertMessage(...)` inserts row into queue table
 4. PostgreSQL trigger copies queue row into each subscription live table
 
 ### Consumer flow
@@ -230,7 +230,7 @@ This means deserialization and serialization failures are treated as terminal, w
 1. `QueueManager.startConsumers()` starts `ConsumerStarter`
 2. `ConsumerStarter` creates `concurrency` worker threads
 3. each worker runs polling loop inside `TransactionService.inTransaction(...)`
-4. `QueryService.selectMessages(...)` locks live subscription rows with `FOR UPDATE SKIP LOCKED`
+4. `ConsumerQueryService.selectMessages(...)` locks live subscription rows with `FOR UPDATE SKIP LOCKED`
 5. payload and headers are reconstructed into `Message<T>`
 6. `MessageContextPropagator` extracts headers into current execution context
 7. `MessageConsumerTelemetry` opens processing scope
@@ -385,7 +385,7 @@ Terminal states:
 
 ### Self-healing partition creation
 
-`PgQueryService` ensures required partitions before write operations:
+`PgQueryServiceFactory` creates query services that ensure required partitions before write operations:
 
 - queue partition before message insert
 - history partition before complete/fail when history is enabled
@@ -496,7 +496,9 @@ Current default integration:
 
 SPI:
 
-- `QueryService`
+- `QueryServiceFactory`
+- `ProducerQueryService`
+- `ConsumerQueryService`
 - `TableManager`
 
 Use them when you want a new backend or a different SQL strategy.
@@ -511,7 +513,8 @@ To build another storage implementation you need to provide:
 - queue and history retention handling
 - optional auto-DDL behavior if you want to support it
 
-In practice this means `QueryService` is the main storage contract, and `TableManager` is the storage-maintenance contract.
+In practice this means `QueryServiceFactory` is the entry point for storage-specific producer and consumer queries,
+while `TableManager` is the storage-maintenance contract.
 
 ## 11. Producer / Consumer Interaction Diagram
 
@@ -522,7 +525,7 @@ title DBQ Producer and Consumer Flow
 actor App
 participant "Producer<T>" as Producer
 participant "MessageContextPropagator" as Propagator
-participant "PgQueryService" as Query
+participant "ProducerQueryService / ConsumerQueryService" as Query
 database "queue table" as Queue
 database "subscription table" as Subscription
 participant "Consumer" as Consumer
@@ -661,7 +664,9 @@ Need:
 
 Need:
 
-- `QueryService`
+- `QueryServiceFactory`
+- `ProducerQueryService`
+- `ConsumerQueryService`
 - `TableManager`
 - storage-specific serialization strategy for payload and headers
 
@@ -679,4 +684,4 @@ Need:
 - Queue and history partitioning is UTC-based.
 - `historyEnabled` is a subscription-level runtime feature and must match the created schema.
 - If history is disabled, terminal results are not stored anywhere after deletion from the live subscription table.
-- If auto DDL is disabled, parent tables must exist before registration and work must still rely on `PgQueryService` self-healing partition creation for daily partitions.
+- If auto DDL is disabled, parent tables must exist before registration and work still relies on the PostgreSQL query services' self-healing partition creation for daily partitions.
