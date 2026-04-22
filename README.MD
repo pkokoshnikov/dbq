@@ -90,26 +90,26 @@ Add the modules you actually use:
 
 ```xml
 <dependency>
-    <groupId>org.pak</groupId>
-    <artifactId>core</artifactId>
+    <groupId>io.github.pkokoshnikov</groupId>
+    <artifactId>dbq-core</artifactId>
     <version>${dbq.version}</version>
 </dependency>
 
 <dependency>
-    <groupId>org.pak</groupId>
-    <artifactId>pg</artifactId>
+    <groupId>io.github.pkokoshnikov</groupId>
+    <artifactId>dbq-pg</artifactId>
     <version>${dbq.version}</version>
 </dependency>
 
 <dependency>
-    <groupId>org.pak</groupId>
-    <artifactId>spring</artifactId>
+    <groupId>io.github.pkokoshnikov</groupId>
+    <artifactId>dbq-spring</artifactId>
     <version>${dbq.version}</version>
 </dependency>
 
 <dependency>
-    <groupId>org.pak</groupId>
-    <artifactId>otel</artifactId>
+    <groupId>io.github.pkokoshnikov</groupId>
+    <artifactId>dbq-otel</artifactId>
     <version>${dbq.version}</version>
 </dependency>
 ```

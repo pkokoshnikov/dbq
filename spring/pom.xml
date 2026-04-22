@@ -4,16 +4,16 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <groupId>org.pak</groupId>
+        <groupId>io.github.pkokoshnikov</groupId>
         <artifactId>dbq</artifactId>
         <version>1.0.0</version>
     </parent>
 
-    <artifactId>spring</artifactId>
+    <artifactId>dbq-spring</artifactId>
     <dependencies>
         <dependency>
-            <groupId>org.pak</groupId>
-            <artifactId>core</artifactId>
+            <groupId>io.github.pkokoshnikov</groupId>
+            <artifactId>dbq-core</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
